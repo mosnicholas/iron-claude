@@ -89,16 +89,19 @@ export function formatDayPlan(plan: DayPlan): string {
 
   if (plan.skills.length > 0) {
     lines.push('*Skills:*');
+    lines.push('');
     for (const exercise of plan.skills) {
       lines.push(formatPlannedExerciseLine(exercise));
+      lines.push('');
     }
-    lines.push('');
   }
 
   if (plan.strength.length > 0) {
     lines.push('*Strength:*');
+    lines.push('');
     for (const exercise of plan.strength) {
       lines.push(formatPlannedExerciseLine(exercise));
+      lines.push('');
     }
   }
 
@@ -113,13 +116,15 @@ function formatPlannedExerciseLine(exercise: PlannedExercise): string {
         ? 'TBD'
         : `${exercise.targetWeight} lbs`;
 
-  let line = `- ${exercise.name}: ${exercise.targetSets}x${exercise.targetReps} @ ${weight}`;
+  const lines: string[] = [];
+  lines.push(exercise.name);
+  lines.push(`- ${exercise.targetSets}x${exercise.targetReps} @ ${weight}`);
 
   if (exercise.notes) {
-    line += ` (${exercise.notes})`;
+    lines.push(`- Notes: ${exercise.notes}`);
   }
 
-  return line;
+  return lines.join('\n');
 }
 
 export function formatWeekPlanMarkdown(plan: WeekPlan): string {
