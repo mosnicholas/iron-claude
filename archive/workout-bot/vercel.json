@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "api/**/*.ts", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/webhook", "dest": "/api/webhook.ts" },
+    { "src": "/api/cron/morning", "dest": "/api/cron/morning.ts" },
+    { "src": "/api/cron/sunday", "dest": "/api/cron/sunday.ts" }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/morning",
+      "schedule": "0 12 * * 1-5"
+    },
+    {
+      "path": "/api/cron/sunday",
+      "schedule": "0 19 * * 0"
+    }
+  ],
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 60
+    }
+  }
+}
