@@ -2,7 +2,6 @@
  * Date utilities for IronClaude bot
  */
 
-
 const DAY_KEYS = [
   'sunday',
   'monday',
