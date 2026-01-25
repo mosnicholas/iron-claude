@@ -4,16 +4,12 @@
  * Handles explicit /commands from the Telegram bot.
  */
 
+import { CoachAgent } from "../coach/index.js";
 import { TelegramBot } from "./telegram.js";
 import { createGitHubStorage } from "../storage/github.js";
 import { getCurrentWeek } from "../utils/date.js";
 
-// Agent interface that works with both ChatAgent and VercelChatAgent
-export interface ChatAgent {
-  chat(message: string): Promise<{ message: string }>;
-}
-
-export type CommandHandler = (agent: ChatAgent, bot: TelegramBot, args: string) => Promise<string>;
+export type CommandHandler = (agent: CoachAgent, bot: TelegramBot, args: string) => Promise<string>;
 
 /**
  * Available commands and their handlers
@@ -34,7 +30,7 @@ export const COMMANDS: Record<string, CommandHandler> = {
 /**
  * /start - Initial greeting
  */
-async function handleStart(_agent: ChatAgent, _bot: TelegramBot, _args: string): Promise<string> {
+async function handleStart(_agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   const storage = createGitHubStorage();
   const profile = await storage.readProfile();
 
@@ -62,7 +58,7 @@ Let's get after it! 💪`;
 /**
  * /help - Show available commands
  */
-async function handleHelp(_agent: ChatAgent, _bot: TelegramBot, _args: string): Promise<string> {
+async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   return `**Available Commands**
 
 📋 **Planning**
@@ -92,7 +88,7 @@ Questions? Just ask!`;
 /**
  * /today - Show today's planned workout
  */
-async function handleToday(agent: ChatAgent, _bot: TelegramBot, _args: string): Promise<string> {
+async function handleToday(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   const response = await agent.chat(
     "Show me today's workout plan. Read the current week's plan and tell me what's scheduled for today. " +
       "If today is a rest day, let me know. If there's no plan, suggest what I should do."
@@ -103,7 +99,7 @@ async function handleToday(agent: ChatAgent, _bot: TelegramBot, _args: string): 
 /**
  * /plan - Show this week's plan
  */
-async function handlePlan(agent: ChatAgent, _bot: TelegramBot, _args: string): Promise<string> {
+async function handlePlan(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   const week = getCurrentWeek();
 
   const response = await agent.chat(
@@ -115,7 +111,7 @@ async function handlePlan(agent: ChatAgent, _bot: TelegramBot, _args: string): P
 /**
  * /done - Complete current workout
  */
-async function handleDone(agent: ChatAgent, _bot: TelegramBot, _args: string): Promise<string> {
+async function handleDone(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   const response = await agent.chat(
     "I'm done with my workout. Please:\n" +
       "1. Check if there's an in-progress workout branch\n" +
@@ -130,7 +126,7 @@ async function handleDone(agent: ChatAgent, _bot: TelegramBot, _args: string): P
 /**
  * /tired - Flag low energy
  */
-async function handleTired(agent: ChatAgent, _bot: TelegramBot, _args: string): Promise<string> {
+async function handleTired(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   const response = await agent.chat(
     "I'm feeling tired/low energy today. Based on today's planned workout, suggest some modified options:\n" +
       "1. A lighter version of the planned workout\n" +
@@ -145,7 +141,7 @@ async function handleTired(agent: ChatAgent, _bot: TelegramBot, _args: string): 
 /**
  * /skip - Skip workout or exercise
  */
-async function handleSkip(agent: ChatAgent, _bot: TelegramBot, args: string): Promise<string> {
+async function handleSkip(agent: CoachAgent, _bot: TelegramBot, args: string): Promise<string> {
   if (!args) {
     const response = await agent.chat(
       "I want to skip today's workout. Acknowledge this without guilt-tripping, " +
@@ -165,7 +161,7 @@ async function handleSkip(agent: ChatAgent, _bot: TelegramBot, args: string): Pr
 /**
  * /prs - Show personal records
  */
-async function handlePRs(agent: ChatAgent, _bot: TelegramBot, _args: string): Promise<string> {
+async function handlePRs(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   const response = await agent.chat(
     "Show me my current personal records. Read prs.yaml and display:\n" +
       "1. Current PRs for main lifts (bench, squat, deadlift, OHP, pull-ups)\n" +
@@ -179,7 +175,7 @@ async function handlePRs(agent: ChatAgent, _bot: TelegramBot, _args: string): Pr
 /**
  * /demo - Find exercise demonstration
  */
-async function handleDemo(agent: ChatAgent, _bot: TelegramBot, args: string): Promise<string> {
+async function handleDemo(agent: CoachAgent, _bot: TelegramBot, args: string): Promise<string> {
   if (!args) {
     return "Which exercise do you want a demo for? Example: /demo face pull";
   }
@@ -195,7 +191,7 @@ async function handleDemo(agent: ChatAgent, _bot: TelegramBot, args: string): Pr
  * /traveling - Log upcoming travel
  */
 async function handleTraveling(
-  agent: ChatAgent,
+  agent: CoachAgent,
   _bot: TelegramBot,
   args: string
 ): Promise<string> {
@@ -233,23 +229,12 @@ export function commandExists(command: string): boolean {
 export async function executeCommand(
   command: string,
   args: string,
-  agent: ChatAgent,
+  agent: CoachAgent,
   bot: TelegramBot
 ): Promise<string> {
-  console.log(`[commands] Executing command: /${command}`, { args });
-
   const handler = COMMANDS[command];
   if (!handler) {
-    console.log(`[commands] Unknown command: /${command}`);
     return handleUnknownCommand(command);
   }
-
-  try {
-    const result = await handler(agent, bot, args);
-    console.log(`[commands] Command /${command} completed successfully`);
-    return result;
-  } catch (error) {
-    console.error(`[commands] Command /${command} failed:`, error);
-    throw error;
-  }
+  return handler(agent, bot, args);
 }
