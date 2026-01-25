@@ -23,6 +23,8 @@ workout-routine/
 - Prefer async/await over callbacks
 - Keep functions small and focused
 - Use descriptive variable names
+- **Always run `npm run lint:fix` after making code changes** to auto-format and fix issues
+- Run `npx knip` periodically to detect unused code/dependencies
 
 ### Environment
 - Uses Fly.io for deployment (Docker container with Express server)
