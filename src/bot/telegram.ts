@@ -40,8 +40,12 @@ export class TelegramBot {
 
   /**
    * Send a text message
+   * Returns the message ID if successful
    */
-  async sendMessage(text: string, parseMode: "Markdown" | "HTML" = "Markdown"): Promise<void> {
+  async sendMessage(
+    text: string,
+    parseMode: "Markdown" | "HTML" = "Markdown"
+  ): Promise<number | undefined> {
     const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/sendMessage`;
 
     const response = await fetch(url, {
@@ -58,6 +62,9 @@ export class TelegramBot {
       const error = await response.text();
       throw new Error(`Telegram API error: ${error}`);
     }
+
+    const result = (await response.json()) as { result?: { message_id: number } };
+    return result.result?.message_id;
   }
 
   /**
@@ -91,8 +98,9 @@ export class TelegramBot {
 
   /**
    * Send a plain text message (no formatting)
+   * Returns the message ID if successful
    */
-  async sendPlainMessage(text: string): Promise<void> {
+  async sendPlainMessage(text: string): Promise<number | undefined> {
     const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/sendMessage`;
 
     const response = await fetch(url, {
@@ -108,6 +116,59 @@ export class TelegramBot {
       const error = await response.text();
       throw new Error(`Telegram API error: ${error}`);
     }
+
+    const result = (await response.json()) as { result?: { message_id: number } };
+    return result.result?.message_id;
+  }
+
+  /**
+   * Edit an existing message
+   */
+  async editMessage(
+    messageId: number,
+    text: string,
+    parseMode: "Markdown" | "HTML" = "Markdown"
+  ): Promise<void> {
+    const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/editMessageText`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: this.config.chatId,
+        message_id: messageId,
+        text: formatForTelegram(text),
+        parse_mode: parseMode,
+      }),
+    });
+
+    if (!response.ok) {
+      // Silently fail - original message still shows
+    }
+  }
+
+  /**
+   * Send a status message that will be updated when the operation completes
+   * Returns functions to update or complete the message
+   */
+  async sendStatusMessage(initialText: string): Promise<{
+    update: (text: string) => Promise<void>;
+    complete: (text: string) => Promise<void>;
+    fail: (text: string) => Promise<void>;
+  }> {
+    const messageId = await this.sendPlainMessage(initialText);
+
+    return {
+      update: async (text: string) => {
+        if (messageId) await this.editMessage(messageId, text);
+      },
+      complete: async (text: string) => {
+        if (messageId) await this.editMessage(messageId, text);
+      },
+      fail: async (text: string) => {
+        if (messageId) await this.editMessage(messageId, `❌ ${text}`);
+      },
+    };
   }
 
   /**

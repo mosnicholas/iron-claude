@@ -80,6 +80,18 @@ Keep it concise - this is for Telegram. Use emoji sparingly.`
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    // Notify user of failure
+    try {
+      const bot = createTelegramBot();
+      await bot.sendMessage(
+        `⚠️ Morning reminder failed to send. ` +
+          `Check /today to see your workout, or ask me "what's my workout today?"`
+      );
+    } catch {
+      // Ignore notification failure
+    }
+
     return {
       success: false,
       error: errorMessage,

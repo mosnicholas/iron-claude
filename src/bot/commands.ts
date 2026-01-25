@@ -223,6 +223,20 @@ export function commandExists(command: string): boolean {
   return command in COMMANDS;
 }
 
+// Commands that benefit from loading indicator (they call agent.chat which is slow)
+const SLOW_COMMANDS = ["prs", "plan", "today", "done", "tired", "skip", "demo", "traveling"];
+
+const LOADING_MESSAGES: Record<string, string> = {
+  prs: "📊 Looking up your PRs...",
+  plan: "📋 Loading your plan...",
+  today: "📋 Checking today's workout...",
+  done: "✅ Wrapping up your workout...",
+  tired: "💭 Thinking about alternatives...",
+  skip: "📝 Updating your plan...",
+  demo: "🎥 Finding a demo...",
+  traveling: "✈️ Noting your travel...",
+};
+
 /**
  * Execute a command
  */
@@ -236,5 +250,21 @@ export async function executeCommand(
   if (!handler) {
     return handleUnknownCommand(command);
   }
+
+  // For slow commands, send a status message that will be updated
+  if (SLOW_COMMANDS.includes(command)) {
+    const status = await bot.sendStatusMessage(LOADING_MESSAGES[command] || "Working on it...");
+
+    try {
+      const result = await handler(agent, bot, args);
+      await status.complete(result);
+      return ""; // Empty string signals webhook not to send another message
+    } catch {
+      await status.fail("Something went wrong. Please try again.");
+      return "";
+    }
+  }
+
+  // Fast commands (start, help) - return directly
   return handler(agent, bot, args);
 }

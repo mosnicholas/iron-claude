@@ -106,7 +106,10 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
 
       if (commandExists(command)) {
         const response = await executeCommand(command, args, agent, bot);
-        await bot.sendMessageSafe(response);
+        // Only send if response is non-empty (status messages handle their own output)
+        if (response) {
+          await bot.sendMessageSafe(response);
+        }
       } else {
         await bot.sendMessage(`Unknown command /${command}. Try /help to see available commands.`);
       }
