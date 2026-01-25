@@ -1,78 +1,67 @@
-# Workout Coaching Context
+# IronClaude Development
 
-## Profile
-- Name: Nick
-- Location: NYC
-- Gym: Equinox
-- Experience: Advanced (3+ years lifting), Early intermediate calisthenics
+## Architecture
 
-## Goals
-### Primary
-- Build strength (main lifts)
-- Lose fat
-- Calisthenics skills: handstand push-ups, planche
+### Two-Repo Setup
+- **workout-routine** (this repo): System code, coaching logic, bot infrastructure
+- **fitness-data** (private): Personal profile, workout logs, PRs, plans, retrospectives
 
-### Targets (with dates)
-- [ ] Freestanding handstand: 30s by [date]
-- [ ] Wall HSPU: 5 reps by [date]
-- [ ] OHP: 135 lbs x 5 by [date]
-- [ ] Weighted pull-up: +45 lbs x 5 by [date]
-- [ ] Back squat: [target] by [date]
-- [ ] Planche: Tuck hold 10s by [date]
+### Repo Structure
 
-## Preferences
-- Anti-boredom: Rotate exercises every 2 weeks (see exercise-variations.md)
-- Skill-first: Always do calisthenics when fresh
-- Session length: 45-60 min max
-- 5 days on, 2 rest (Sat/Sun rest)
+```
+workout-routine/
+├── src/                  # Bot source code
+├── scripts/              # Deployment and setup scripts
+├── .env.example          # Environment template
+└── CLAUDE.md             # This file
+```
 
-## Current Status
-- Program week: 1 of 8 (starting fresh)
-- Last deload: N/A (starting tracking)
-- Current bodyweight: [update when known]
+## Development Guidelines
 
-## Recent PRs (update as achieved)
-<!-- Claude will track these from logs automatically -->
-| Exercise | Weight | Reps | Date |
-|----------|--------|------|------|
-| | | | |
+### Code Style
+- TypeScript for all source files
+- Prefer async/await over callbacks
+- Keep functions small and focused
+- Use descriptive variable names
 
-## Injuries & Limitations
-<!-- Empty unless injured -->
-- None currently
+### Environment
+- Uses Vercel for deployment
+- Telegram bot via Grammy framework
+- GitHub API for data persistence
 
-## Equinox/NYC Context
-- Classes available: Yoga, Pilates, cycling, HIIT, etc.
-- Preferred location: [location]
-- Schedule constraints: [any]
+### Testing Changes
+- Run `npm run dev` for local development
+- Test bot commands via Telegram before deploying
 
-## Notes for Claude
-- I respond well to direct feedback
-- Push me on weights when form is good
-- Remind me about mobility on rest days
-- Reference weekly-routine.md for base program structure
-- Reference exercise-variations.md for 8-week rotation
+## Claude Behavior
 
----
+### Skills Reference
+- `/plan-week` - Weekly planning workflow (includes progressive overload & deload logic)
+- `/analyze` - Progress analysis and recommendations
 
-## Coaching Logic Reference
+### After Creating/Updating a Plan
+1. Commit plan to athlete's fitness-data repo
+2. Summarize changes to athlete via Telegram
+3. Update any relevant files (prs.yaml if PRs mentioned, learnings.md if patterns noted)
 
-### Deload Recommendation
-Recommend deload when 4+ weeks since last deload AND any of:
-- RPE consistently >8.5 on main lifts
-- Reps declining at same weight for 2+ sessions
-- Sleep/energy consistently <6/10
-- User reports unusual fatigue/soreness
-
-### Progressive Overload
-Recommend weight increase when:
-- Hit top of rep range (e.g., 4x6 when range is 5-6)
-- RPE <8 on final sets
-- Form notes are positive
-- Increment: +5 lbs barbell, +2.5-5 lbs DB
+### After Logging a Workout
+1. Save workout log to `workouts/YYYY-MM-DD.md`
+2. Check for new PRs and update `prs.yaml` if found
+3. Provide brief feedback on the session
+4. Note any patterns for `learnings.md`
 
 ### Weekly Workflow (Sundays)
-1. Read: CLAUDE.md, last 2-4 weeks in weeks/ (plan + logs)
-2. Analyze: Weight progression, volume, RPE, skill progress, fatigue
-3. Generate: Next week's plan.md in weeks/YYYY-WXX/
-4. Update: CLAUDE.md with program week, PRs, notes
+1. **Read**: profile.md, learnings.md, last 2-4 weeks of workouts/plans
+2. **Analyze**: Weight progression, volume, RPE, skill progress, fatigue markers
+3. **Generate**: Next week's plan in `plans/`
+4. **Update**: PRs if new records, learnings.md if new patterns emerge
+5. **Create**: Retrospective in `retrospectives/`
+
+### Data Updates
+All athlete data changes go to their fitness-data repo:
+- `profile.md` - Goals, preferences, limitations
+- `learnings.md` - Coaching observations
+- `prs.yaml` - Personal records
+- `workouts/` - Session logs
+- `plans/` - Training plans
+- `retrospectives/` - Weekly analysis
