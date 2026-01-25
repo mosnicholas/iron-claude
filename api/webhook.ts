@@ -21,8 +21,11 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ): Promise<void> {
+  console.log('[webhook] Received request:', req.method);
+
   // Only accept POST requests
   if (req.method !== 'POST') {
+    console.log('[webhook] Rejected: not POST');
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
@@ -32,17 +35,35 @@ export default async function handler(
 
     // Verify webhook secret if configured
     const secretToken = req.headers['x-telegram-bot-api-secret-token'] as string | null;
+    const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    console.log('[webhook] Secret check:', {
+      hasSecretHeader: !!secretToken,
+      hasExpectedSecret: !!expectedSecret,
+      secretHeaderLength: secretToken?.length,
+      expectedSecretLength: expectedSecret?.length,
+    });
+
     if (!bot.verifyWebhook(secretToken)) {
+      console.log('[webhook] Rejected: webhook secret mismatch');
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
 
     const update: TelegramUpdate = req.body;
+    console.log('[webhook] Update received:', {
+      hasMessage: !!update.message,
+      chatId: update.message?.chat?.id,
+      text: update.message?.text?.slice(0, 50),
+    });
 
     // Verify this is from the authorized chat
     const chatId = update.message?.chat.id;
+    const authorizedChatId = process.env.TELEGRAM_CHAT_ID;
+    console.log('[webhook] Chat auth:', { chatId, authorizedChatId, match: String(chatId) === authorizedChatId });
+
     if (!chatId || !bot.isAuthorizedChat(chatId)) {
       // Silently ignore unauthorized messages
+      console.log('[webhook] Rejected: unauthorized chat');
       res.status(200).json({ ok: true });
       return;
     }
