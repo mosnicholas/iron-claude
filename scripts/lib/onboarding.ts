@@ -6,11 +6,31 @@
  */
 
 import * as readline from 'readline';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+import { confirm } from '@inquirer/prompts';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { ui } from './ui.js';
 import { loadPrompt } from '../../src/coach/prompts.js';
 import { syncRepo, pushChanges } from '../../src/storage/repo-sync.js';
 import { extractTextFromMessage, extractToolsFromMessage } from '../../src/utils/sdk-helpers.js';
+
+/**
+ * Check if onboarding has been completed by looking at profile.md
+ */
+function isOnboardingComplete(repoPath: string): boolean {
+  const profilePath = join(repoPath, 'profile.md');
+  if (!existsSync(profilePath)) return false;
+
+  const content = readFileSync(profilePath, 'utf-8');
+
+  // Check if profile has been filled out (not just the template)
+  // The template has 'name: ""' - a filled profile has an actual name
+  const hasName = /name:\s*"[^"]+"/i.test(content) || /name:\s*[^\s"]+/i.test(content);
+  const isNotTemplate = !content.includes('*Run the onboarding conversation to fill this out.*');
+
+  return hasName && isNotTemplate;
+}
 
 async function runQuery(
   prompt: string,
@@ -53,6 +73,25 @@ export async function runOnboardingConversation(): Promise<void> {
     token,
   });
   syncSpinner.success({ text: 'Repository synced' });
+
+  // Check if onboarding was already completed
+  if (isOnboardingComplete(repoPath)) {
+    ui.success('Profile already exists!');
+    ui.blank();
+
+    const redo = await confirm({
+      message: 'Do you want to redo onboarding?',
+      default: false,
+    });
+
+    if (!redo) {
+      ui.info('Skipping onboarding, using existing profile.');
+      return;
+    }
+
+    ui.blank();
+    ui.info('Starting fresh onboarding...');
+  }
 
   const onboardingPrompt = loadPrompt('onboarding');
 
