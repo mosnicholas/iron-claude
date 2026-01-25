@@ -45,7 +45,7 @@ function generateSecret(length: number = 32): string {
 export async function deployToVercel(
   credentials: Credentials,
   repoName: string
-): Promise<string> {
+): Promise<string | undefined> {
   ui.step(4, 5, 'Deploy');
 
   // Check Vercel CLI
@@ -126,33 +126,55 @@ export async function deployToVercel(
     throw error;
   }
 
-  // Deploy
-  const deploySpinner = ui.spinner('Deploying to Vercel (this may take a minute)...');
+  // Deploy - use spawnSync with inherited stdio to show real-time output
+  ui.info('Deploying to Vercel...');
+  ui.blank();
+
   try {
-    const deployOutput = execSync('vercel --prod --yes', {
+    const result = spawnSync('vercel', ['--prod', '--yes'], {
+      stdio: 'inherit',
       encoding: 'utf-8',
-      timeout: 300000, // 5 minute timeout
+      timeout: 600000, // 10 minute timeout
     });
 
-    // Extract URL from output
-    const urlMatch = deployOutput.match(/https:\/\/[^\s]+\.vercel\.app/);
-    const deployUrl = urlMatch?.[0];
-
-    if (!deployUrl) {
-      // Try to get the URL from vercel inspect
-      const inspectOutput = execSync('vercel ls --prod', { encoding: 'utf-8' });
-      const inspectMatch = inspectOutput.match(/https:\/\/[^\s]+\.vercel\.app/);
-      if (inspectMatch) {
-        deploySpinner.success({ text: `Deployed: ${inspectMatch[0]}` });
-        return inspectMatch[0];
-      }
-      throw new Error('Could not determine deployment URL');
+    if (result.error) {
+      throw result.error;
     }
 
-    deploySpinner.success({ text: `Deployed: ${deployUrl}` });
-    return deployUrl;
+    if (result.status !== 0) {
+      throw new Error('Vercel deployment failed');
+    }
+
+    ui.blank();
+
+    // Get the deployment URL
+    const inspectOutput = execSync('vercel ls --prod 2>/dev/null | head -5', {
+      encoding: 'utf-8',
+    });
+    const urlMatch = inspectOutput.match(/https:\/\/[^\s]+\.vercel\.app/);
+    const deployUrl = urlMatch?.[0];
+
+    if (deployUrl) {
+      ui.success(`Deployed: ${deployUrl}`);
+      return deployUrl;
+    }
+
+    // Fallback: get URL from vercel inspect
+    const inspectJson = execSync('vercel inspect --json 2>/dev/null || true', {
+      encoding: 'utf-8',
+    });
+    const jsonMatch = inspectJson.match(/"url":\s*"([^"]+)"/);
+    if (jsonMatch) {
+      const url = `https://${jsonMatch[1]}`;
+      ui.success(`Deployed: ${url}`);
+      return url;
+    }
+
+    ui.warn('Deployment succeeded but could not determine URL.');
+    ui.info('Check your Vercel dashboard for the deployment URL.');
+    return undefined;
   } catch (error) {
-    deploySpinner.error({ text: 'Deployment failed' });
+    ui.error('Deployment failed');
     throw error;
   }
 }
