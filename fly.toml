@@ -2,6 +2,8 @@ app = "workout-coach"
 primary_region = "ewr"  # New York/Newark
 
 [build]
+  # Pass commit SHA for deployment notifications:
+  # fly deploy --build-arg GIT_COMMIT_SHA=$(git rev-parse HEAD)
 
 [http_service]
   internal_port = 8080

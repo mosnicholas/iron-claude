@@ -1,5 +1,9 @@
 FROM node:24-slim
 
+# Build arg for version tracking
+ARG GIT_COMMIT_SHA=unknown
+ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
+
 # Install git (required by Claude Agent SDK), curl (for cron jobs), and ca-certificates
 RUN apt-get update && apt-get install -y git curl ca-certificates && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/local/bin/node /usr/bin/node \
