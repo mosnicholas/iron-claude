@@ -6,6 +6,8 @@ primary_region = "ewr"  # New York/Newark
 [http_service]
   internal_port = 8080
   force_https = true
+  # Keep machine running 24/7 for instant responses and reliable cron jobs.
+  # Cost: ~$5-7/month. Set to true to reduce costs (adds cold-start latency).
   auto_stop_machines = false
   auto_start_machines = true
   min_machines_running = 1

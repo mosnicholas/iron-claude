@@ -250,6 +250,23 @@ Send a message to your bot on Telegram. You should get a response.
 
 ---
 
+## Health Check
+
+The `/health` endpoint returns the application status:
+
+```bash
+curl https://workout-coach.fly.dev/health
+```
+
+**Response:**
+```json
+{"status": "ok"}
+```
+
+Use this to verify the app is running. Fly.io uses this endpoint internally to monitor machine health.
+
+---
+
 ## Monitoring
 
 ### View logs
