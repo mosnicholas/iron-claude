@@ -48,7 +48,7 @@ async function createRepository(
       name: repoName,
       description: 'Personal fitness data - managed by IronClaude',
       private: true,
-      auto_init: true,
+      auto_init: false,
     }),
   });
 
@@ -227,8 +227,8 @@ export async function createGitHubRepo(
   // Create repository
   const fullName = await createRepository(token, repoName);
 
-  // Wait for GitHub to process
-  await new Promise((resolve) => setTimeout(resolve, 1500));
+  // Brief wait for GitHub to process repo creation
+  await new Promise((resolve) => setTimeout(resolve, 500));
 
   // Create initial files
   await createFile(token, fullName, 'profile.md', INITIAL_PROFILE, 'Initialize profile');
