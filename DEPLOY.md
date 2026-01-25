@@ -66,8 +66,9 @@ This will:
 1. Collect your credentials
 2. Create the fitness-data GitHub repo
 3. Run the onboarding conversation
-4. Deploy to Fly.io
-5. Configure the Telegram webhook
+4. Configure your Fly.io app (generates `fly.toml`)
+5. Deploy to Fly.io
+6. Configure the Telegram webhook
 
 ---
 
@@ -119,6 +120,18 @@ fly auth login
 
 ## Step 5: Deploy to Fly.io
 
+### Configure fly.toml
+
+Copy the template and customize it:
+
+```bash
+cp fly.toml.example fly.toml
+```
+
+Edit `fly.toml` and update:
+- `app` - Your unique app name (e.g., `my-fitness-coach`)
+- `primary_region` - Your nearest [Fly.io region](https://fly.io/docs/reference/regions/) (e.g., `ewr`, `lax`, `lhr`)
+
 ### Build the application
 
 ```bash
@@ -126,10 +139,11 @@ npm install
 npm run build
 ```
 
-### Create the app (first time only)
+### Create the app and volume (first time only)
 
 ```bash
-fly apps create workout-coach
+fly apps create <your-app-name>
+fly volumes create fitness_data --region <your-region> --size 1
 ```
 
 ### Set secrets
@@ -164,12 +178,12 @@ fly deploy
 Tell Telegram where to send messages:
 
 ```bash
-curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://workout-coach.fly.dev/api/webhook&secret_token=<WEBHOOK_SECRET>"
+curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<your-app>.fly.dev/api/webhook&secret_token=<WEBHOOK_SECRET>"
 ```
 
 Or use the helper script:
 ```bash
-npm run set-webhook https://workout-coach.fly.dev/api/webhook
+npm run set-webhook https://<your-app>.fly.dev/api/webhook
 ```
 
 ### Verify webhook is set:
@@ -200,6 +214,8 @@ curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `GEMINI_API_KEY` | For voice message transcription | _(none)_ |
+| `GIT_COMMIT_EMAIL` | Email for data repo commits | `coach@fitness-bot.local` |
+| `GIT_COMMIT_NAME` | Name for data repo commits | `Fitness Coach` |
 
 ---
 
@@ -241,7 +257,7 @@ curl http://localhost:8080/health
 
 ```bash
 # With CRON_SECRET
-curl -H "Authorization: Bearer YOUR_SECRET" https://workout-coach.fly.dev/api/cron/daily-reminder
+curl -H "Authorization: Bearer YOUR_SECRET" https://<your-app>.fly.dev/api/cron/daily-reminder
 ```
 
 ### Test bot
@@ -255,7 +271,7 @@ Send a message to your bot on Telegram. You should get a response.
 The `/health` endpoint returns the application status:
 
 ```bash
-curl https://workout-coach.fly.dev/health
+curl https://<your-app>.fly.dev/health
 ```
 
 **Response:**
@@ -360,3 +376,49 @@ To reduce costs, you can enable auto-stop (machine stops when idle):
 ```
 
 Note: This adds cold-start latency when the bot receives a message after being idle.
+
+---
+
+## Auto-Deploy (Optional)
+
+Set up automatic deployments when you push to GitHub.
+
+### Option A: Fly.io Dashboard (Recommended)
+
+Connect your Fly.io app directly to GitHub:
+
+1. Deploy once manually: `fly deploy`
+2. Go to [Fly.io Dashboard](https://fly.io/dashboard) → Your App → Settings
+3. Connect to your GitHub repository
+4. Fly.io will auto-deploy on push to main
+
+**Pros:** Simple, no tokens to manage
+**Cons:** Less control over build process
+
+### Option B: GitHub Actions
+
+This repo includes GitHub Actions workflows that are disabled by default.
+
+To enable auto-deploy:
+
+1. Go to your repo: **Settings → Secrets and variables → Actions**
+2. Add a **variable**: `ENABLE_FLY_DEPLOY` = `true`
+3. Add a **secret**: `FLY_API_TOKEN` = your Fly.io deploy token
+4. (Optional) Add variable `FLY_REGION` for PR previews (default: `ewr`)
+
+Generate a Fly.io token:
+```bash
+fly tokens create deploy -x 999999h
+```
+
+**Pros:** Full control, PR preview environments
+**Cons:** Requires managing tokens
+
+### For Forks
+
+If you fork this repo, the deploy workflows will **not** run automatically (they check for `ENABLE_FLY_DEPLOY`). This is intentional - each fork manages its own deployment.
+
+To deploy your fork:
+1. Configure your own `fly.toml`
+2. Deploy manually with `fly deploy`
+3. Or enable GitHub Actions in your fork's settings

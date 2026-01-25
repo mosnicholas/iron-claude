@@ -5,8 +5,31 @@
  */
 
 import { execSync, spawnSync } from "child_process";
+import { readFileSync, existsSync } from "fs";
 import { ui } from "./ui.js";
 import type { Credentials } from "./credentials.js";
+
+/**
+ * Read app name from fly.toml
+ */
+function getAppNameFromFlyToml(): string {
+  const flyTomlPath = "fly.toml";
+
+  if (!existsSync(flyTomlPath)) {
+    throw new Error(
+      "fly.toml not found. Copy fly.toml.example to fly.toml and configure your app name."
+    );
+  }
+
+  const content = readFileSync(flyTomlPath, "utf-8");
+  const match = content.match(/^app\s*=\s*"([^"]+)"/m);
+
+  if (!match) {
+    throw new Error("Could not find app name in fly.toml");
+  }
+
+  return match[1];
+}
 
 /**
  * Check if Fly CLI is installed and user is logged in
@@ -45,7 +68,7 @@ export async function deployToFly(
   credentials: Credentials,
   repoName: string
 ): Promise<string | undefined> {
-  ui.step(4, 5, "Deploy");
+  ui.step(5, 6, "Deploy");
 
   const { installed, loggedIn } = checkFlyCli();
 
@@ -69,8 +92,9 @@ export async function deployToFly(
   ui.info("Building application...");
   execSync("npm run build", { stdio: "inherit" });
 
-  // App name from fly.toml
-  const appName = "workout-coach";
+  // Read app name from fly.toml
+  const appName = getAppNameFromFlyToml();
+  ui.info(`App name: ${appName}`);
 
   try {
     // Check if app exists
@@ -141,7 +165,7 @@ export async function deployToFly(
  * Skip deployment and return instructions for manual setup
  */
 export function skipDeployment(credentials: Credentials, repoName: string): void {
-  ui.step(4, 5, "Deploy");
+  ui.step(5, 6, "Deploy");
   ui.info("Skipping automatic deployment.");
   ui.blank();
   ui.info("To deploy manually, set these secrets in Fly.io:");

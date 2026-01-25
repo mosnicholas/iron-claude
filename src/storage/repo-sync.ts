@@ -79,8 +79,11 @@ export async function syncRepo(config: RepoConfig): Promise<string> {
     git(["clone", authUrl, REPO_DIR]);
   }
 
-  git(["config", "user.email", "coach@fitness-bot.local"], REPO_DIR);
-  git(["config", "user.name", "Fitness Coach"], REPO_DIR);
+  // Configure git identity (customizable via env vars)
+  const gitEmail = process.env.GIT_COMMIT_EMAIL || "coach@fitness-bot.local";
+  const gitName = process.env.GIT_COMMIT_NAME || "Fitness Coach";
+  git(["config", "user.email", gitEmail], REPO_DIR);
+  git(["config", "user.name", gitName], REPO_DIR);
 
   return REPO_DIR;
 }

@@ -1,0 +1,42 @@
+# Fly.io Configuration Template
+# Copy this file to fly.toml and update the values below.
+#
+# Quick setup:
+#   cp fly.toml.example fly.toml
+#   # Edit app name and region below
+#   fly apps create <your-app-name>
+#   fly volumes create fitness_data --region <your-region> --size 1
+#   fly deploy
+
+# REQUIRED: Change this to your unique app name
+app = "my-fitness-coach"
+
+# REQUIRED: Change to your nearest Fly.io region
+# Common regions: ewr (New York), lax (LA), lhr (London), sin (Singapore)
+# Full list: https://fly.io/docs/reference/regions/
+primary_region = "ewr"
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Keep machine running 24/7 for instant responses and reliable cron jobs.
+  # Cost: ~$5-7/month. Set to true to reduce costs (adds cold-start latency).
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[env]
+  NODE_ENV = "production"
+
+# Persistent storage for fitness-data repo cache
+# Create with: fly volumes create fitness_data --region <your-region> --size 1
+[mounts]
+  source = "fitness_data"
+  destination = "/data"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1

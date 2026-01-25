@@ -13,6 +13,7 @@ import { ui } from "./lib/ui.js";
 import { collectCredentials } from "./lib/credentials.js";
 import { createGitHubRepo, verifyGitHubToken } from "./lib/github.js";
 import { runOnboardingConversation } from "./lib/onboarding.js";
+import { flyTomlExists, collectFlyConfig, generateFlyToml } from "./lib/flyconfig.js";
 import { deployToFly, checkFlyCli, skipDeployment } from "./lib/deploy.js";
 import { setWebhook } from "./lib/webhook.js";
 
@@ -23,8 +24,8 @@ async function main() {
   console.log("  • Collect your API credentials");
   console.log("  • Create a private GitHub repo for your data");
   console.log("  • Set up your fitness profile (AI conversation)");
-  console.log("  • Deploy to Fly.io");
-  console.log("  • Connect your Telegram bot");
+  console.log("  • Configure Fly.io deployment");
+  console.log("  • Deploy and connect your Telegram bot");
   ui.blank();
 
   try {
@@ -67,7 +68,19 @@ async function main() {
     await runOnboardingConversation();
 
     // ──────────────────────────────────────────────────────────────────────
-    // Step 4: Deploy to Fly.io
+    // Step 4: Configure Fly.io
+    // ──────────────────────────────────────────────────────────────────────
+    ui.step(4, 6, "Fly.io Config");
+
+    if (!flyTomlExists()) {
+      const flyConfig = await collectFlyConfig();
+      generateFlyToml(flyConfig);
+    } else {
+      ui.info("fly.toml already exists, using existing configuration");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Step 5: Deploy to Fly.io
     // ──────────────────────────────────────────────────────────────────────
     const { installed } = checkFlyCli();
 
@@ -85,16 +98,16 @@ async function main() {
         skipDeployment(credentials, repoName);
       }
     } else {
-      ui.step(4, 5, "Deploy");
+      ui.step(5, 6, "Deploy");
       ui.warn("Fly CLI not found. Install with: curl -L https://fly.io/install.sh | sh");
       skipDeployment(credentials, repoName);
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // Step 5: Set webhook
+    // Step 6: Set webhook
     // ──────────────────────────────────────────────────────────────────────
     if (deployUrl) {
-      ui.step(5, 5, "Connect Bot");
+      ui.step(6, 6, "Connect Bot");
 
       const webhookSpinner = ui.spinner("Setting Telegram webhook...");
       try {
@@ -106,7 +119,7 @@ async function main() {
         throw error;
       }
     } else {
-      ui.step(5, 5, "Connect Bot");
+      ui.step(6, 6, "Connect Bot");
       ui.info("Skipped - deploy first, then run:");
       ui.info("  npm run set-webhook <your-deploy-url>/api/webhook");
     }
