@@ -24,6 +24,3 @@ Thumbs.db
 *.swp
 *.swo
 
-# Archive (old implementation)
-/archive/
-/bot/
