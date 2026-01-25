@@ -1,0 +1,32 @@
+name: Deploy to Fly.io
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy app
+    needs: ci
+    runs-on: ubuntu-latest
+    # Only runs for repos that opt-in via repository variable
+    # To enable: Settings → Secrets and variables → Actions → Variables → New variable
+    # Name: ENABLE_FLY_DEPLOY, Value: true
+    if: vars.ENABLE_FLY_DEPLOY == 'true'
+    concurrency: deploy-group
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

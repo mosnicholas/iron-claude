@@ -1,0 +1,11 @@
+# Fitness Coach Scheduled Tasks
+# Times are in UTC - adjust based on your timezone
+
+# Daily reminder - 11:00 UTC (6:00 AM EST) on weekdays
+0 11 * * 1-5 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/daily-reminder
+
+# Weekly retrospective - 23:00 UTC (6:00 PM EST) on Saturday
+0 23 * * 6 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/weekly-retro
+
+# Weekly plan - 01:00 UTC (8:00 PM EST) on Sunday
+0 1 * * 0 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/weekly-plan

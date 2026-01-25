@@ -1,0 +1,61 @@
+# Fitness Coach Settings
+# Global configuration for the coach system
+
+# Default timezone (IANA format)
+# Override with TIMEZONE environment variable
+timezone: America/New_York
+
+# Reminder times (in user's timezone)
+reminders:
+  daily:
+    enabled: true
+    time: "06:00"
+    days: [mon, tue, wed, thu, fri] # Weekdays only by default
+
+# Weekly automation schedule
+weekly:
+  retrospective:
+    day: saturday
+    time: "18:00"
+  planning:
+    day: sunday
+    time: "20:00"
+
+# Workout session defaults
+workout:
+  # Time before considering a workout "abandoned" (hours)
+  abandonedTimeout: 4
+  # Default workout duration (minutes)
+  defaultDuration: 45
+  # Maximum workout duration before warning (minutes)
+  maxDuration: 90
+
+# Progressive overload defaults
+progression:
+  # Weight increment for barbells (lbs)
+  barbellIncrement: 5
+  # Weight increment for dumbbells (lbs)
+  dumbbellIncrement: 2.5
+  # RPE threshold for increasing weight
+  rpeThreshold: 8
+  # Weeks between deloads (if no other signals)
+  defaultDeloadWeeks: 6
+
+# PR tracking
+prs:
+  # Exercises to always track PRs for
+  primaryExercises:
+    - bench_press
+    - squat
+    - deadlift
+    - overhead_press
+    - weighted_pull_up
+  # Minimum sessions before tracking as secondary
+  secondaryThreshold: 5
+
+# Message formatting
+messages:
+  # Maximum message length for Telegram (chars)
+  maxLength: 4000
+  # Emoji usage level: none, minimal, moderate
+  emojiLevel: minimal

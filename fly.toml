@@ -1,0 +1,27 @@
+app = "workout-coach"
+primary_region = "ewr"  # New York/Newark
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Keep machine running 24/7 for instant responses and reliable cron jobs.
+  # Cost: ~$5-7/month. Set to true to reduce costs (adds cold-start latency).
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[env]
+  NODE_ENV = "production"
+
+# Persistent storage for fitness-data repo cache
+# Create with: fly volumes create fitness_data --region ewr --size 1
+[mounts]
+  source = "fitness_data"
+  destination = "/data"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
