@@ -25,6 +25,8 @@ export const COMMANDS: Record<string, CommandHandler> = {
   prs: handlePRs,
   demo: handleDemo,
   traveling: handleTraveling,
+  me: handleMe,
+  summary: handleSummary,
 };
 
 /**
@@ -72,6 +74,8 @@ async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string):
 
 📊 **Progress**
 • /prs - Show personal records and trends
+• /me - Quick facts about your profile
+• /summary - Your fitness journey overview
 • /demo [exercise] - Find video demonstration
 
 ✈️ **Life**
@@ -210,6 +214,38 @@ async function handleTraveling(
 }
 
 /**
+ * /me - Factual profile summary
+ */
+async function handleMe(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
+  const response = await agent.chat(
+    "Give me a factual summary about myself. Read profile.md and prs.yaml, then tell me:\n" +
+      "1. My basic info (name, training schedule, goals)\n" +
+      "2. My current PRs for main lifts\n" +
+      "3. Any limitations or preferences you know about\n" +
+      "4. My gym/equipment setup\n\n" +
+      "Keep it factual and concise — just the facts, no commentary."
+  );
+  return response.message;
+}
+
+/**
+ * /summary - AI-driven journey overview with personality
+ */
+async function handleSummary(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
+  const response = await agent.chat(
+    "Give me a broad view of where I am in my fitness journey. Read profile.md, learnings.md, prs.yaml, " +
+      "recent workouts, and recent retrospectives. Then tell me:\n" +
+      "1. Where I am relative to my stated goals\n" +
+      "2. How my training has been going lately (trends, consistency)\n" +
+      "3. What's working well and what could improve\n" +
+      "4. A few cheeky observations — compare what I said I'd do vs what I actually did. " +
+      "If I've been slacking, call it out playfully. If I've been crushing it, give me credit.\n\n" +
+      "Be honest, be a bit cheeky, but stay supportive. This should feel like a coach who knows me well."
+  );
+  return response.message;
+}
+
+/**
  * Handle an unknown command
  */
 export function handleUnknownCommand(command: string): string {
@@ -224,7 +260,18 @@ export function commandExists(command: string): boolean {
 }
 
 // Commands that benefit from loading indicator (they call agent.chat which is slow)
-const SLOW_COMMANDS = ["prs", "plan", "today", "done", "tired", "skip", "demo", "traveling"];
+const SLOW_COMMANDS = [
+  "prs",
+  "plan",
+  "today",
+  "done",
+  "tired",
+  "skip",
+  "demo",
+  "traveling",
+  "me",
+  "summary",
+];
 
 const LOADING_MESSAGES: Record<string, string> = {
   prs: "📊 Looking up your PRs...",
@@ -235,6 +282,8 @@ const LOADING_MESSAGES: Record<string, string> = {
   skip: "📝 Updating your plan...",
   demo: "🎥 Finding a demo...",
   traveling: "✈️ Noting your travel...",
+  me: "📋 Pulling up your profile...",
+  summary: "🔍 Reviewing your journey...",
 };
 
 /**
