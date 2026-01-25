@@ -7,6 +7,7 @@
 
 import { createCoachAgent } from '../coach/index.js';
 import { createTelegramBot } from '../bot/telegram.js';
+import { createGitHubStorage } from '../storage/github.js';
 import { getCurrentWeek, getToday, formatDateHuman } from '../utils/date.js';
 
 export interface DailyReminderResult {
@@ -24,7 +25,7 @@ export async function runDailyReminder(): Promise<DailyReminderResult> {
   try {
     const bot = createTelegramBot();
     const agent = createCoachAgent({ timezone });
-    const storage = agent.getStorage();
+    const storage = createGitHubStorage();
 
     // Check if profile exists (if not, skip)
     const profile = await storage.readProfile();

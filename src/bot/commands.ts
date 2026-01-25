@@ -6,6 +6,7 @@
 
 import { CoachAgent } from '../coach/index.js';
 import { TelegramBot } from './telegram.js';
+import { createGitHubStorage } from '../storage/github.js';
 import { getCurrentWeek } from '../utils/date.js';
 
 export type CommandHandler = (
@@ -34,11 +35,11 @@ export const COMMANDS: Record<string, CommandHandler> = {
  * /start - Initial greeting
  */
 async function handleStart(
-  agent: CoachAgent,
+  _agent: CoachAgent,
   _bot: TelegramBot,
   _args: string
 ): Promise<string> {
-  const storage = agent.getStorage();
+  const storage = createGitHubStorage();
   const profile = await storage.readProfile();
 
   if (!profile) {

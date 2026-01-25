@@ -13,6 +13,7 @@
     "lint": "eslint src/**/*.ts"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.19",
     "@anthropic-ai/sdk": "^0.71.2",
     "@google/generative-ai": "^0.24.1",
     "yaml": "^2.8.2"

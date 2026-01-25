@@ -7,6 +7,7 @@
 
 import { createCoachAgent } from '../coach/index.js';
 import { createTelegramBot } from '../bot/telegram.js';
+import { createGitHubStorage } from '../storage/github.js';
 import { buildRetrospectivePrompt } from '../coach/prompts.js';
 import { getCurrentWeek } from '../utils/date.js';
 
@@ -26,7 +27,7 @@ export async function runWeeklyRetro(): Promise<WeeklyRetroResult> {
   try {
     const bot = createTelegramBot();
     const agent = createCoachAgent({ timezone, maxTurns: 15 });
-    const storage = agent.getStorage();
+    const storage = createGitHubStorage();
 
     // Check if profile exists
     const profile = await storage.readProfile();
@@ -103,8 +104,7 @@ Workout files found: ${thisWeekWorkouts.length}`
  * Check if the retrospective already exists for a week
  */
 export async function retroExists(week: string): Promise<boolean> {
-  const agent = createCoachAgent();
-  const storage = agent.getStorage();
+  const storage = createGitHubStorage();
   const retros = await storage.listRetrospectives();
   return retros.some(r => r.includes(week));
 }

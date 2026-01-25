@@ -11,9 +11,6 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROMPTS_DIR = join(__dirname, '../../prompts');
 
-/**
- * Load a prompt file
- */
 export function loadPrompt(name: string): string {
   const path = join(PROMPTS_DIR, `${name}.md`);
 
@@ -24,9 +21,6 @@ export function loadPrompt(name: string): string {
   return readFileSync(path, 'utf-8');
 }
 
-/**
- * Load a partial prompt
- */
 export function loadPartial(name: string): string {
   const path = join(PROMPTS_DIR, 'partials', `${name}.md`);
 
@@ -37,19 +31,27 @@ export function loadPartial(name: string): string {
   return readFileSync(path, 'utf-8');
 }
 
-/**
- * Build the full system prompt with context
- */
-export function buildSystemPrompt(contextSection: string): string {
+export function buildSystemPrompt(timezone: string): string {
   const systemPrompt = loadPrompt('system');
 
-  // Load partials
   const exerciseParsing = loadPartial('exercise-parsing');
   const workoutManagement = loadPartial('workout-management');
   const prDetection = loadPartial('pr-detection');
 
-  // Combine partials into context
-  const partialsSection = `
+  const contextNote = `
+## File Access
+
+You have direct access to the fitness-data repository files:
+- profile.md - User profile, goals, preferences
+- learnings.md - Patterns discovered about the user
+- prs.yaml - Personal records
+- workouts/ - Workout logs (YYYY-MM-DD.md)
+- plans/ - Weekly plans (YYYY-WXX.md)
+- retrospectives/ - Weekly analysis
+
+Use Read, Glob, and Grep to explore files. Use Edit/Write to update them.
+Current timezone: ${timezone}
+
 ## Reference Guides
 
 <exercise-parsing>
@@ -65,35 +67,21 @@ ${prDetection}
 </pr-detection>
 `;
 
-  // Replace the context placeholder
-  const fullContext = `${contextSection}\n\n${partialsSection}`;
-  return systemPrompt.replace('{{CONTEXT}}', fullContext);
+  return systemPrompt.replace('{{CONTEXT}}', contextNote);
 }
 
-/**
- * Build prompt for weekly planning
- */
 export function buildWeeklyPlanningPrompt(): string {
   return loadPrompt('weekly-planning');
 }
 
-/**
- * Build prompt for retrospective
- */
 export function buildRetrospectivePrompt(): string {
   return loadPrompt('retrospective');
 }
 
-/**
- * Build prompt for onboarding
- */
 export function buildOnboardingPrompt(): string {
   return loadPrompt('onboarding');
 }
 
-/**
- * Persona configuration (could be loaded from config/persona.md)
- */
 export const DEFAULT_PERSONA = {
   name: 'Coach',
   style: 'direct but warm',

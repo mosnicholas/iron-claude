@@ -8,6 +8,7 @@
 
 import * as readline from 'readline';
 import { createCoachAgent } from '../src/coach/index.js';
+import { createGitHubStorage } from '../src/storage/github.js';
 import { buildOnboardingPrompt } from '../src/coach/prompts.js';
 
 async function prompt(question: string): Promise<string> {
@@ -90,11 +91,15 @@ Continue the conversation naturally. If you have enough information to create th
 
     conversationHistory.push({ role: 'coach', content: response.message });
 
-    // Check if onboarding is complete (coach says something like "all set" or creates profile)
-    if (
-      response.toolsUsed.includes('write_file') &&
-      response.message.toLowerCase().includes('ready')
-    ) {
+    // Check if onboarding is complete (coach wrote the profile and indicates completion)
+    const hasWrittenFile = response.toolsUsed.includes('Write') || response.toolsUsed.includes('Edit');
+    const lowerMessage = response.message.toLowerCase();
+    const indicatesComplete = lowerMessage.includes('all set') ||
+      lowerMessage.includes('ready to go') ||
+      lowerMessage.includes("you're all set") ||
+      lowerMessage.includes('ready');
+
+    if (hasWrittenFile && indicatesComplete) {
       console.log('');
       console.log('✅ Onboarding complete! Your profile has been created.');
       console.log('');
@@ -107,7 +112,7 @@ Continue the conversation naturally. If you have enough information to create th
   }
 
   // Save the conversation
-  const storage = agent.getStorage();
+  const storage = createGitHubStorage();
   const conversationMd = `# Onboarding Conversation
 
 Started: ${new Date().toISOString()}

@@ -7,6 +7,7 @@
 
 import { createCoachAgent } from '../coach/index.js';
 import { createTelegramBot } from '../bot/telegram.js';
+import { createGitHubStorage } from '../storage/github.js';
 import { buildWeeklyPlanningPrompt } from '../coach/prompts.js';
 import { getCurrentWeek, getNextWeek } from '../utils/date.js';
 
@@ -26,7 +27,7 @@ export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
   try {
     const bot = createTelegramBot();
     const agent = createCoachAgent({ timezone, maxTurns: 20 });
-    const storage = agent.getStorage();
+    const storage = createGitHubStorage();
 
     // Check if profile exists
     const profile = await storage.readProfile();
@@ -105,8 +106,7 @@ The summary should include:
  * Check if a plan already exists for a week
  */
 export async function planExists(week: string): Promise<boolean> {
-  const agent = createCoachAgent();
-  const storage = agent.getStorage();
+  const storage = createGitHubStorage();
   const plans = await storage.listPlans();
   return plans.some(p => p.includes(week));
 }

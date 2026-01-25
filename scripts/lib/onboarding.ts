@@ -2,34 +2,59 @@
  * AI Onboarding Conversation
  *
  * Interactive conversation with the coach to set up the user's profile.
+ * Uses Claude Agent SDK for local file system access.
  */
 
 import * as readline from 'readline';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import { ui } from './ui.js';
-import { createCoachAgent } from '../../src/coach/index.js';
-import { buildOnboardingPrompt } from '../../src/coach/prompts.js';
+import { loadPrompt } from '../../src/coach/prompts.js';
+import { syncRepo, pushChanges } from '../../src/storage/repo-sync.js';
+import { extractTextFromMessage, extractToolsFromMessage } from '../../src/utils/sdk-helpers.js';
 
-/**
- * Run the onboarding conversation with the AI coach
- */
+async function runQuery(
+  prompt: string,
+  systemPrompt: string,
+  cwd: string
+): Promise<{ text: string; toolsUsed: string[] }> {
+  const toolsUsed: string[] = [];
+  let responseText = '';
+
+  const q = query({
+    prompt,
+    options: {
+      systemPrompt,
+      cwd,
+      maxTurns: 10,
+      allowedTools: ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep'],
+      permissionMode: 'acceptEdits',
+    },
+  });
+
+  for await (const message of q) {
+    if (message.type === 'assistant') {
+      responseText = extractTextFromMessage(message);
+      toolsUsed.push(...extractToolsFromMessage(message));
+    }
+  }
+
+  return { text: responseText, toolsUsed };
+}
+
 export async function runOnboardingConversation(): Promise<void> {
   ui.step(3, 5, 'Your Profile');
 
-  const agent = createCoachAgent();
-  const onboardingPrompt = buildOnboardingPrompt();
+  const repoName = process.env.DATA_REPO!;
+  const token = process.env.GITHUB_TOKEN!;
 
-  // Start the onboarding conversation
-  let response = await agent.runTask(
-    `Start the onboarding conversation with a new client.
+  const syncSpinner = ui.spinner('Syncing data repository...');
+  const repoPath = await syncRepo({
+    repoUrl: `https://github.com/${repoName}.git`,
+    token,
+  });
+  syncSpinner.success({ text: 'Repository synced' });
 
-${onboardingPrompt}
-
-Begin with a brief, friendly introduction and your first question.
-Keep responses concise (2-3 sentences max) since this is a CLI interface.`,
-    'Running onboarding via setup wizard'
-  );
-
-  ui.coach(response.message);
+  const onboardingPrompt = loadPrompt('onboarding');
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -37,101 +62,74 @@ Keep responses concise (2-3 sentences max) since this is a CLI interface.`,
   });
 
   const ask = (): Promise<string> =>
-    new Promise((resolve) => {
-      rl.question(ui.userPrompt(), resolve);
-    });
+    new Promise((resolve) => rl.question(ui.userPrompt(), resolve));
 
-  // Track conversation for context
-  const conversationHistory: { role: 'user' | 'coach'; content: string }[] = [
-    { role: 'coach', content: response.message },
-  ];
+  const systemPrompt = `You are a friendly fitness coach conducting an onboarding conversation.
+Your goal is to learn about the user and create their profile.
 
-  // Conversation loop
+${onboardingPrompt}
+
+You have direct file access to the fitness-data repository.
+- Read profile.md to see current state
+- Write to profile.md when you have enough information
+
+Keep responses concise (2-3 sentences max) since this is a CLI interface.
+When done, write the profile and let them know you're all set.`;
+
+  const conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+
+  const initialResponse = await runQuery(
+    'Start the onboarding conversation. Greet the user warmly and ask their name.',
+    systemPrompt,
+    repoPath
+  );
+
+  ui.coach(initialResponse.text);
+  conversationHistory.push({ role: 'assistant', content: initialResponse.text });
+
+  let isComplete = false;
   let turnCount = 0;
-  const maxTurns = 30; // Safety limit
 
-  while (turnCount < maxTurns) {
+  while (!isComplete && turnCount < 30) {
     turnCount++;
     const userInput = await ask();
 
-    if (!userInput.trim()) {
-      continue; // Skip empty input
-    }
-
-    if (userInput.toLowerCase() === 'quit' || userInput.toLowerCase() === 'exit') {
+    if (!userInput.trim()) continue;
+    if (['quit', 'exit'].includes(userInput.toLowerCase())) {
       ui.blank();
-      ui.warn('Onboarding cancelled. You can run it again later via Telegram with /onboard');
+      ui.warn('Onboarding cancelled.');
       rl.close();
       return;
     }
 
     conversationHistory.push({ role: 'user', content: userInput });
 
-    // Build conversation context
-    const conversationContext = conversationHistory
-      .map((m) => `${m.role === 'coach' ? 'Coach' : 'User'}: ${m.content}`)
+    const contextPrompt = conversationHistory
+      .map((m) => `${m.role === 'assistant' ? 'Coach' : 'User'}: ${m.content}`)
       .join('\n\n');
 
-    // Continue the conversation
-    response = await agent.runTask(
-      `Continue the onboarding conversation.
-
-Previous conversation:
-${conversationContext}
-
-${onboardingPrompt}
-
-The user just said: "${userInput}"
-
-Continue the conversation naturally. Keep responses brief (2-3 sentences).
-If you have enough information to create the profile, do so using write_file and let them know you're done.`,
-      'Continuing onboarding'
+    const response = await runQuery(
+      `Continue the onboarding. Previous:\n${contextPrompt}\n\nUser said: "${userInput}"`,
+      systemPrompt,
+      repoPath
     );
 
     ui.blank();
-    ui.coach(response.message);
+    ui.coach(response.text);
+    conversationHistory.push({ role: 'assistant', content: response.text });
 
-    conversationHistory.push({ role: 'coach', content: response.message });
-
-    // Check if onboarding is complete
-    const hasWrittenFile = response.toolsUsed.includes('write_file');
-    const messageIndicatesComplete =
-      response.message.toLowerCase().includes('all set') ||
-      response.message.toLowerCase().includes('ready to go') ||
-      response.message.toLowerCase().includes('profile is ready') ||
-      response.message.toLowerCase().includes("you're all set") ||
-      response.message.toLowerCase().includes('good to go');
-
-    if (hasWrittenFile && messageIndicatesComplete) {
-      rl.close();
-      ui.blank();
-      ui.success('Profile saved');
-
-      // Save the conversation log
-      try {
-        const storage = agent.getStorage();
-        const conversationMd = `# Onboarding Conversation
-
-Started: ${new Date().toISOString()}
-
----
-
-${conversationHistory.map((m) => `**${m.role === 'coach' ? 'Coach' : 'You'}:** ${m.content}`).join('\n\n')}
-`;
-        await storage.writeFile(
-          'conversations/onboarding.md',
-          conversationMd,
-          'Save onboarding conversation'
-        );
-      } catch {
-        // Ignore - conversation saving is not critical
-      }
-
-      return;
-    }
+    const hasWrittenFile = response.toolsUsed.includes('Write') || response.toolsUsed.includes('Edit');
+    const lowerMessage = response.text.toLowerCase();
+    isComplete = hasWrittenFile && (
+      lowerMessage.includes('all set') ||
+      lowerMessage.includes('ready to go') ||
+      lowerMessage.includes("you're all set")
+    );
   }
 
-  // If we hit max turns
   rl.close();
-  ui.warn('Onboarding reached maximum turns. You can continue via Telegram.');
+
+  const pushSpinner = ui.spinner('Saving profile...');
+  await pushChanges('Complete onboarding profile');
+  pushSpinner.success({ text: 'Profile saved to GitHub' });
 }
