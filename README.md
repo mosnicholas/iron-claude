@@ -57,17 +57,16 @@ iron-claude/
 │   │   ├── commands.ts          ← Bot commands (/help, /today, etc.)
 │   │   └── voice.ts             ← Voice message transcription
 │   ├── coach/                   ← AI coaching agent
-│   │   ├── index.ts             ← CoachAgent class
-│   │   ├── context.ts           ← Context builder
-│   │   ├── prompts.ts           ← System prompts
-│   │   └── tools.ts             ← Claude tool definitions
+│   │   ├── index.ts             ← CoachAgent class (Claude Agent SDK)
+│   │   └── prompts.ts           ← System prompts
 │   ├── cron/                    ← Scheduled tasks
 │   │   ├── daily-reminder.ts    ← Morning workout reminders
 │   │   ├── weekly-plan.ts       ← Sunday planning automation
 │   │   └── weekly-retro.ts      ← Weekly retrospective
-│   ├── storage/                 ← GitHub-based storage
-│   │   └── github.ts            ← Read/write workout data
-│   └── utils/                   ← Date utilities, PR tracking
+│   ├── storage/                 ← Data storage layer
+│   │   ├── github.ts            ← GitHub API client
+│   │   └── repo-sync.ts         ← Local repo cloning for SDK
+│   └── utils/                   ← Date utilities, SDK helpers
 ├── api/                         ← Vercel serverless endpoints
 │   ├── webhook.ts               ← Telegram webhook handler
 │   └── cron/                    ← Cron job endpoints
