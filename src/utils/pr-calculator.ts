@@ -70,44 +70,79 @@ export function parsePRsYaml(yamlContent: string): PRsData {
   let inHistory = false;
   let currentRecord: Partial<PRRecord> = {};
 
+  function saveCurrentRecord(): void {
+    if (!currentExercise || Object.keys(currentRecord).length === 0) return;
+
+    if (inHistory) {
+      prs[currentExercise].history.push(currentRecord as PRRecord);
+    } else {
+      prs[currentExercise].current = currentRecord as PRRecord;
+    }
+    currentRecord = {};
+  }
+
+  function parseValue(key: string, rawValue: string): void {
+    const value = rawValue.replace(/['"]/g, '');
+
+    switch (key) {
+      case 'weight':
+      case 'reps':
+        currentRecord[key] = parseFloat(value);
+        break;
+      case 'estimated_1rm':
+        currentRecord.estimated1RM = parseFloat(value);
+        break;
+      case 'date':
+        currentRecord.date = value;
+        break;
+    }
+  }
+
   for (const line of lines) {
     const trimmed = line.trim();
+
+    // Skip comments and empty lines
     if (trimmed.startsWith('#') || !trimmed) continue;
 
+    // Top-level exercise name (no leading whitespace, ends with colon)
     if (!line.startsWith(' ') && trimmed.endsWith(':')) {
+      saveCurrentRecord();
       currentExercise = trimmed.slice(0, -1);
       prs[currentExercise] = { current: {} as PRRecord, history: [] };
       inHistory = false;
-      currentRecord = {};
       continue;
     }
 
     if (!currentExercise) continue;
 
-    if (trimmed === 'current:') { inHistory = false; currentRecord = {}; continue; }
-    if (trimmed === 'history:') { inHistory = true; continue; }
+    // Section markers
+    if (trimmed === 'current:') {
+      saveCurrentRecord();
+      inHistory = false;
+      continue;
+    }
+    if (trimmed === 'history:') {
+      saveCurrentRecord();
+      inHistory = true;
+      continue;
+    }
 
+    // Key-value pairs
     const match = trimmed.match(/^-?\s*(\w+):\s*(.+)$/);
     if (match) {
       const [, key, value] = match;
-      if (trimmed.startsWith('-')) {
-        if (Object.keys(currentRecord).length > 0 && inHistory) {
-          prs[currentExercise].history.push(currentRecord as PRRecord);
-        }
-        currentRecord = {};
+
+      // New list item in history section
+      if (trimmed.startsWith('-') && inHistory) {
+        saveCurrentRecord();
       }
 
-      const clean = value.replace(/['"]/g, '');
-      if (key === 'weight' || key === 'reps') currentRecord[key] = parseFloat(clean);
-      else if (key === 'estimated_1rm') currentRecord.estimated1RM = parseFloat(clean);
-      else if (key === 'date') currentRecord.date = clean;
+      parseValue(key, value);
     }
   }
 
-  if (currentExercise && Object.keys(currentRecord).length > 0) {
-    if (inHistory) prs[currentExercise].history.push(currentRecord as PRRecord);
-    else prs[currentExercise].current = currentRecord as PRRecord;
-  }
+  // Save any remaining record
+  saveCurrentRecord();
 
   return prs;
 }

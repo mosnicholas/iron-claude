@@ -228,45 +228,43 @@ function convertTablesToLists(text: string): string {
   let headers: string[] = [];
 
   for (const line of lines) {
-    // Detect table header
-    if (line.match(/^\|.*\|$/)) {
-      if (!inTable) {
-        // First row - headers
-        inTable = true;
-        headers = line
-          .split('|')
-          .filter(cell => cell.trim())
-          .map(cell => cell.trim());
-        continue;
-      }
+    const isTableRow = line.match(/^\|.*\|$/);
 
-      // Check if separator row
-      if (line.match(/^\|[\s-:|]+\|$/)) {
-        continue;
-      }
-
-      // Data row
-      const cells = line
-        .split('|')
-        .filter(cell => cell.trim())
-        .map(cell => cell.trim());
-
-      // Format as bullet list with key: value
-      if (cells.length > 0) {
-        const bullet = cells
-          .map((cell, i) => (headers[i] ? `${headers[i]}: ${cell}` : cell))
-          .filter(s => s && !s.includes(': —'))
-          .join(' | ');
-        if (bullet) {
-          result.push(`• ${bullet}`);
-        }
-      }
-    } else {
+    if (!isTableRow) {
       if (inTable) {
         inTable = false;
         headers = [];
       }
       result.push(line);
+      continue;
+    }
+
+    // Skip separator rows (|---|---|)
+    if (line.match(/^\|[\s-:|]+\|$/)) {
+      continue;
+    }
+
+    const cells = line
+      .split('|')
+      .filter(cell => cell.trim())
+      .map(cell => cell.trim());
+
+    // First table row becomes headers
+    if (!inTable) {
+      inTable = true;
+      headers = cells;
+      continue;
+    }
+
+    // Data rows become bullet points
+    if (cells.length > 0) {
+      const formattedCells = cells
+        .map((cell, i) => (headers[i] ? `${headers[i]}: ${cell}` : cell))
+        .filter(s => s && !s.includes(': —'));
+
+      if (formattedCells.length > 0) {
+        result.push(`• ${formattedCells.join(' | ')}`);
+      }
     }
   }
 
@@ -344,9 +342,11 @@ export function parseCommand(text: string): { command: string; args: string } {
   if (!match) {
     return { command: '', args: '' };
   }
+
+  const [, commandPart, argsPart] = match;
   return {
-    command: match[1].toLowerCase(),
-    args: match[2]?.trim() || '',
+    command: commandPart.toLowerCase(),
+    args: argsPart?.trim() || '',
   };
 }
 

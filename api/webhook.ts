@@ -53,10 +53,10 @@ export default async function handler(
     // Initialize agent
     const agent = createCoachAgent();
 
+    // Extract message content (text or voice)
+    const voice = extractVoiceMessage(update);
     let messageText: string | null = null;
 
-    // Handle voice messages
-    const voice = extractVoiceMessage(update);
     if (voice) {
       if (!isVoiceTranscriptionAvailable()) {
         await bot.sendMessage(
@@ -68,9 +68,8 @@ export default async function handler(
 
       try {
         messageText = await transcribeVoice(voice, bot);
-        // Confirm the transcription
-        await bot.sendMessage(`🎤 Heard: "${messageText}"`);
-      } catch (error) {
+        await bot.sendMessage(`Heard: "${messageText}"`);
+      } catch {
         await bot.sendMessage(
           "Couldn't transcribe that voice message. Please try again or type it out."
         );
@@ -82,7 +81,6 @@ export default async function handler(
     }
 
     if (!messageText) {
-      // No text content, ignore
       res.status(200).json({ ok: true });
       return;
     }

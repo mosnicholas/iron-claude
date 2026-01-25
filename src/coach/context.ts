@@ -125,37 +125,35 @@ export function formatContextForPrompt(context: AgentContext, timezone: string):
   }
 
   // Today's plan
-  if (context.todaysPlan) {
-    sections.push(`\n### Today's Plan\n`);
-    if (context.todaysPlan.type === 'rest') {
-      sections.push(`**Rest Day**`);
-      if (context.todaysPlan.options?.length) {
-        sections.push(`Options: ${context.todaysPlan.options.join(', ')}`);
-      }
-    } else if (context.todaysPlan.type === 'optional') {
-      sections.push(`**Optional Day**`);
-      if (context.todaysPlan.options?.length) {
-        sections.push(`Options: ${context.todaysPlan.options.join(', ')}`);
+  sections.push(`\n### Today's Plan\n`);
+
+  if (!context.todaysPlan) {
+    sections.push(`No plan loaded for today. May need to generate weekly plan.`);
+  } else {
+    const plan = context.todaysPlan;
+
+    if (plan.type === 'rest' || plan.type === 'optional') {
+      const label = plan.type === 'rest' ? 'Rest Day' : 'Optional Day';
+      sections.push(`**${label}**`);
+      if (plan.options?.length) {
+        sections.push(`Options: ${plan.options.join(', ')}`);
       }
     } else {
-      sections.push(`**${context.todaysPlan.workoutType || 'Workout'}**`);
-      if (context.todaysPlan.targetDuration) {
-        sections.push(`Duration: ~${context.todaysPlan.targetDuration} min`);
+      sections.push(`**${plan.workoutType || 'Workout'}**`);
+      if (plan.targetDuration) {
+        sections.push(`Duration: ~${plan.targetDuration} min`);
       }
-      if (context.todaysPlan.exercises?.length) {
+      if (plan.exercises?.length) {
         sections.push(`\nExercises:`);
-        for (const ex of context.todaysPlan.exercises.slice(0, 6)) {
+        for (const ex of plan.exercises.slice(0, 6)) {
           const weightStr = typeof ex.weight === 'number' ? `${ex.weight} lbs` : ex.weight;
           sections.push(`- ${ex.name}: ${ex.sets}x${ex.reps} @ ${weightStr}`);
         }
-        if (context.todaysPlan.exercises.length > 6) {
-          sections.push(`- ... and ${context.todaysPlan.exercises.length - 6} more`);
+        if (plan.exercises.length > 6) {
+          sections.push(`- ... and ${plan.exercises.length - 6} more`);
         }
       }
     }
-  } else {
-    sections.push(`\n### Today's Plan\n`);
-    sections.push(`No plan loaded for today. May need to generate weekly plan.`);
   }
 
   // In-progress workout
@@ -259,20 +257,28 @@ function parseWeeklyPlanBasics(content: string, week: string): WeeklyPlan {
 function parseDayPlans(content: string): DayPlan[] {
   const days: DayPlan[] = [];
 
-  // Split by day headers (## Day, Month DD — Type)
+  // Split by day headers (## Day, Month DD - Type)
   const dayPattern = /## (\w+), (\w+ \d+) — (.+)/g;
   let match;
 
   while ((match = dayPattern.exec(content)) !== null) {
     const [, dayName, dateStr, typeStr] = match;
-    const isRest = typeStr.toLowerCase().includes('rest');
-    const isOptional = typeStr.toLowerCase().includes('optional');
+    const typeLower = typeStr.toLowerCase();
+
+    let dayType: DayPlan['type'];
+    if (typeLower.includes('rest')) {
+      dayType = 'rest';
+    } else if (typeLower.includes('optional')) {
+      dayType = 'optional';
+    } else {
+      dayType = 'workout';
+    }
 
     days.push({
       day: `${dayName}, ${dateStr}`,
       date: '', // Would need proper parsing
-      type: isRest ? 'rest' : isOptional ? 'optional' : 'workout',
-      workoutType: isRest || isOptional ? undefined : typeStr,
+      type: dayType,
+      workoutType: dayType === 'workout' ? typeStr : undefined,
       exercises: [], // Would need detailed parsing
     });
   }

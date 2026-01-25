@@ -283,8 +283,6 @@ export class ToolExecutor {
   private async webSearch(input: Record<string, unknown>): Promise<ToolExecutionResult> {
     const query = input.query as string;
 
-    // Use a simple search API or return placeholder
-    // In production, integrate with a search provider
     try {
       const response = await fetch(
         `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json`
@@ -294,19 +292,20 @@ export class ToolExecutor {
         RelatedTopics?: Array<{ Text?: string }>;
       };
 
+      // Return abstract text if available
       if (data.AbstractText) {
         return { success: true, result: data.AbstractText };
       }
 
-      if (data.RelatedTopics && data.RelatedTopics.length > 0) {
-        const results = data.RelatedTopics.slice(0, 5)
-          .filter(t => t.Text)
-          .map(t => t.Text)
-          .join('\n\n');
-        return { success: true, result: results || 'No results found.' };
-      }
+      // Fall back to related topics
+      const topics = data.RelatedTopics ?? [];
+      const results = topics
+        .slice(0, 5)
+        .map(t => t.Text)
+        .filter(Boolean)
+        .join('\n\n');
 
-      return { success: true, result: 'No results found for this query.' };
+      return { success: true, result: results || 'No results found for this query.' };
     } catch {
       return {
         success: false,

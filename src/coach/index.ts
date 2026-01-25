@@ -7,6 +7,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import type {
+  ContentBlock,
   MessageParam,
   ToolUseBlock,
   ToolResultBlockParam,
@@ -52,6 +53,13 @@ export class CoachAgent {
     };
   }
 
+  private extractTextResponse(content: ContentBlock[]): string {
+    return content
+      .filter((block): block is TextBlock => block.type === 'text')
+      .map(b => b.text)
+      .join('\n');
+  }
+
   private async runAgentLoop(
     userMessage: string,
     systemPrompt: string,
@@ -76,19 +84,16 @@ export class CoachAgent {
         (block): block is ToolUseBlock => block.type === 'tool_use'
       );
 
-      if (toolUseBlocks.length === 0 || response.stop_reason === 'end_turn') {
-        const textBlocks = response.content.filter(
-          (block): block is TextBlock => block.type === 'text'
-        );
-        if (textBlocks.length > 0 || toolUseBlocks.length === 0) {
-          return {
-            message: textBlocks.map(b => b.text).join('\n'),
-            toolsUsed,
-            turnsUsed,
-          };
+      // No tools to execute or model signaled end of turn
+      const isComplete = toolUseBlocks.length === 0 || response.stop_reason === 'end_turn';
+      if (isComplete) {
+        const message = this.extractTextResponse(response.content);
+        if (message || toolUseBlocks.length === 0) {
+          return { message, toolsUsed, turnsUsed };
         }
       }
 
+      // Execute tools and collect results
       const toolResults: ToolResultBlockParam[] = [];
       for (const toolUse of toolUseBlocks) {
         toolsUsed.push(toolUse.name);

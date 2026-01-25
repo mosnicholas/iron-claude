@@ -51,10 +51,28 @@ iron-claude/
 │       ├── onboarding.md        ← First-time setup
 │       ├── plan-week.md         ← Sunday planning
 │       └── analyze.md           ← Progress analysis
-├── bot/                         ← Optional Telegram layer
-│   ├── index.ts                 ← Webhook handler
-│   └── morning-notify.ts        ← Morning reminders
-└── templates/                   ← Templates for new users
+├── src/                         ← Core application code
+│   ├── bot/                     ← Telegram bot integration
+│   │   ├── telegram.ts          ← Telegram API client
+│   │   ├── commands.ts          ← Bot commands (/help, /today, etc.)
+│   │   └── voice.ts             ← Voice message transcription
+│   ├── coach/                   ← AI coaching agent
+│   │   ├── index.ts             ← CoachAgent class
+│   │   ├── context.ts           ← Context builder
+│   │   ├── prompts.ts           ← System prompts
+│   │   └── tools.ts             ← Claude tool definitions
+│   ├── cron/                    ← Scheduled tasks
+│   │   ├── daily-reminder.ts    ← Morning workout reminders
+│   │   ├── weekly-plan.ts       ← Sunday planning automation
+│   │   └── weekly-retro.ts      ← Weekly retrospective
+│   ├── storage/                 ← GitHub-based storage
+│   │   └── github.ts            ← Read/write workout data
+│   └── utils/                   ← Date utilities, PR tracking
+├── api/                         ← Vercel serverless endpoints
+│   ├── webhook.ts               ← Telegram webhook handler
+│   └── cron/                    ← Cron job endpoints
+├── templates/                   ← Templates for new users
+└── vercel.json                  ← Deployment & cron configuration
 ```
 
 **Key insight:** All AI/coaching logic lives in Claude Code skills. The Telegram bot is optional and just handles text I/O.
@@ -139,37 +157,15 @@ Pull-ups: 10, 8, 7
 
 ## Optional: Telegram Notifications
 
-If you want mobile logging and morning reminders:
+If you want mobile logging and morning reminders, you can deploy the bot to Vercel.
 
-### 1. Create a Telegram Bot
-1. Message [@BotFather](https://t.me/botfather) on Telegram
-2. Send `/newbot` and follow prompts
-3. Save your bot token
+**Features:**
+- Morning workout reminders (weekdays, 6am your timezone)
+- Log workouts via Telegram messages
+- Voice message support (with OpenAI Whisper)
+- Weekly planning and retrospective automation
 
-### 2. Get Your Chat ID
-1. Message your new bot
-2. Visit `https://api.telegram.org/bot<TOKEN>/getUpdates`
-3. Find your `chat.id` in the response
-
-### 3. Deploy to Vercel
-```bash
-cd bot
-vercel
-```
-
-Set environment variables:
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_CHAT_ID`
-- `CRON_SECRET` (optional, for securing cron endpoint)
-
-### 4. Set Webhook
-```bash
-curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://your-app.vercel.app/api/webhook"
-```
-
-Now you'll get:
-- Morning reminders at 8am (weekdays)
-- Workout logging via Telegram messages
+See **[DEPLOY.md](./DEPLOY.md)** for full deployment instructions.
 
 ---
 

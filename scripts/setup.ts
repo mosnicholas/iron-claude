@@ -1,309 +1,171 @@
 #!/usr/bin/env tsx
 /**
- * Setup Script
+ * Unified Setup Command
  *
- * Interactive setup that creates the fitness-data repository
- * and initializes the required structure.
+ * A beautiful, unified setup wizard that combines structured CLI prompts
+ * with AI-powered onboarding. One command to go from zero to deployed bot.
+ *
+ * Usage: npm run setup
  */
 
-import * as readline from 'readline';
-
-const GITHUB_API_BASE = 'https://api.github.com';
-
-async function prompt(question: string, defaultValue?: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise(resolve => {
-    const q = defaultValue ? `${question} [${defaultValue}]: ` : `${question}: `;
-    rl.question(q, answer => {
-      rl.close();
-      resolve(answer || defaultValue || '');
-    });
-  });
-}
-
-async function confirmPrompt(question: string): Promise<boolean> {
-  const answer = await prompt(`${question} (y/n)`, 'y');
-  return answer.toLowerCase() === 'y';
-}
-
-async function createRepository(
-  token: string,
-  repoName: string,
-  isPrivate: boolean
-): Promise<string> {
-  const response = await fetch(`${GITHUB_API_BASE}/user/repos`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github.v3+json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      name: repoName,
-      description: 'Personal fitness data - managed by Fitness Coach',
-      private: isPrivate,
-      auto_init: true,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to create repository: ${error}`);
-  }
-
-  const data = await response.json() as { full_name: string };
-  return data.full_name;
-}
-
-async function createFile(
-  token: string,
-  repo: string,
-  path: string,
-  content: string,
-  message: string
-): Promise<void> {
-  const response = await fetch(
-    `${GITHUB_API_BASE}/repos/${repo}/contents/${path}`,
-    {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message,
-        content: Buffer.from(content).toString('base64'),
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to create ${path}: ${error}`);
-  }
-}
-
-const INITIAL_PROFILE = `---
-name: ""
-timezone: "America/New_York"
-telegram_chat_id: ""
-primary_gym: ""
-backup_gyms: []
-created: "${new Date().toISOString().split('T')[0]}"
-last_updated: "${new Date().toISOString().split('T')[0]}"
----
-
-# Profile
-
-*Run the onboarding conversation to fill this out.*
-
-## Goals
-
-### Primary
--
-
-### Secondary
--
-
-## Schedule
-
-### Weekly Structure
-- Target: sessions per week
-- Preferred time:
-- Preferred rest day:
-
-### Constraints
--
-
-## Medical & Limitations
-
-### Current
-*None*
-
-### Historical
-*None*
-
-## Training Preferences
-
-### Style
--
-
-### Dislikes
--
-
-### Session Length
-- Ideal: 45 minutes
-- Maximum: 60 minutes
-- Minimum: 30 minutes
-
-## Current Working Maxes
-
-*Will be populated from workouts*
-
-| Exercise | Weight | Reps | Date | Est 1RM |
-|----------|--------|------|------|---------|
-| | | | | |
-`;
-
-const INITIAL_LEARNINGS = `# Learnings
-
-*Patterns and preferences discovered through conversation and observation.*
-
----
-
-## Initial Setup
-
-- Created: ${new Date().toISOString().split('T')[0]}
-
----
-
-*Last updated: ${new Date().toISOString().split('T')[0]}*
-`;
-
-const INITIAL_PRS = `# Personal Records
-# Auto-updated when new PRs are detected in workouts
-
-# Example format:
-# bench_press:
-#   current:
-#     weight: 185
-#     reps: 3
-#     date: "2025-01-15"
-#     estimated_1rm: 196
-#   history:
-#     - weight: 185
-#       reps: 3
-#       date: "2025-01-15"
-#       estimated_1rm: 196
-`;
-
-const README = `# Fitness Data
-
-This repository contains your personal fitness data, managed by [Fitness Coach](https://github.com/yourusername/fitness-coach).
-
-## Structure
-
-- \`profile.md\` - Your goals, preferences, and limitations
-- \`learnings.md\` - Patterns discovered by your coach
-- \`prs.yaml\` - Personal records with history
-- \`workouts/\` - Individual workout logs
-- \`plans/\` - Weekly training plans
-- \`retrospectives/\` - Weekly analysis
-
-## Privacy
-
-This is a **private** repository. Your fitness data stays yours.
-
-## Usage
-
-Don't edit these files directly - interact with your coach via Telegram!
-`;
+import { confirm } from '@inquirer/prompts';
+import { ui } from './lib/ui.js';
+import { collectCredentials } from './lib/credentials.js';
+import { createGitHubRepo, verifyGitHubToken } from './lib/github.js';
+import { runOnboardingConversation } from './lib/onboarding.js';
+import { deployToVercel, checkVercelCli, skipDeployment } from './lib/deploy.js';
+import { setWebhook, verifyBotToken } from './lib/webhook.js';
 
 async function main() {
-  console.log('');
-  console.log('🏋️ Fitness Coach Setup');
-  console.log('======================');
-  console.log('');
-  console.log('This will create a private GitHub repository for your fitness data.');
-  console.log('');
+  ui.header('IronClaude Setup');
 
-  // Get GitHub token
-  console.log('First, you need a GitHub Personal Access Token.');
-  console.log('Create one at: https://github.com/settings/tokens/new');
-  console.log('Required scopes: repo (full control)');
-  console.log('');
-
-  const token = await prompt('GitHub Personal Access Token');
-  if (!token) {
-    console.error('Token is required');
-    process.exit(1);
-  }
-
-  // Verify token
-  console.log('Verifying token...');
-  const userResponse = await fetch(`${GITHUB_API_BASE}/user`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!userResponse.ok) {
-    console.error('Invalid token or insufficient permissions');
-    process.exit(1);
-  }
-
-  const userData = await userResponse.json() as { login: string };
-  console.log(`✓ Authenticated as ${userData.login}`);
-  console.log('');
-
-  // Get repo name
-  const repoName = await prompt('Repository name', 'fitness-data');
-
-  // Confirm private
-  const isPrivate = await confirmPrompt('Make repository private?');
-
-  console.log('');
-  console.log('Creating repository...');
+  console.log('  Let\'s get you set up. This will:');
+  console.log('  • Collect your API credentials');
+  console.log('  • Create a private GitHub repo for your data');
+  console.log('  • Set up your fitness profile (AI conversation)');
+  console.log('  • Deploy to Vercel');
+  console.log('  • Connect your Telegram bot');
+  ui.blank();
 
   try {
-    const fullName = await createRepository(token, repoName, isPrivate);
-    console.log(`✓ Created ${fullName}`);
+    // ──────────────────────────────────────────────────────────────────────
+    // Step 1: Collect credentials
+    // ──────────────────────────────────────────────────────────────────────
+    const credentials = await collectCredentials();
 
-    // Wait a moment for GitHub to process
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Verify Telegram token
+    ui.blank();
+    const verifySpinner = ui.spinner('Verifying Telegram bot...');
+    try {
+      const botUsername = await verifyBotToken(credentials.telegram.botToken);
+      verifySpinner.success({ text: `Bot verified: @${botUsername}` });
+    } catch (error) {
+      verifySpinner.error({ text: 'Invalid Telegram bot token' });
+      throw error;
+    }
 
-    console.log('Initializing repository structure...');
+    // Verify GitHub token
+    const githubSpinner = ui.spinner('Verifying GitHub token...');
+    try {
+      const githubUsername = await verifyGitHubToken(credentials.github.token);
+      githubSpinner.success({ text: `GitHub verified: ${githubUsername}` });
+    } catch (error) {
+      githubSpinner.error({ text: 'Invalid GitHub token' });
+      throw error;
+    }
 
-    // Create initial files
-    await createFile(token, fullName, 'profile.md', INITIAL_PROFILE, 'Initialize profile');
-    console.log('  ✓ profile.md');
+    // ──────────────────────────────────────────────────────────────────────
+    // Step 2: Create GitHub repo
+    // ──────────────────────────────────────────────────────────────────────
+    ui.step(2, 5, 'GitHub');
 
-    await createFile(token, fullName, 'learnings.md', INITIAL_LEARNINGS, 'Initialize learnings');
-    console.log('  ✓ learnings.md');
+    const repoSpinner = ui.spinner('Creating fitness-data repository...');
+    let repoName: string;
+    try {
+      repoName = await createGitHubRepo(credentials.github.token);
+      repoSpinner.success({ text: `Repository created: ${repoName}` });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('already exists')) {
+        repoSpinner.success({ text: 'Repository already exists, using existing' });
+        // Get username and assume repo name
+        const username = await verifyGitHubToken(credentials.github.token);
+        repoName = `${username}/fitness-data`;
+      } else {
+        repoSpinner.error({ text: 'Failed to create repository' });
+        throw error;
+      }
+    }
 
-    await createFile(token, fullName, 'prs.yaml', INITIAL_PRS, 'Initialize PRs');
-    console.log('  ✓ prs.yaml');
+    // ──────────────────────────────────────────────────────────────────────
+    // Step 3: Onboarding conversation
+    // ──────────────────────────────────────────────────────────────────────
+    // Set env vars so CoachAgent can connect
+    process.env.ANTHROPIC_API_KEY = credentials.anthropic.apiKey;
+    process.env.GITHUB_TOKEN = credentials.github.token;
+    process.env.DATA_REPO = repoName;
+    process.env.TIMEZONE = credentials.timezone;
 
-    // Create directories with .gitkeep
-    await createFile(token, fullName, 'workouts/.gitkeep', '', 'Create workouts directory');
-    console.log('  ✓ workouts/');
+    await runOnboardingConversation();
 
-    await createFile(token, fullName, 'plans/.gitkeep', '', 'Create plans directory');
-    console.log('  ✓ plans/');
+    // ──────────────────────────────────────────────────────────────────────
+    // Step 4: Deploy to Vercel
+    // ──────────────────────────────────────────────────────────────────────
+    const { installed } = checkVercelCli();
 
-    await createFile(token, fullName, 'retrospectives/.gitkeep', '', 'Create retrospectives directory');
-    console.log('  ✓ retrospectives/');
+    let deployUrl: string | undefined;
 
-    await createFile(token, fullName, 'conversations/.gitkeep', '', 'Create conversations directory');
-    console.log('  ✓ conversations/');
+    if (installed) {
+      const shouldDeploy = await confirm({
+        message: 'Deploy to Vercel now?',
+        default: true,
+      });
 
-    // Update README
-    await createFile(token, fullName, 'README.md', README, 'Update README');
-    console.log('  ✓ README.md');
+      if (shouldDeploy) {
+        deployUrl = await deployToVercel(credentials, repoName);
+      } else {
+        skipDeployment(credentials, repoName);
+      }
+    } else {
+      ui.step(4, 5, 'Deploy');
+      ui.warn('Vercel CLI not found. Install with: npm i -g vercel');
+      skipDeployment(credentials, repoName);
+    }
 
-    console.log('');
-    console.log('✅ Setup complete!');
-    console.log('');
-    console.log('Next steps:');
-    console.log('');
-    console.log('1. Add these to your .env.local:');
-    console.log(`   GITHUB_TOKEN=${token}`);
-    console.log(`   DATA_REPO=${fullName}`);
-    console.log('');
-    console.log('2. Run onboarding to set up your profile:');
-    console.log('   pnpm onboard');
-    console.log('');
-    console.log('3. Deploy to Vercel and set up webhook:');
-    console.log('   vercel --prod');
-    console.log('   pnpm set-webhook <your-vercel-url>/api/webhook');
-    console.log('');
+    // ──────────────────────────────────────────────────────────────────────
+    // Step 5: Set webhook
+    // ──────────────────────────────────────────────────────────────────────
+    if (deployUrl) {
+      ui.step(5, 5, 'Connect Bot');
+
+      const webhookSpinner = ui.spinner('Setting Telegram webhook...');
+      try {
+        const webhookUrl = `${deployUrl}/api/webhook`;
+        await setWebhook(credentials.telegram.botToken, webhookUrl);
+        webhookSpinner.success({ text: 'Webhook configured' });
+      } catch (error) {
+        webhookSpinner.error({ text: 'Failed to set webhook' });
+        throw error;
+      }
+    } else {
+      ui.step(5, 5, 'Connect Bot');
+      ui.info('Skipped - deploy first, then run:');
+      ui.info('  npm run set-webhook <your-deploy-url>/api/webhook');
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Done!
+    // ──────────────────────────────────────────────────────────────────────
+    ui.divider();
+
+    if (deployUrl) {
+      console.log(`  🎉 ${ui.bold('Setup complete!')}`);
+      ui.blank();
+      console.log('  Your bot is live! Send a message to your bot on Telegram.');
+      ui.blank();
+      ui.info(`Deployment: ${deployUrl}`);
+      ui.info(`Data repo:  https://github.com/${repoName}`);
+    } else {
+      console.log(`  ✅ ${ui.bold('Setup partially complete!')}`);
+      ui.blank();
+      console.log('  Next steps:');
+      console.log('  1. Deploy your app (vercel --prod)');
+      console.log('  2. Set the webhook (npm run set-webhook <url>/api/webhook)');
+      console.log('  3. Message your bot on Telegram!');
+      ui.blank();
+      ui.info(`Data repo: https://github.com/${repoName}`);
+    }
+
+    ui.blank();
   } catch (error) {
-    console.error('Setup failed:', error);
+    ui.blank();
+    ui.error(error instanceof Error ? error.message : 'Setup failed');
+    ui.blank();
+    ui.info('If you need help, check the README or open an issue.');
     process.exit(1);
   }
 }
 
-main().catch(console.error);
+main().catch((error) => {
+  console.error('Unexpected error:', error);
+  process.exit(1);
+});

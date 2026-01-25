@@ -27,5 +27,4 @@ export { runWeeklyPlan, forceRegeneratePlan } from './cron/weekly-plan.js';
 
 // Utilities
 export * from './utils/date.js';
-export * from './utils/exercise-parser.js';
 export * from './utils/pr-calculator.js';

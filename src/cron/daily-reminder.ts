@@ -7,7 +7,7 @@
 
 import { createCoachAgent } from '../coach/index.js';
 import { createTelegramBot } from '../bot/telegram.js';
-import { getCurrentWeek, getToday, formatDateHuman, isWeekend } from '../utils/date.js';
+import { getCurrentWeek, getToday, formatDateHuman } from '../utils/date.js';
 
 export interface DailyReminderResult {
   success: boolean;
@@ -89,14 +89,14 @@ Keep it concise - this is for Telegram. Use emoji sparingly.`
 /**
  * Generate a fallback message when the agent fails
  */
-export function getFallbackMessage(dayName: string): string {
-  if (isWeekend(new Date())) {
-    return `Good morning! It's ${dayName} — rest up and recover. 🛋️`;
+export function getFallbackMessage(dayName: string, isRestDay: boolean): string {
+  if (isRestDay) {
+    return `Good morning! It's ${dayName} - rest up and recover.`;
   }
 
   return `Good morning! Ready to train today?
 
 Check your plan with /today or /plan.
 
-Let's get after it! 💪`;
+Let's get after it!`;
 }
