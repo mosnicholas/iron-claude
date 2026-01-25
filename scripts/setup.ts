@@ -14,7 +14,7 @@ import { collectCredentials } from './lib/credentials.js';
 import { createGitHubRepo, verifyGitHubToken } from './lib/github.js';
 import { runOnboardingConversation } from './lib/onboarding.js';
 import { deployToVercel, checkVercelCli, skipDeployment } from './lib/deploy.js';
-import { setWebhook, verifyBotToken } from './lib/webhook.js';
+import { setWebhook } from './lib/webhook.js';
 
 async function main() {
   ui.header('IronClaude Setup');
@@ -29,30 +29,9 @@ async function main() {
 
   try {
     // ──────────────────────────────────────────────────────────────────────
-    // Step 1: Collect credentials
+    // Step 1: Collect and verify credentials (saved to .env as we go)
     // ──────────────────────────────────────────────────────────────────────
     const credentials = await collectCredentials();
-
-    // Verify Telegram token
-    ui.blank();
-    const verifySpinner = ui.spinner('Verifying Telegram bot...');
-    try {
-      const botUsername = await verifyBotToken(credentials.telegram.botToken);
-      verifySpinner.success({ text: `Bot verified: @${botUsername}` });
-    } catch (error) {
-      verifySpinner.error({ text: 'Invalid Telegram bot token' });
-      throw error;
-    }
-
-    // Verify GitHub token
-    const githubSpinner = ui.spinner('Verifying GitHub token...');
-    try {
-      const githubUsername = await verifyGitHubToken(credentials.github.token);
-      githubSpinner.success({ text: `GitHub verified: ${githubUsername}` });
-    } catch (error) {
-      githubSpinner.error({ text: 'Invalid GitHub token' });
-      throw error;
-    }
 
     // ──────────────────────────────────────────────────────────────────────
     // Step 2: Create GitHub repo
