@@ -114,8 +114,8 @@ export async function deployToVercel(
         // Ignore - var might not exist
       }
 
-      // Add new env var using echo to pipe the value
-      execSync(`echo "${value}" | vercel env add ${key} production`, {
+      // Add new env var using printf to pipe the value (no trailing newline)
+      execSync(`printf '%s' "${value}" | vercel env add ${key} production`, {
         stdio: 'ignore',
         shell: '/bin/bash',
       });
