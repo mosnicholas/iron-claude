@@ -5,7 +5,7 @@
  */
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createCoachAgent } from "../src/coach/index.js";
+import { createVercelCoachAgent } from "../src/coach/vercel-agent.js";
 import {
   createTelegramBot,
   extractMessageText,
@@ -72,8 +72,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     // Send typing indicator
     await bot.sendTypingAction();
 
-    // Initialize agent
-    const agent = createCoachAgent();
+    // Initialize agent (Vercel-compatible version that uses GitHub API)
+    const agent = createVercelCoachAgent();
 
     // Extract message content (text or voice)
     const voice = extractVoiceMessage(update);
