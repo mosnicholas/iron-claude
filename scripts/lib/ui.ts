@@ -4,9 +4,9 @@
  * Pretty terminal output for the unified setup wizard.
  */
 
-import pc from 'picocolors';
-import { createSpinner, Spinner } from 'nanospinner';
-import boxen from 'boxen';
+import pc from "picocolors";
+import { createSpinner, Spinner } from "nanospinner";
+import boxen from "boxen";
 
 export const ui = {
   /**
@@ -15,7 +15,7 @@ export const ui = {
   header: (text: string): void => {
     console.log();
     console.log(pc.bold(pc.cyan(`  🏋️  ${text}`)));
-    console.log(pc.dim('  ' + '━'.repeat(50)));
+    console.log(pc.dim("  " + "━".repeat(50)));
     console.log();
   },
 
@@ -24,7 +24,7 @@ export const ui = {
    */
   step: (current: number, total: number, title: string): void => {
     console.log();
-    console.log(pc.dim(`── Step ${current}/${total}: ${title} ` + '─'.repeat(30)));
+    console.log(pc.dim(`── Step ${current}/${total}: ${title} ` + "─".repeat(30)));
     console.log();
   },
 
@@ -34,11 +34,11 @@ export const ui = {
   coach: (message: string): void => {
     console.log(
       boxen(message, {
-        title: pc.cyan('Coach'),
-        titleAlignment: 'left',
+        title: pc.cyan("Coach"),
+        titleAlignment: "left",
         padding: 1,
-        borderStyle: 'round',
-        borderColor: 'cyan',
+        borderStyle: "round",
+        borderColor: "cyan",
       })
     );
   },
@@ -46,7 +46,7 @@ export const ui = {
   /**
    * Prefix for user input prompts
    */
-  userPrompt: (): string => pc.green('You: '),
+  userPrompt: (): string => pc.green("You: "),
 
   /**
    * Success message with checkmark
@@ -103,7 +103,7 @@ export const ui = {
    */
   divider: (): void => {
     console.log();
-    console.log(pc.dim('━'.repeat(54)));
+    console.log(pc.dim("━".repeat(54)));
     console.log();
   },
 

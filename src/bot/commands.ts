@@ -4,16 +4,12 @@
  * Handles explicit /commands from the Telegram bot.
  */
 
-import { CoachAgent } from '../coach/index.js';
-import { TelegramBot } from './telegram.js';
-import { createGitHubStorage } from '../storage/github.js';
-import { getCurrentWeek } from '../utils/date.js';
+import { CoachAgent } from "../coach/index.js";
+import { TelegramBot } from "./telegram.js";
+import { createGitHubStorage } from "../storage/github.js";
+import { getCurrentWeek } from "../utils/date.js";
 
-export type CommandHandler = (
-  agent: CoachAgent,
-  bot: TelegramBot,
-  args: string
-) => Promise<string>;
+export type CommandHandler = (agent: CoachAgent, bot: TelegramBot, args: string) => Promise<string>;
 
 /**
  * Available commands and their handlers
@@ -34,11 +30,7 @@ export const COMMANDS: Record<string, CommandHandler> = {
 /**
  * /start - Initial greeting
  */
-async function handleStart(
-  _agent: CoachAgent,
-  _bot: TelegramBot,
-  _args: string
-): Promise<string> {
+async function handleStart(_agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   const storage = createGitHubStorage();
   const profile = await storage.readProfile();
 
@@ -66,11 +58,7 @@ Let's get after it! 💪`;
 /**
  * /help - Show available commands
  */
-async function handleHelp(
-  _agent: CoachAgent,
-  _bot: TelegramBot,
-  _args: string
-): Promise<string> {
+async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   return `**Available Commands**
 
 📋 **Planning**
@@ -100,14 +88,10 @@ Questions? Just ask!`;
 /**
  * /today - Show today's planned workout
  */
-async function handleToday(
-  agent: CoachAgent,
-  _bot: TelegramBot,
-  _args: string
-): Promise<string> {
+async function handleToday(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   const response = await agent.chat(
     "Show me today's workout plan. Read the current week's plan and tell me what's scheduled for today. " +
-    "If today is a rest day, let me know. If there's no plan, suggest what I should do."
+      "If today is a rest day, let me know. If there's no plan, suggest what I should do."
   );
   return response.message;
 }
@@ -115,11 +99,7 @@ async function handleToday(
 /**
  * /plan - Show this week's plan
  */
-async function handlePlan(
-  agent: CoachAgent,
-  _bot: TelegramBot,
-  _args: string
-): Promise<string> {
+async function handlePlan(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   const week = getCurrentWeek();
 
   const response = await agent.chat(
@@ -131,18 +111,14 @@ async function handlePlan(
 /**
  * /done - Complete current workout
  */
-async function handleDone(
-  agent: CoachAgent,
-  _bot: TelegramBot,
-  _args: string
-): Promise<string> {
+async function handleDone(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   const response = await agent.chat(
     "I'm done with my workout. Please:\n" +
-    "1. Check if there's an in-progress workout branch\n" +
-    "2. Summarize what I did\n" +
-    "3. Note any PRs\n" +
-    "4. Ask for my energy level if I haven't mentioned it\n" +
-    "5. Finalize the workout file and merge the branch"
+      "1. Check if there's an in-progress workout branch\n" +
+      "2. Summarize what I did\n" +
+      "3. Note any PRs\n" +
+      "4. Ask for my energy level if I haven't mentioned it\n" +
+      "5. Finalize the workout file and merge the branch"
   );
   return response.message;
 }
@@ -150,18 +126,14 @@ async function handleDone(
 /**
  * /tired - Flag low energy
  */
-async function handleTired(
-  agent: CoachAgent,
-  _bot: TelegramBot,
-  _args: string
-): Promise<string> {
+async function handleTired(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   const response = await agent.chat(
     "I'm feeling tired/low energy today. Based on today's planned workout, suggest some modified options:\n" +
-    "1. A lighter version of the planned workout\n" +
-    "2. A shorter alternative\n" +
-    "3. A complete swap if appropriate\n" +
-    "4. Full rest if that's the best call\n\n" +
-    "Be supportive and remember that a modified workout beats skipping entirely."
+      "1. A lighter version of the planned workout\n" +
+      "2. A shorter alternative\n" +
+      "3. A complete swap if appropriate\n" +
+      "4. Full rest if that's the best call\n\n" +
+      "Be supportive and remember that a modified workout beats skipping entirely."
   );
   return response.message;
 }
@@ -169,23 +141,19 @@ async function handleTired(
 /**
  * /skip - Skip workout or exercise
  */
-async function handleSkip(
-  agent: CoachAgent,
-  _bot: TelegramBot,
-  args: string
-): Promise<string> {
+async function handleSkip(agent: CoachAgent, _bot: TelegramBot, args: string): Promise<string> {
   if (!args) {
     const response = await agent.chat(
       "I want to skip today's workout. Acknowledge this without guilt-tripping, " +
-      "and suggest alternatives if appropriate (light mobility, walk, etc.). " +
-      "Record this in the learnings if it's becoming a pattern."
+        "and suggest alternatives if appropriate (light mobility, walk, etc.). " +
+        "Record this in the learnings if it's becoming a pattern."
     );
     return response.message;
   }
 
   const response = await agent.chat(
     `I want to skip ${args} today. Note this, suggest an alternative exercise if appropriate, ` +
-    "and update my workout plan accordingly."
+      "and update my workout plan accordingly."
   );
   return response.message;
 }
@@ -193,17 +161,13 @@ async function handleSkip(
 /**
  * /prs - Show personal records
  */
-async function handlePRs(
-  agent: CoachAgent,
-  _bot: TelegramBot,
-  _args: string
-): Promise<string> {
+async function handlePRs(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   const response = await agent.chat(
     "Show me my current personal records. Read prs.yaml and display:\n" +
-    "1. Current PRs for main lifts (bench, squat, deadlift, OHP, pull-ups)\n" +
-    "2. Recent progress (any PRs in the last few weeks)\n" +
-    "3. Estimated 1RMs\n" +
-    "Format nicely for Telegram."
+      "1. Current PRs for main lifts (bench, squat, deadlift, OHP, pull-ups)\n" +
+      "2. Recent progress (any PRs in the last few weeks)\n" +
+      "3. Estimated 1RMs\n" +
+      "Format nicely for Telegram."
   );
   return response.message;
 }
@@ -211,18 +175,14 @@ async function handlePRs(
 /**
  * /demo - Find exercise demonstration
  */
-async function handleDemo(
-  agent: CoachAgent,
-  _bot: TelegramBot,
-  args: string
-): Promise<string> {
+async function handleDemo(agent: CoachAgent, _bot: TelegramBot, args: string): Promise<string> {
   if (!args) {
     return "Which exercise do you want a demo for? Example: /demo face pull";
   }
 
   const response = await agent.chat(
     `Find a good video demonstration for the exercise: ${args}. ` +
-    "Search for quality instructional content and provide helpful cues."
+      "Search for quality instructional content and provide helpful cues."
   );
   return response.message;
 }
@@ -241,10 +201,10 @@ async function handleTraveling(
 
   const response = await agent.chat(
     `I'm traveling: ${args}. Please:\n` +
-    "1. Note this in learnings\n" +
-    "2. Adjust my expectations for training during this period\n" +
-    "3. Suggest travel-friendly workout options if appropriate\n" +
-    "4. Consider this when generating next week's plan if it overlaps"
+      "1. Note this in learnings\n" +
+      "2. Adjust my expectations for training during this period\n" +
+      "3. Suggest travel-friendly workout options if appropriate\n" +
+      "4. Consider this when generating next week's plan if it overlaps"
   );
   return response.message;
 }

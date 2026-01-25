@@ -4,9 +4,9 @@
  * Handles communication with the Telegram Bot API.
  */
 
-import type { TelegramUpdate, TelegramVoice } from '../storage/types.js';
+import type { TelegramUpdate, TelegramVoice } from "../storage/types.js";
 
-const TELEGRAM_API_BASE = 'https://api.telegram.org';
+const TELEGRAM_API_BASE = "https://api.telegram.org";
 
 export interface TelegramConfig {
   botToken: string;
@@ -41,12 +41,12 @@ export class TelegramBot {
   /**
    * Send a text message
    */
-  async sendMessage(text: string, parseMode: 'Markdown' | 'HTML' = 'Markdown'): Promise<void> {
+  async sendMessage(text: string, parseMode: "Markdown" | "HTML" = "Markdown"): Promise<void> {
     const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/sendMessage`;
 
     const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: this.config.chatId,
         text: formatForTelegram(text),
@@ -69,7 +69,7 @@ export class TelegramBot {
     if (text.length <= maxLength) {
       try {
         await this.sendMessage(text);
-      } catch (error) {
+      } catch {
         // If markdown fails, try plain text
         await this.sendPlainMessage(text);
       }
@@ -85,7 +85,7 @@ export class TelegramBot {
         await this.sendPlainMessage(chunk);
       }
       // Small delay between messages
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
 
@@ -96,8 +96,8 @@ export class TelegramBot {
     const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/sendMessage`;
 
     const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: this.config.chatId,
         text,
@@ -117,11 +117,11 @@ export class TelegramBot {
     const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/sendChatAction`;
 
     await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: this.config.chatId,
-        action: 'typing',
+        action: "typing",
       }),
     });
   }
@@ -133,16 +133,16 @@ export class TelegramBot {
     const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/getFile`;
 
     const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ file_id: fileId }),
     });
 
     if (!response.ok) {
-      throw new Error('Failed to get file info');
+      throw new Error("Failed to get file info");
     }
 
-    const data = await response.json() as { result: { file_path: string } };
+    const data = (await response.json()) as { result: { file_path: string } };
     const filePath = data.result.file_path;
     const fileUrl = `${TELEGRAM_API_BASE}/file/bot${this.config.botToken}/${filePath}`;
 
@@ -155,7 +155,7 @@ export class TelegramBot {
   async downloadFile(fileUrl: string): Promise<ArrayBuffer> {
     const response = await fetch(fileUrl);
     if (!response.ok) {
-      throw new Error('Failed to download file');
+      throw new Error("Failed to download file");
     }
     return response.arrayBuffer();
   }
@@ -173,8 +173,8 @@ export class TelegramBot {
     }
 
     const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
 
@@ -190,7 +190,7 @@ export class TelegramBot {
   async deleteWebhook(): Promise<void> {
     const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/deleteWebhook`;
 
-    const response = await fetch(url, { method: 'POST' });
+    const response = await fetch(url, { method: "POST" });
 
     if (!response.ok) {
       const error = await response.text();
@@ -213,7 +213,7 @@ export function formatForTelegram(text: string): string {
   // For now, just clean up any problematic patterns
 
   // Fix unmatched asterisks that aren't meant for formatting
-  formatted = formatted.replace(/\*([^*\n]+)\n/g, '• $1\n');
+  formatted = formatted.replace(/\*([^*\n]+)\n/g, "• $1\n");
 
   return formatted;
 }
@@ -222,7 +222,7 @@ export function formatForTelegram(text: string): string {
  * Convert markdown tables to bullet lists for Telegram
  */
 function convertTablesToLists(text: string): string {
-  const lines = text.split('\n');
+  const lines = text.split("\n");
   const result: string[] = [];
   let inTable = false;
   let headers: string[] = [];
@@ -245,9 +245,9 @@ function convertTablesToLists(text: string): string {
     }
 
     const cells = line
-      .split('|')
-      .filter(cell => cell.trim())
-      .map(cell => cell.trim());
+      .split("|")
+      .filter((cell) => cell.trim())
+      .map((cell) => cell.trim());
 
     // First table row becomes headers
     if (!inTable) {
@@ -260,15 +260,15 @@ function convertTablesToLists(text: string): string {
     if (cells.length > 0) {
       const formattedCells = cells
         .map((cell, i) => (headers[i] ? `${headers[i]}: ${cell}` : cell))
-        .filter(s => s && !s.includes(': —'));
+        .filter((s) => s && !s.includes(": —"));
 
       if (formattedCells.length > 0) {
-        result.push(`• ${formattedCells.join(' | ')}`);
+        result.push(`• ${formattedCells.join(" | ")}`);
       }
     }
   }
 
-  return result.join('\n');
+  return result.join("\n");
 }
 
 /**
@@ -276,23 +276,23 @@ function convertTablesToLists(text: string): string {
  */
 function splitMessage(text: string, maxLength: number): string[] {
   const chunks: string[] = [];
-  const paragraphs = text.split('\n\n');
-  let currentChunk = '';
+  const paragraphs = text.split("\n\n");
+  let currentChunk = "";
 
   for (const paragraph of paragraphs) {
     if (currentChunk.length + paragraph.length + 2 <= maxLength) {
-      currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
+      currentChunk += (currentChunk ? "\n\n" : "") + paragraph;
     } else {
       if (currentChunk) {
         chunks.push(currentChunk);
       }
       // If a single paragraph is too long, split it
       if (paragraph.length > maxLength) {
-        const lines = paragraph.split('\n');
-        currentChunk = '';
+        const lines = paragraph.split("\n");
+        currentChunk = "";
         for (const line of lines) {
           if (currentChunk.length + line.length + 1 <= maxLength) {
-            currentChunk += (currentChunk ? '\n' : '') + line;
+            currentChunk += (currentChunk ? "\n" : "") + line;
           } else {
             if (currentChunk) {
               chunks.push(currentChunk);
@@ -331,7 +331,7 @@ export function extractVoiceMessage(update: TelegramUpdate): TelegramVoice | nul
  * Check if a message is a command
  */
 export function isCommand(text: string): boolean {
-  return text.startsWith('/');
+  return text.startsWith("/");
 }
 
 /**
@@ -340,13 +340,13 @@ export function isCommand(text: string): boolean {
 export function parseCommand(text: string): { command: string; args: string } {
   const match = text.match(/^\/(\w+)(?:\s+(.*))?$/);
   if (!match) {
-    return { command: '', args: '' };
+    return { command: "", args: "" };
   }
 
   const [, commandPart, argsPart] = match;
   return {
     command: commandPart.toLowerCase(),
-    args: argsPart?.trim() || '',
+    args: argsPart?.trim() || "",
   };
 }
 
@@ -359,7 +359,7 @@ export function createTelegramBot(): TelegramBot {
   const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
 
   if (!botToken || !chatId) {
-    throw new Error('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
+    throw new Error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID");
   }
 
   return new TelegramBot({ botToken, chatId, webhookSecret });

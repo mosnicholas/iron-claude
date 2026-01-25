@@ -5,10 +5,10 @@
  * Schedule: Daily at 6:00am (user's timezone)
  */
 
-import { createCoachAgent } from '../coach/index.js';
-import { createTelegramBot } from '../bot/telegram.js';
-import { createGitHubStorage } from '../storage/github.js';
-import { getCurrentWeek, getToday, formatDateHuman } from '../utils/date.js';
+import { createCoachAgent } from "../coach/index.js";
+import { createTelegramBot } from "../bot/telegram.js";
+import { createGitHubStorage } from "../storage/github.js";
+import { getCurrentWeek, getToday, formatDateHuman } from "../utils/date.js";
 
 export interface DailyReminderResult {
   success: boolean;
@@ -20,7 +20,7 @@ export interface DailyReminderResult {
  * Run the daily reminder job
  */
 export async function runDailyReminder(): Promise<DailyReminderResult> {
-  const timezone = process.env.TIMEZONE || 'America/New_York';
+  const timezone = process.env.TIMEZONE || "America/New_York";
 
   try {
     const bot = createTelegramBot();
@@ -32,7 +32,7 @@ export async function runDailyReminder(): Promise<DailyReminderResult> {
     if (!profile) {
       return {
         success: true,
-        message: 'No profile configured, skipping reminder',
+        message: "No profile configured, skipping reminder",
       };
     }
 
@@ -47,11 +47,11 @@ export async function runDailyReminder(): Promise<DailyReminderResult> {
       // No plan for this week
       await bot.sendMessage(
         `Good morning! No plan loaded for this week (${currentWeek}). ` +
-        `Want me to generate one? Just say "plan my week" or run /plan.`
+          `Want me to generate one? Just say "plan my week" or run /plan.`
       );
       return {
         success: true,
-        message: 'No weekly plan found, sent prompt to generate',
+        message: "No weekly plan found, sent prompt to generate",
       };
     }
 
@@ -79,7 +79,7 @@ Keep it concise - this is for Telegram. Use emoji sparingly.`
       message: `Sent morning reminder for ${today}`,
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return {
       success: false,
       error: errorMessage,

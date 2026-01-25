@@ -5,11 +5,11 @@
  * Schedule: Sunday at 8:00pm (user's timezone)
  */
 
-import { createCoachAgent } from '../coach/index.js';
-import { createTelegramBot } from '../bot/telegram.js';
-import { createGitHubStorage } from '../storage/github.js';
-import { buildWeeklyPlanningPrompt } from '../coach/prompts.js';
-import { getCurrentWeek, getNextWeek } from '../utils/date.js';
+import { createCoachAgent } from "../coach/index.js";
+import { createTelegramBot } from "../bot/telegram.js";
+import { createGitHubStorage } from "../storage/github.js";
+import { buildWeeklyPlanningPrompt } from "../coach/prompts.js";
+import { getCurrentWeek, getNextWeek } from "../utils/date.js";
 
 export interface WeeklyPlanResult {
   success: boolean;
@@ -22,7 +22,7 @@ export interface WeeklyPlanResult {
  * Run the weekly planning job
  */
 export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
-  const timezone = process.env.TIMEZONE || 'America/New_York';
+  const timezone = process.env.TIMEZONE || "America/New_York";
 
   try {
     const bot = createTelegramBot();
@@ -34,7 +34,7 @@ export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
     if (!profile) {
       return {
         success: true,
-        message: 'No profile configured, skipping planning',
+        message: "No profile configured, skipping planning",
       };
     }
 
@@ -82,14 +82,14 @@ The summary should include:
       message: `Generated plan for ${nextWeek}`,
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     // Try to notify user of failure
     try {
       const bot = createTelegramBot();
       await bot.sendMessage(
         `⚠️ Had trouble generating next week's plan. ` +
-        `I'll try again, or you can ask me "plan my week" to generate it manually.`
+          `I'll try again, or you can ask me "plan my week" to generate it manually.`
       );
     } catch {
       // Ignore notification failure
@@ -108,14 +108,14 @@ The summary should include:
 export async function planExists(week: string): Promise<boolean> {
   const storage = createGitHubStorage();
   const plans = await storage.listPlans();
-  return plans.some(p => p.includes(week));
+  return plans.some((p) => p.includes(week));
 }
 
 /**
  * Force regenerate a plan (overwrites existing)
  */
 export async function forceRegeneratePlan(week: string): Promise<WeeklyPlanResult> {
-  const timezone = process.env.TIMEZONE || 'America/New_York';
+  const timezone = process.env.TIMEZONE || "America/New_York";
 
   try {
     const bot = createTelegramBot();
@@ -142,7 +142,7 @@ After generating the plan:
       message: `Regenerated plan for ${week}`,
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return {
       success: false,
       error: errorMessage,

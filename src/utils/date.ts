@@ -19,21 +19,36 @@ function getISOWeekYear(date: Date): number {
 }
 
 export function formatISOWeek(date: Date): string {
-  return `${getISOWeekYear(date)}-W${getISOWeek(date).toString().padStart(2, '0')}`;
+  return `${getISOWeekYear(date)}-W${getISOWeek(date).toString().padStart(2, "0")}`;
 }
 
 export function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0];
+  return date.toISOString().split("T")[0];
 }
 
 export function formatDateHuman(date: Date): string {
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
   return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}`;
 }
 
 export function getDayName(date: Date): string {
-  return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][date.getDay()];
+  return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][
+    date.getDay()
+  ];
 }
 
 export function isWeekend(date: Date): boolean {
@@ -42,7 +57,7 @@ export function isWeekend(date: Date): boolean {
 }
 
 function getDateInTimezone(date: Date, timezone: string): Date {
-  return new Date(date.toLocaleString('en-US', { timeZone: timezone }));
+  return new Date(date.toLocaleString("en-US", { timeZone: timezone }));
 }
 
 export function parseISOWeek(weekString: string): { start: Date; end: Date } {

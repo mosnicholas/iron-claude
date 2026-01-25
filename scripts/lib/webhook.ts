@@ -4,7 +4,7 @@
  * Sets up the Telegram webhook to point to the deployed URL.
  */
 
-const TELEGRAM_API_BASE = 'https://api.telegram.org';
+const TELEGRAM_API_BASE = "https://api.telegram.org";
 
 interface TelegramResponse {
   ok: boolean;
@@ -22,7 +22,7 @@ export async function setWebhook(
 ): Promise<void> {
   const body: Record<string, unknown> = {
     url: webhookUrl,
-    allowed_updates: ['message'],
+    allowed_updates: ["message"],
     drop_pending_updates: true,
   };
 
@@ -31,8 +31,8 @@ export async function setWebhook(
   }
 
   const response = await fetch(`${TELEGRAM_API_BASE}/bot${botToken}/setWebhook`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
 
@@ -48,7 +48,7 @@ export async function setWebhook(
  */
 export async function deleteWebhook(botToken: string): Promise<void> {
   const response = await fetch(`${TELEGRAM_API_BASE}/bot${botToken}/deleteWebhook`, {
-    method: 'POST',
+    method: "POST",
   });
 
   const data = (await response.json()) as TelegramResponse;
@@ -84,7 +84,7 @@ export async function verifyBotToken(botToken: string): Promise<string> {
   const data = (await response.json()) as TelegramResponse;
 
   if (!data.ok) {
-    throw new Error('Invalid Telegram bot token');
+    throw new Error("Invalid Telegram bot token");
   }
 
   const botInfo = data.result as { username: string };

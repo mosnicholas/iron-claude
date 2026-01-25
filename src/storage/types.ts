@@ -59,7 +59,7 @@ export interface WorkoutLog {
   durationMinutes?: number;
   location: string;
   energyLevel?: number;
-  status: 'in_progress' | 'completed' | 'abandoned';
+  status: "in_progress" | "completed" | "abandoned";
   planReference: string;
   branch?: string;
   prsHit: { exercise: string; achievement: string }[];
@@ -87,7 +87,7 @@ export interface WeeklyPlan {
   startDate: string;
   endDate: string;
   generatedAt: string;
-  status: 'active' | 'completed' | 'archived';
+  status: "active" | "completed" | "archived";
   plannedSessions: number;
   theme?: string;
   days: DayPlan[];
@@ -96,7 +96,7 @@ export interface WeeklyPlan {
 export interface DayPlan {
   day: string;
   date: string;
-  type: 'workout' | 'rest' | 'optional';
+  type: "workout" | "rest" | "optional";
   workoutType?: string;
   targetDuration?: number;
   exercises?: PlannedExercise[];

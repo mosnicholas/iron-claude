@@ -10,7 +10,10 @@
     "onboard": "tsx scripts/onboard.ts",
     "set-webhook": "tsx scripts/set-webhook.ts",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/**/*.ts"
+    "lint": "eslint src/ api/ scripts/",
+    "lint:fix": "eslint src/ api/ scripts/ --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"api/**/*.ts\" \"scripts/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"api/**/*.ts\" \"scripts/**/*.ts\""
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.19",
@@ -19,15 +22,20 @@
     "yaml": "^2.8.2"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@inquirer/prompts": "^7.10.1",
     "@types/node": "^22.19.7",
     "@vercel/node": "^5.5.27",
     "boxen": "^8.0.1",
     "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
     "nanospinner": "^1.2.2",
     "picocolors": "^1.1.1",
+    "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.53.1",
     "vercel": "^50.5.0"
   },
   "engines": {

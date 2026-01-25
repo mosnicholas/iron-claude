@@ -4,7 +4,7 @@
  * Shared patterns for Vercel serverless API endpoints.
  */
 
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export interface CronResult {
   success: boolean;
@@ -41,14 +41,14 @@ export function createApiHandler<T extends CronResult>(options: HandlerOptions<T
 
   return async (req: VercelRequest, res: VercelResponse): Promise<void> => {
     // Validate HTTP method
-    if (!allowedMethods.includes(req.method || '')) {
-      res.status(405).json({ error: 'Method not allowed' });
+    if (!allowedMethods.includes(req.method || "")) {
+      res.status(405).json({ error: "Method not allowed" });
       return;
     }
 
     // Validate secret/auth
     if (!validateSecret(req)) {
-      res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: "Unauthorized" });
       return;
     }
 
@@ -57,7 +57,11 @@ export function createApiHandler<T extends CronResult>(options: HandlerOptions<T
 
       if (result.success) {
         // Extract extra fields beyond success/error for response
-        const { success, error, ...rest } = result as CronResult & Record<string, unknown>;
+        const {
+          success: _success,
+          error: _error,
+          ...rest
+        } = result as CronResult & Record<string, unknown>;
         res.status(200).json({ ok: true, ...rest });
       } else {
         res.status(500).json({ ok: false, error: result.error });
@@ -66,7 +70,7 @@ export function createApiHandler<T extends CronResult>(options: HandlerOptions<T
       console.error(`${errorLabel} error:`, error);
       res.status(500).json({
         ok: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : "Unknown error",
       });
     }
   };

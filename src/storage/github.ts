@@ -5,9 +5,9 @@
  * GitHub is the database - every change is a commit.
  */
 
-import type { GitHubFileContent, GitHubCommitResponse, GitHubBranch } from './types.js';
+import type { GitHubFileContent, GitHubCommitResponse, GitHubBranch } from "./types.js";
 
-const GITHUB_API_BASE = 'https://api.github.com';
+const GITHUB_API_BASE = "https://api.github.com";
 
 interface GitHubConfig {
   token: string;
@@ -21,7 +21,7 @@ export class GitHubStorage {
 
   constructor(config: GitHubConfig) {
     this.config = config;
-    const [owner, repo] = config.repo.split('/');
+    const [owner, repo] = config.repo.split("/");
     if (!owner || !repo) {
       throw new Error('Invalid repo format. Expected "owner/repo"');
     }
@@ -29,17 +29,14 @@ export class GitHubStorage {
     this.repo = repo;
   }
 
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${GITHUB_API_BASE}${endpoint}`;
     const response = await fetch(url, {
       ...options,
       headers: {
         Authorization: `Bearer ${this.config.token}`,
-        Accept: 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json',
+        Accept: "application/vnd.github.v3+json",
+        "Content-Type": "application/json",
         ...options.headers,
       },
     });
@@ -63,17 +60,17 @@ export class GitHubStorage {
   /**
    * Read a file from the repository
    */
-  async readFile(path: string, branch = 'main'): Promise<string | null> {
+  async readFile(path: string, branch = "main"): Promise<string | null> {
     try {
       const endpoint = `/repos/${this.owner}/${this.repo}/contents/${path}?ref=${branch}`;
       const data = await this.request<GitHubFileContent>(endpoint);
 
-      if (data.encoding === 'base64') {
-        return Buffer.from(data.content, 'base64').toString('utf-8');
+      if (data.encoding === "base64") {
+        return Buffer.from(data.content, "base64").toString("utf-8");
       }
       return data.content;
     } catch (error) {
-      if (error instanceof Error && error.message.includes('404')) {
+      if (error instanceof Error && error.message.includes("404")) {
         return null;
       }
       throw error;
@@ -87,7 +84,7 @@ export class GitHubStorage {
     path: string,
     content: string,
     message: string,
-    branch = 'main'
+    branch = "main"
   ): Promise<GitHubCommitResponse> {
     // First, try to get the existing file to get its SHA
     let sha: string | undefined;
@@ -102,7 +99,7 @@ export class GitHubStorage {
     const endpoint = `/repos/${this.owner}/${this.repo}/contents/${path}`;
     const body: Record<string, unknown> = {
       message,
-      content: Buffer.from(content).toString('base64'),
+      content: Buffer.from(content).toString("base64"),
       branch,
     };
 
@@ -111,7 +108,7 @@ export class GitHubStorage {
     }
 
     return this.request<GitHubCommitResponse>(endpoint, {
-      method: 'PUT',
+      method: "PUT",
       body: JSON.stringify(body),
     });
   }
@@ -119,16 +116,12 @@ export class GitHubStorage {
   /**
    * Delete a file
    */
-  async deleteFile(
-    path: string,
-    message: string,
-    branch = 'main'
-  ): Promise<void> {
+  async deleteFile(path: string, message: string, branch = "main"): Promise<void> {
     const endpoint = `/repos/${this.owner}/${this.repo}/contents/${path}?ref=${branch}`;
     const existing = await this.request<GitHubFileContent>(endpoint);
 
     await this.request(`/repos/${this.owner}/${this.repo}/contents/${path}`, {
-      method: 'DELETE',
+      method: "DELETE",
       body: JSON.stringify({
         message,
         sha: existing.sha,
@@ -144,7 +137,7 @@ export class GitHubStorage {
     fromPath: string,
     toPath: string,
     message: string,
-    branch = 'main'
+    branch = "main"
   ): Promise<GitHubCommitResponse> {
     const content = await this.readFile(fromPath, branch);
     if (content === null) {
@@ -163,16 +156,14 @@ export class GitHubStorage {
   /**
    * List files in a directory
    */
-  async listFiles(directory: string, branch = 'main'): Promise<string[]> {
+  async listFiles(directory: string, branch = "main"): Promise<string[]> {
     try {
       const endpoint = `/repos/${this.owner}/${this.repo}/contents/${directory}?ref=${branch}`;
       const data = await this.request<Array<{ path: string; type: string }>>(endpoint);
 
-      return data
-        .filter(item => item.type === 'file')
-        .map(item => item.path);
+      return data.filter((item) => item.type === "file").map((item) => item.path);
     } catch (error) {
-      if (error instanceof Error && error.message.includes('404')) {
+      if (error instanceof Error && error.message.includes("404")) {
         return [];
       }
       throw error;
@@ -182,7 +173,7 @@ export class GitHubStorage {
   /**
    * Check if a file exists
    */
-  async fileExists(path: string, branch = 'main'): Promise<boolean> {
+  async fileExists(path: string, branch = "main"): Promise<boolean> {
     try {
       const endpoint = `/repos/${this.owner}/${this.repo}/contents/${path}?ref=${branch}`;
       await this.request(endpoint);
@@ -207,7 +198,7 @@ export class GitHubStorage {
 
     // Create new branch
     await this.request(`/repos/${this.owner}/${this.repo}/git/refs`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({
         ref: `refs/heads/${branchName}`,
         sha: mainRef.object.sha,
@@ -219,10 +210,9 @@ export class GitHubStorage {
    * Delete a branch
    */
   async deleteBranch(branchName: string): Promise<void> {
-    await this.request(
-      `/repos/${this.owner}/${this.repo}/git/refs/heads/${branchName}`,
-      { method: 'DELETE' }
-    );
+    await this.request(`/repos/${this.owner}/${this.repo}/git/refs/heads/${branchName}`, {
+      method: "DELETE",
+    });
   }
 
   /**
@@ -246,10 +236,10 @@ export class GitHubStorage {
       `/repos/${this.owner}/${this.repo}/branches?per_page=100`
     );
 
-    const branchNames = branches.map(b => b.name);
+    const branchNames = branches.map((b) => b.name);
 
     if (prefix) {
-      return branchNames.filter(name => name.startsWith(prefix));
+      return branchNames.filter((name) => name.startsWith(prefix));
     }
 
     return branchNames;
@@ -265,9 +255,9 @@ export class GitHubStorage {
     const result = await this.request<{ sha: string; merged: boolean }>(
       `/repos/${this.owner}/${this.repo}/merges`,
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({
-          base: 'main',
+          base: "main",
           head: branchName,
           commit_message: `Merge ${branchName} into main`,
         }),
@@ -289,7 +279,7 @@ export class GitHubStorage {
    * Create a workout branch for today's session
    */
   async createWorkoutBranch(date: string, workoutType: string): Promise<string> {
-    const branchName = `workout/${date}-${workoutType.toLowerCase().replace(/\s+/g, '-')}`;
+    const branchName = `workout/${date}-${workoutType.toLowerCase().replace(/\s+/g, "-")}`;
     await this.createBranch(branchName);
     return branchName;
   }
@@ -298,11 +288,11 @@ export class GitHubStorage {
    * Find any in-progress workout branch
    */
   async findInProgressWorkout(): Promise<string | null> {
-    const workoutBranches = await this.listBranches('workout/');
+    const workoutBranches = await this.listBranches("workout/");
 
     // Check each branch for in-progress.md
     for (const branch of workoutBranches) {
-      const hasInProgress = await this.fileExists('workouts/in-progress.md', branch);
+      const hasInProgress = await this.fileExists("workouts/in-progress.md", branch);
       if (hasInProgress) {
         return branch;
       }
@@ -314,15 +304,12 @@ export class GitHubStorage {
   /**
    * Complete a workout - finalize and merge
    */
-  async completeWorkout(
-    branch: string,
-    finalDate: string
-  ): Promise<void> {
+  async completeWorkout(branch: string, finalDate: string): Promise<void> {
     // Rename in-progress.md to the final date
     await this.moveFile(
-      'workouts/in-progress.md',
+      "workouts/in-progress.md",
       `workouts/${finalDate}.md`,
-      'Finalize workout file',
+      "Finalize workout file",
       branch
     );
 
@@ -335,15 +322,15 @@ export class GitHubStorage {
   // ============================================================================
 
   async readProfile(): Promise<string | null> {
-    return this.readFile('profile.md');
+    return this.readFile("profile.md");
   }
 
   async readLearnings(): Promise<string | null> {
-    return this.readFile('learnings.md');
+    return this.readFile("learnings.md");
   }
 
   async readPRs(): Promise<string | null> {
-    return this.readFile('prs.yaml');
+    return this.readFile("prs.yaml");
   }
 
   async readWeeklyPlan(week: string): Promise<string | null> {
@@ -351,15 +338,15 @@ export class GitHubStorage {
   }
 
   async listWorkouts(): Promise<string[]> {
-    return this.listFiles('workouts');
+    return this.listFiles("workouts");
   }
 
   async listPlans(): Promise<string[]> {
-    return this.listFiles('plans');
+    return this.listFiles("plans");
   }
 
   async listRetrospectives(): Promise<string[]> {
-    return this.listFiles('retrospectives');
+    return this.listFiles("retrospectives");
   }
 }
 
@@ -371,7 +358,7 @@ export function createGitHubStorage(): GitHubStorage {
   const repo = process.env.DATA_REPO;
 
   if (!token || !repo) {
-    throw new Error('Missing GITHUB_TOKEN or DATA_REPO environment variables');
+    throw new Error("Missing GITHUB_TOKEN or DATA_REPO environment variables");
   }
 
   return new GitHubStorage({ token, repo });

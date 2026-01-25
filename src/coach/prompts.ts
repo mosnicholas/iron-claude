@@ -4,12 +4,12 @@
  * Loads and templates prompt files for the coach agent.
  */
 
-import { readFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { readFileSync, existsSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROMPTS_DIR = join(__dirname, '../../prompts');
+const PROMPTS_DIR = join(__dirname, "../../prompts");
 
 export function loadPrompt(name: string): string {
   const path = join(PROMPTS_DIR, `${name}.md`);
@@ -18,25 +18,25 @@ export function loadPrompt(name: string): string {
     throw new Error(`Prompt file not found: ${path}`);
   }
 
-  return readFileSync(path, 'utf-8');
+  return readFileSync(path, "utf-8");
 }
 
 export function loadPartial(name: string): string {
-  const path = join(PROMPTS_DIR, 'partials', `${name}.md`);
+  const path = join(PROMPTS_DIR, "partials", `${name}.md`);
 
   if (!existsSync(path)) {
     throw new Error(`Partial prompt not found: ${path}`);
   }
 
-  return readFileSync(path, 'utf-8');
+  return readFileSync(path, "utf-8");
 }
 
 export function buildSystemPrompt(timezone: string): string {
-  const systemPrompt = loadPrompt('system');
+  const systemPrompt = loadPrompt("system");
 
-  const exerciseParsing = loadPartial('exercise-parsing');
-  const workoutManagement = loadPartial('workout-management');
-  const prDetection = loadPartial('pr-detection');
+  const exerciseParsing = loadPartial("exercise-parsing");
+  const workoutManagement = loadPartial("workout-management");
+  const prDetection = loadPartial("pr-detection");
 
   const contextNote = `
 ## File Access
@@ -67,24 +67,24 @@ ${prDetection}
 </pr-detection>
 `;
 
-  return systemPrompt.replace('{{CONTEXT}}', contextNote);
+  return systemPrompt.replace("{{CONTEXT}}", contextNote);
 }
 
 export function buildWeeklyPlanningPrompt(): string {
-  return loadPrompt('weekly-planning');
+  return loadPrompt("weekly-planning");
 }
 
 export function buildRetrospectivePrompt(): string {
-  return loadPrompt('retrospective');
+  return loadPrompt("retrospective");
 }
 
 export function buildOnboardingPrompt(): string {
-  return loadPrompt('onboarding');
+  return loadPrompt("onboarding");
 }
 
 export const DEFAULT_PERSONA = {
-  name: 'Coach',
-  style: 'direct but warm',
-  emojiUsage: 'sparingly and meaningfully',
-  messageStyle: 'concise, mobile-first',
+  name: "Coach",
+  style: "direct but warm",
+  emojiUsage: "sparingly and meaningfully",
+  messageStyle: "concise, mobile-first",
 };

@@ -4,21 +4,18 @@
  * Handles transcription of voice messages using Google Gemini.
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { TelegramBot } from './telegram.js';
-import type { TelegramVoice } from '../storage/types.js';
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { TelegramBot } from "./telegram.js";
+import type { TelegramVoice } from "../storage/types.js";
 
 /**
  * Transcribe a voice message using Gemini
  */
-export async function transcribeVoice(
-  voice: TelegramVoice,
-  bot: TelegramBot
-): Promise<string> {
+export async function transcribeVoice(voice: TelegramVoice, bot: TelegramBot): Promise<string> {
   const geminiKey = process.env.GEMINI_API_KEY;
 
   if (!geminiKey) {
-    throw new Error('GEMINI_API_KEY not configured');
+    throw new Error("GEMINI_API_KEY not configured");
   }
 
   // Download the voice file from Telegram
@@ -27,13 +24,13 @@ export async function transcribeVoice(
 
   // Initialize Gemini
   const genAI = new GoogleGenerativeAI(geminiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
   // Convert audio to base64
-  const base64Audio = Buffer.from(audioData).toString('base64');
+  const base64Audio = Buffer.from(audioData).toString("base64");
 
   // Determine MIME type
-  const mimeType = voice.mime_type || 'audio/ogg';
+  const mimeType = voice.mime_type || "audio/ogg";
 
   // Send to Gemini for transcription
   const result = await model.generateContent([
@@ -60,7 +57,7 @@ Return ONLY the transcription, no additional commentary.`,
   const transcription = response.text().trim();
 
   if (!transcription) {
-    throw new Error('Failed to transcribe voice message');
+    throw new Error("Failed to transcribe voice message");
   }
 
   return transcription;

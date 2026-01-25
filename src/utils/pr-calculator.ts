@@ -3,7 +3,7 @@
  * Simplified to core functions only.
  */
 
-import type { PRRecord, PRsData } from '../storage/types.js';
+import type { PRRecord, PRsData } from "../storage/types.js";
 
 /**
  * Estimate 1RM using the Brzycki formula
@@ -21,15 +21,25 @@ export function calculate1RM(weight: number, reps: number): number {
 function normalizeExerciseName(name: string): string {
   const lower = name.toLowerCase().trim();
   const aliases: Record<string, string> = {
-    'bench press': 'bench_press', 'bench': 'bench_press',
-    'squat': 'squat', 'squats': 'squat', 'back squat': 'squat',
-    'deadlift': 'deadlift', 'dl': 'deadlift',
-    'overhead press': 'overhead_press', 'ohp': 'overhead_press', 'press': 'overhead_press',
-    'pull-up': 'weighted_pull_up', 'pull-ups': 'weighted_pull_up', 'pullups': 'weighted_pull_up',
-    'barbell row': 'barbell_row', 'row': 'barbell_row',
-    'rdl': 'romanian_deadlift', 'romanian deadlift': 'romanian_deadlift',
+    "bench press": "bench_press",
+    bench: "bench_press",
+    squat: "squat",
+    squats: "squat",
+    "back squat": "squat",
+    deadlift: "deadlift",
+    dl: "deadlift",
+    "overhead press": "overhead_press",
+    ohp: "overhead_press",
+    press: "overhead_press",
+    "pull-up": "weighted_pull_up",
+    "pull-ups": "weighted_pull_up",
+    pullups: "weighted_pull_up",
+    "barbell row": "barbell_row",
+    row: "barbell_row",
+    rdl: "romanian_deadlift",
+    "romanian deadlift": "romanian_deadlift",
   };
-  return aliases[lower] || lower.replace(/[^a-z0-9]+/g, '_');
+  return aliases[lower] || lower.replace(/[^a-z0-9]+/g, "_");
 }
 
 /**
@@ -46,25 +56,25 @@ export function isPotentialPR(
   const existing = currentPRs[name];
 
   if (!existing) {
-    return { isPR: true, prType: 'weight', details: `First recorded: ${weight} x ${reps}` };
+    return { isPR: true, prType: "weight", details: `First recorded: ${weight} x ${reps}` };
   }
 
   if (weight > existing.current.weight) {
-    return { isPR: true, prType: 'weight', details: `New weight PR: ${weight}` };
+    return { isPR: true, prType: "weight", details: `New weight PR: ${weight}` };
   }
 
   if (est1RM > existing.current.estimated1RM) {
-    return { isPR: true, prType: 'estimated_1rm', details: `New est 1RM: ${est1RM}` };
+    return { isPR: true, prType: "estimated_1rm", details: `New est 1RM: ${est1RM}` };
   }
 
-  return { isPR: false, prType: null, details: '' };
+  return { isPR: false, prType: null, details: "" };
 }
 
 /**
  * Parse PRs from YAML string
  */
 export function parsePRsYaml(yamlContent: string): PRsData {
-  const lines = yamlContent.split('\n');
+  const lines = yamlContent.split("\n");
   const prs: PRsData = {};
   let currentExercise: string | null = null;
   let inHistory = false;
@@ -82,17 +92,17 @@ export function parsePRsYaml(yamlContent: string): PRsData {
   }
 
   function parseValue(key: string, rawValue: string): void {
-    const value = rawValue.replace(/['"]/g, '');
+    const value = rawValue.replace(/['"]/g, "");
 
     switch (key) {
-      case 'weight':
-      case 'reps':
+      case "weight":
+      case "reps":
         currentRecord[key] = parseFloat(value);
         break;
-      case 'estimated_1rm':
+      case "estimated_1rm":
         currentRecord.estimated1RM = parseFloat(value);
         break;
-      case 'date':
+      case "date":
         currentRecord.date = value;
         break;
     }
@@ -102,10 +112,10 @@ export function parsePRsYaml(yamlContent: string): PRsData {
     const trimmed = line.trim();
 
     // Skip comments and empty lines
-    if (trimmed.startsWith('#') || !trimmed) continue;
+    if (trimmed.startsWith("#") || !trimmed) continue;
 
     // Top-level exercise name (no leading whitespace, ends with colon)
-    if (!line.startsWith(' ') && trimmed.endsWith(':')) {
+    if (!line.startsWith(" ") && trimmed.endsWith(":")) {
       saveCurrentRecord();
       currentExercise = trimmed.slice(0, -1);
       prs[currentExercise] = { current: {} as PRRecord, history: [] };
@@ -116,12 +126,12 @@ export function parsePRsYaml(yamlContent: string): PRsData {
     if (!currentExercise) continue;
 
     // Section markers
-    if (trimmed === 'current:') {
+    if (trimmed === "current:") {
       saveCurrentRecord();
       inHistory = false;
       continue;
     }
-    if (trimmed === 'history:') {
+    if (trimmed === "history:") {
       saveCurrentRecord();
       inHistory = true;
       continue;
@@ -133,7 +143,7 @@ export function parsePRsYaml(yamlContent: string): PRsData {
       const [, key, value] = match;
 
       // New list item in history section
-      if (trimmed.startsWith('-') && inHistory) {
+      if (trimmed.startsWith("-") && inHistory) {
         saveCurrentRecord();
       }
 

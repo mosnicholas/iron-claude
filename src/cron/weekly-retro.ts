@@ -5,11 +5,11 @@
  * Schedule: Saturday at 6:00pm (user's timezone)
  */
 
-import { createCoachAgent } from '../coach/index.js';
-import { createTelegramBot } from '../bot/telegram.js';
-import { createGitHubStorage } from '../storage/github.js';
-import { buildRetrospectivePrompt } from '../coach/prompts.js';
-import { getCurrentWeek } from '../utils/date.js';
+import { createCoachAgent } from "../coach/index.js";
+import { createTelegramBot } from "../bot/telegram.js";
+import { createGitHubStorage } from "../storage/github.js";
+import { buildRetrospectivePrompt } from "../coach/prompts.js";
+import { getCurrentWeek } from "../utils/date.js";
 
 export interface WeeklyRetroResult {
   success: boolean;
@@ -22,7 +22,7 @@ export interface WeeklyRetroResult {
  * Run the weekly retrospective job
  */
 export async function runWeeklyRetro(): Promise<WeeklyRetroResult> {
-  const timezone = process.env.TIMEZONE || 'America/New_York';
+  const timezone = process.env.TIMEZONE || "America/New_York";
 
   try {
     const bot = createTelegramBot();
@@ -34,7 +34,7 @@ export async function runWeeklyRetro(): Promise<WeeklyRetroResult> {
     if (!profile) {
       return {
         success: true,
-        message: 'No profile configured, skipping retrospective',
+        message: "No profile configured, skipping retrospective",
       };
     }
 
@@ -43,9 +43,7 @@ export async function runWeeklyRetro(): Promise<WeeklyRetroResult> {
 
     // Check if we have workout data this week
     const workoutFiles = await storage.listWorkouts();
-    const thisWeekWorkouts = workoutFiles.filter(f =>
-      f.includes(currentWeek.replace('-W', '-'))
-    );
+    const thisWeekWorkouts = workoutFiles.filter((f) => f.includes(currentWeek.replace("-W", "-")));
 
     // Load the retrospective prompt
     const retroPrompt = buildRetrospectivePrompt();
@@ -80,14 +78,14 @@ Workout files found: ${thisWeekWorkouts.length}`
       message: `Generated retrospective for ${currentWeek}`,
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     // Try to notify user of failure
     try {
       const bot = createTelegramBot();
       await bot.sendMessage(
         `⚠️ Had trouble generating this week's retrospective. ` +
-        `I'll try again, or you can ask me to analyze the week manually.`
+          `I'll try again, or you can ask me to analyze the week manually.`
       );
     } catch {
       // Ignore notification failure
@@ -106,5 +104,5 @@ Workout files found: ${thisWeekWorkouts.length}`
 export async function retroExists(week: string): Promise<boolean> {
   const storage = createGitHubStorage();
   const retros = await storage.listRetrospectives();
-  return retros.some(r => r.includes(week));
+  return retros.some((r) => r.includes(week));
 }

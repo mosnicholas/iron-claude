@@ -4,7 +4,7 @@
  * Creates and initializes the fitness-data repository.
  */
 
-const GITHUB_API_BASE = 'https://api.github.com';
+const GITHUB_API_BASE = "https://api.github.com";
 
 interface GitHubUser {
   login: string;
@@ -23,7 +23,7 @@ export async function verifyGitHubToken(token: string): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new Error('Invalid GitHub token or insufficient permissions');
+    throw new Error("Invalid GitHub token or insufficient permissions");
   }
 
   const data = (await response.json()) as GitHubUser;
@@ -33,20 +33,17 @@ export async function verifyGitHubToken(token: string): Promise<string> {
 /**
  * Create a new private repository
  */
-async function createRepository(
-  token: string,
-  repoName: string
-): Promise<string> {
+async function createRepository(token: string, repoName: string): Promise<string> {
   const response = await fetch(`${GITHUB_API_BASE}/user/repos`, {
-    method: 'POST',
+    method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github.v3+json',
-      'Content-Type': 'application/json',
+      Accept: "application/vnd.github.v3+json",
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       name: repoName,
-      description: 'Personal fitness data - managed by IronClaude',
+      description: "Personal fitness data - managed by IronClaude",
       private: true,
       auto_init: false,
     }),
@@ -54,7 +51,7 @@ async function createRepository(
 
   if (!response.ok) {
     const error = await response.text();
-    if (error.includes('name already exists')) {
+    if (error.includes("name already exists")) {
       throw new Error(`Repository "${repoName}" already exists`);
     }
     throw new Error(`Failed to create repository: ${error}`);
@@ -74,21 +71,18 @@ async function createFile(
   content: string,
   message: string
 ): Promise<void> {
-  const response = await fetch(
-    `${GITHUB_API_BASE}/repos/${repo}/contents/${path}`,
-    {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message,
-        content: Buffer.from(content).toString('base64'),
-      }),
-    }
-  );
+  const response = await fetch(`${GITHUB_API_BASE}/repos/${repo}/contents/${path}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github.v3+json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message,
+      content: Buffer.from(content).toString("base64"),
+    }),
+  });
 
   if (!response.ok) {
     const error = await response.text();
@@ -104,8 +98,8 @@ timezone: "America/New_York"
 telegram_chat_id: ""
 primary_gym: ""
 backup_gyms: []
-created: "${new Date().toISOString().split('T')[0]}"
-last_updated: "${new Date().toISOString().split('T')[0]}"
+created: "${new Date().toISOString().split("T")[0]}"
+last_updated: "${new Date().toISOString().split("T")[0]}"
 ---
 
 # Profile
@@ -168,11 +162,11 @@ const INITIAL_LEARNINGS = `# Learnings
 
 ## Initial Setup
 
-- Created: ${new Date().toISOString().split('T')[0]}
+- Created: ${new Date().toISOString().split("T")[0]}
 
 ---
 
-*Last updated: ${new Date().toISOString().split('T')[0]}*
+*Last updated: ${new Date().toISOString().split("T")[0]}*
 `;
 
 const INITIAL_PRS = `# Personal Records
@@ -219,7 +213,7 @@ Don't edit these files directly - interact with your coach via Telegram!
  */
 export async function createGitHubRepo(
   token: string,
-  repoName: string = 'fitness-data'
+  repoName: string = "fitness-data"
 ): Promise<string> {
   // Verify token first
   await verifyGitHubToken(token);
@@ -231,18 +225,24 @@ export async function createGitHubRepo(
   await new Promise((resolve) => setTimeout(resolve, 500));
 
   // Create initial files
-  await createFile(token, fullName, 'profile.md', INITIAL_PROFILE, 'Initialize profile');
-  await createFile(token, fullName, 'learnings.md', INITIAL_LEARNINGS, 'Initialize learnings');
-  await createFile(token, fullName, 'prs.yaml', INITIAL_PRS, 'Initialize PRs');
+  await createFile(token, fullName, "profile.md", INITIAL_PROFILE, "Initialize profile");
+  await createFile(token, fullName, "learnings.md", INITIAL_LEARNINGS, "Initialize learnings");
+  await createFile(token, fullName, "prs.yaml", INITIAL_PRS, "Initialize PRs");
 
   // Create directories with .gitkeep
-  await createFile(token, fullName, 'workouts/.gitkeep', '', 'Create workouts directory');
-  await createFile(token, fullName, 'plans/.gitkeep', '', 'Create plans directory');
-  await createFile(token, fullName, 'retrospectives/.gitkeep', '', 'Create retrospectives directory');
-  await createFile(token, fullName, 'conversations/.gitkeep', '', 'Create conversations directory');
+  await createFile(token, fullName, "workouts/.gitkeep", "", "Create workouts directory");
+  await createFile(token, fullName, "plans/.gitkeep", "", "Create plans directory");
+  await createFile(
+    token,
+    fullName,
+    "retrospectives/.gitkeep",
+    "",
+    "Create retrospectives directory"
+  );
+  await createFile(token, fullName, "conversations/.gitkeep", "", "Create conversations directory");
 
   // Update README
-  await createFile(token, fullName, 'README.md', README, 'Update README');
+  await createFile(token, fullName, "README.md", README, "Update README");
 
   return fullName;
 }

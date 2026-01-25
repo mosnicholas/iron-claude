@@ -5,10 +5,10 @@
  * Uses local file system access for exploring workout data.
  */
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
-import { syncRepo, pushChanges } from '../storage/repo-sync.js';
-import { buildSystemPrompt } from './prompts.js';
-import { extractTextFromMessage, extractToolsFromMessage } from '../utils/sdk-helpers.js';
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { syncRepo, pushChanges } from "../storage/repo-sync.js";
+import { buildSystemPrompt } from "./prompts.js";
+import { extractTextFromMessage, extractToolsFromMessage } from "../utils/sdk-helpers.js";
 
 export interface CoachConfig {
   model?: string;
@@ -28,8 +28,8 @@ export class CoachAgent {
 
   constructor(config: CoachConfig = {}) {
     this.config = {
-      model: config.model || 'claude-sonnet-4-20250514',
-      timezone: config.timezone || process.env.TIMEZONE || 'America/New_York',
+      model: config.model || "claude-sonnet-4-20250514",
+      timezone: config.timezone || process.env.TIMEZONE || "America/New_York",
       maxTurns: config.maxTurns || 10,
     };
   }
@@ -40,7 +40,7 @@ export class CoachAgent {
       const token = process.env.GITHUB_TOKEN;
 
       if (!repoName || !token) {
-        throw new Error('DATA_REPO and GITHUB_TOKEN must be set');
+        throw new Error("DATA_REPO and GITHUB_TOKEN must be set");
       }
 
       this.repoPath = await syncRepo({
@@ -55,7 +55,7 @@ export class CoachAgent {
     const repoPath = await this.ensureRepoSynced();
 
     const toolsUsed: string[] = [];
-    let responseText = '';
+    let responseText = "";
     let turnsUsed = 0;
 
     const q = query({
@@ -65,8 +65,8 @@ export class CoachAgent {
         cwd: repoPath,
         maxTurns: this.config.maxTurns,
         model: this.config.model,
-        allowedTools: ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep'],
-        permissionMode: 'acceptEdits',
+        allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+        permissionMode: "acceptEdits",
         env: {
           TIMEZONE: this.config.timezone,
         },
@@ -74,14 +74,14 @@ export class CoachAgent {
     });
 
     for await (const message of q) {
-      if (message.type === 'assistant') {
+      if (message.type === "assistant") {
         responseText = extractTextFromMessage(message);
         toolsUsed.push(...extractToolsFromMessage(message));
         turnsUsed++;
       }
     }
 
-    await pushChanges('Update from coach conversation');
+    await pushChanges("Update from coach conversation");
 
     return { message: responseText, toolsUsed, turnsUsed };
   }
@@ -104,10 +104,7 @@ export function createCoachAgent(config?: CoachConfig): CoachAgent {
   return new CoachAgent(config);
 }
 
-export async function processMessage(
-  message: string,
-  config?: CoachConfig
-): Promise<string> {
+export async function processMessage(message: string, config?: CoachConfig): Promise<string> {
   const agent = createCoachAgent(config);
   const response = await agent.chat(message);
   return response.message;
