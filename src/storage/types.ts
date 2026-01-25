@@ -1,9 +1,10 @@
 /**
  * Core data types for the Fitness Coach system
+ * Simplified to only include types that are actually used.
  */
 
 // ============================================================================
-// Profile Types
+// Profile Types (Simplified)
 // ============================================================================
 
 export interface Profile {
@@ -11,63 +12,20 @@ export interface Profile {
   timezone: string;
   telegramChatId: string;
   primaryGym: string;
-  backupGyms: string[];
-  created: string;
-  lastUpdated: string;
-  goals: ProfileGoals;
-  schedule: ProfileSchedule;
-  medical: MedicalInfo;
-  preferences: TrainingPreferences;
-  workingMaxes: WorkingMax[];
-}
-
-export interface ProfileGoals {
-  primary: string[];
-  secondary: string[];
-}
-
-export interface ProfileSchedule {
-  targetSessionsPerWeek: number;
-  preferredTime: string;
-  constraints: ScheduleConstraint[];
-  preferredRestDay: string;
-}
-
-export interface ScheduleConstraint {
-  day: string;
-  constraint: string;
-}
-
-export interface MedicalInfo {
-  current: Limitation[];
-  historical: Limitation[];
-  movementNotes: Record<string, string>;
-}
-
-export interface Limitation {
-  area: string;
-  description: string;
-  avoidMovements?: string[];
-  alternatives?: string[];
-}
-
-export interface TrainingPreferences {
-  style: string[];
-  dislikes: string[];
-  sessionLength: {
-    ideal: number;
-    maximum: number;
-    minimum: number;
+  goals: {
+    primary: string[];
+    secondary: string[];
   };
-  supersets: boolean;
-}
-
-export interface WorkingMax {
-  exercise: string;
-  weight: number;
-  reps: number;
-  date: string;
-  estimated1RM: number;
+  schedule: {
+    targetSessionsPerWeek: number;
+    preferredRestDay: string;
+  };
+  medical: {
+    current: { area: string; description: string }[];
+  };
+  preferences: {
+    sessionLength: { ideal: number };
+  };
 }
 
 // ============================================================================
@@ -80,8 +38,6 @@ export interface PRRecord {
   date: string;
   estimated1RM: number;
   workoutRef?: string;
-  addedWeight?: number; // For weighted bodyweight exercises
-  bodyweightNote?: string;
 }
 
 export interface ExercisePRs {
@@ -106,41 +62,20 @@ export interface WorkoutLog {
   status: 'in_progress' | 'completed' | 'abandoned';
   planReference: string;
   branch?: string;
-  mergedAt?: string;
-  prsHit: PRHit[];
+  prsHit: { exercise: string; achievement: string }[];
   exercises: LoggedExercise[];
-  summary?: WorkoutSummary;
-}
-
-export interface PRHit {
-  exercise: string;
-  achievement: string;
 }
 
 export interface LoggedExercise {
   name: string;
-  planned?: PlannedExercise;
   sets: LoggedSet[];
   notes?: string;
 }
 
 export interface LoggedSet {
-  setNumber: number;
-  weight: number | string; // string for "BW" or "+45"
   reps: number;
-  time?: string;
+  weight: number | string;
   rpe?: number;
-  notes?: string;
-}
-
-export interface WorkoutSummary {
-  planAdherence: {
-    completed: string[];
-    skipped: string[];
-    added: string[];
-    modified: string[];
-  };
-  observations: string[];
 }
 
 // ============================================================================
@@ -148,151 +83,32 @@ export interface WorkoutSummary {
 // ============================================================================
 
 export interface WeeklyPlan {
-  week: string; // "2025-W04"
+  week: string;
   startDate: string;
   endDate: string;
   generatedAt: string;
   status: 'active' | 'completed' | 'archived';
   plannedSessions: number;
   theme?: string;
-  gymScheduleFetched?: string;
-  overview?: string;
   days: DayPlan[];
-  weekNotes?: string[];
 }
 
 export interface DayPlan {
-  day: string; // "Monday, Jan 20"
+  day: string;
   date: string;
   type: 'workout' | 'rest' | 'optional';
-  workoutType?: string; // "Push", "Pull", "Legs", etc.
-  location?: string;
+  workoutType?: string;
   targetDuration?: number;
   exercises?: PlannedExercise[];
-  options?: string[]; // For optional/rest days
-  notes?: string;
+  options?: string[];
 }
 
 export interface PlannedExercise {
   name: string;
   sets: number;
-  reps: number | string; // string for ranges like "5-8" or time like "30s"
-  weight: number | string; // string for "BW" or "+45"
+  reps: number | string;
+  weight: number | string;
   notes?: string;
-}
-
-// ============================================================================
-// Weekly Retrospective Types
-// ============================================================================
-
-export interface WeeklyRetrospective {
-  week: string;
-  generatedAt: string;
-  plannedSessions: number;
-  completedSessions: number;
-  adherenceRate: number;
-  adherence: DayAdherence[];
-  wins: string[];
-  areasForImprovement: string[];
-  volumeAnalysis: VolumeAnalysis;
-  patternsObserved: string[];
-  recommendationsForNextWeek: string[];
-}
-
-export interface DayAdherence {
-  day: string;
-  planned: string;
-  actual: string;
-  status: 'complete' | 'partial' | 'skipped' | 'rest';
-}
-
-export interface VolumeAnalysis {
-  categories: VolumeCategory[];
-  totalSets: number;
-  previousWeekTotal?: number;
-  change?: string;
-}
-
-export interface VolumeCategory {
-  name: string; // "Push", "Pull", "Legs"
-  sets: number;
-  previousWeek?: number;
-  change?: string;
-}
-
-// ============================================================================
-// Gym Profile Types
-// ============================================================================
-
-export interface GymProfile {
-  name: string;
-  type: 'full-service' | 'basic' | 'hotel' | 'home';
-  address?: string;
-  hours?: {
-    weekday: string;
-    weekend: string;
-  };
-  scheduleUrl?: string;
-  equipment: GymEquipment;
-  cardio?: string[];
-  classes?: GymClasses;
-  crowdPatterns?: CrowdPattern[];
-  notes?: string[];
-}
-
-export interface GymEquipment {
-  freeWeights: {
-    dumbbells?: string;
-    barbells?: string;
-    ezCurlBars?: boolean;
-    trapBars?: boolean;
-  };
-  racksAndBenches: {
-    squatRacks?: number;
-    powerRacks?: number;
-    flatBenches?: number;
-    inclineBenches?: number;
-    declineBench?: number;
-    adjustableBenches?: number;
-  };
-  machines?: string[];
-  specialty?: string[];
-}
-
-export interface GymClasses {
-  relevant: string[];
-  scheduleNotes?: string[];
-}
-
-export interface CrowdPattern {
-  time: string;
-  level: 'Light' | 'Moderate' | 'Busy' | 'Very Busy';
-}
-
-// ============================================================================
-// Learning Types
-// ============================================================================
-
-export interface Learning {
-  category: string;
-  content: string;
-  dateAdded?: string;
-}
-
-// ============================================================================
-// Conversation Types
-// ============================================================================
-
-export interface ConversationMessage {
-  role: 'user' | 'coach';
-  content: string;
-  timestamp: string;
-}
-
-export interface OnboardingConversation {
-  startedAt: string;
-  completedAt?: string;
-  messages: ConversationMessage[];
 }
 
 // ============================================================================
@@ -304,7 +120,6 @@ export interface ParsedExercise {
   weight: number | string;
   sets: ParsedSet[];
   rpe?: number;
-  notes?: string;
 }
 
 export interface ParsedSet {
@@ -313,7 +128,7 @@ export interface ParsedSet {
 }
 
 // ============================================================================
-// Agent Types
+// Agent Context
 // ============================================================================
 
 export interface AgentContext {
@@ -324,17 +139,6 @@ export interface AgentContext {
   recentWorkouts: WorkoutLog[];
   currentPRs: PRsData;
   todaysPlan: DayPlan | null;
-}
-
-export interface ToolCall {
-  name: string;
-  parameters: Record<string, unknown>;
-}
-
-export interface ToolResult {
-  success: boolean;
-  data?: unknown;
-  error?: string;
 }
 
 // ============================================================================
@@ -348,35 +152,15 @@ export interface TelegramUpdate {
 
 export interface TelegramMessage {
   message_id: number;
-  from?: TelegramUser;
-  chat: TelegramChat;
-  date: number;
+  chat: { id: number };
   text?: string;
   voice?: TelegramVoice;
 }
 
-export interface TelegramUser {
-  id: number;
-  is_bot: boolean;
-  first_name: string;
-  last_name?: string;
-  username?: string;
-}
-
-export interface TelegramChat {
-  id: number;
-  type: 'private' | 'group' | 'supergroup' | 'channel';
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-}
-
 export interface TelegramVoice {
   file_id: string;
-  file_unique_id: string;
   duration: number;
   mime_type?: string;
-  file_size?: number;
 }
 
 // ============================================================================
@@ -384,23 +168,17 @@ export interface TelegramVoice {
 // ============================================================================
 
 export interface GitHubFileContent {
-  name: string;
-  path: string;
   sha: string;
   content: string;
   encoding: string;
 }
 
-export interface GitHubCommitResponse {
-  sha: string;
-  commit: {
-    message: string;
-  };
-}
-
 export interface GitHubBranch {
   name: string;
-  commit: {
-    sha: string;
-  };
+  commit: { sha: string };
+}
+
+export interface GitHubCommitResponse {
+  commit: { sha: string };
+  content: { sha: string };
 }

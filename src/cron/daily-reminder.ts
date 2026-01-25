@@ -5,9 +5,9 @@
  * Schedule: Daily at 6:00am (user's timezone)
  */
 
-import { CoachAgent, createCoachAgent } from '../coach/index.js';
-import { createTelegramBot, TelegramBot } from '../bot/telegram.js';
-import { getCurrentWeek, getToday, formatDateHuman, getDayName, isWeekend } from '../utils/date.js';
+import { createCoachAgent } from '../coach/index.js';
+import { createTelegramBot } from '../bot/telegram.js';
+import { getCurrentWeek, getToday, formatDateHuman, isWeekend } from '../utils/date.js';
 
 export interface DailyReminderResult {
   success: boolean;
@@ -38,7 +38,6 @@ export async function runDailyReminder(): Promise<DailyReminderResult> {
     // Get current week and today's date
     const currentWeek = getCurrentWeek(timezone);
     const today = getToday(timezone);
-    const dayName = getDayName(new Date(today));
 
     // Read the weekly plan
     const planContent = await storage.readWeeklyPlan(currentWeek);

@@ -6,7 +6,7 @@
 
 import { CoachAgent } from '../coach/index.js';
 import { TelegramBot } from './telegram.js';
-import { getCurrentWeek, getToday, formatDateHuman } from '../utils/date.js';
+import { getCurrentWeek } from '../utils/date.js';
 
 export type CommandHandler = (
   agent: CoachAgent,
@@ -35,8 +35,8 @@ export const COMMANDS: Record<string, CommandHandler> = {
  */
 async function handleStart(
   agent: CoachAgent,
-  bot: TelegramBot,
-  args: string
+  _bot: TelegramBot,
+  _args: string
 ): Promise<string> {
   const storage = agent.getStorage();
   const profile = await storage.readProfile();
@@ -66,9 +66,9 @@ Let's get after it! 💪`;
  * /help - Show available commands
  */
 async function handleHelp(
-  agent: CoachAgent,
-  bot: TelegramBot,
-  args: string
+  _agent: CoachAgent,
+  _bot: TelegramBot,
+  _args: string
 ): Promise<string> {
   return `**Available Commands**
 
@@ -101,8 +101,8 @@ Questions? Just ask!`;
  */
 async function handleToday(
   agent: CoachAgent,
-  bot: TelegramBot,
-  args: string
+  _bot: TelegramBot,
+  _args: string
 ): Promise<string> {
   const response = await agent.chat(
     "Show me today's workout plan. Read the current week's plan and tell me what's scheduled for today. " +
@@ -116,8 +116,8 @@ async function handleToday(
  */
 async function handlePlan(
   agent: CoachAgent,
-  bot: TelegramBot,
-  args: string
+  _bot: TelegramBot,
+  _args: string
 ): Promise<string> {
   const week = getCurrentWeek();
 
@@ -132,8 +132,8 @@ async function handlePlan(
  */
 async function handleDone(
   agent: CoachAgent,
-  bot: TelegramBot,
-  args: string
+  _bot: TelegramBot,
+  _args: string
 ): Promise<string> {
   const response = await agent.chat(
     "I'm done with my workout. Please:\n" +
@@ -151,8 +151,8 @@ async function handleDone(
  */
 async function handleTired(
   agent: CoachAgent,
-  bot: TelegramBot,
-  args: string
+  _bot: TelegramBot,
+  _args: string
 ): Promise<string> {
   const response = await agent.chat(
     "I'm feeling tired/low energy today. Based on today's planned workout, suggest some modified options:\n" +
@@ -170,7 +170,7 @@ async function handleTired(
  */
 async function handleSkip(
   agent: CoachAgent,
-  bot: TelegramBot,
+  _bot: TelegramBot,
   args: string
 ): Promise<string> {
   if (!args) {
@@ -194,8 +194,8 @@ async function handleSkip(
  */
 async function handlePRs(
   agent: CoachAgent,
-  bot: TelegramBot,
-  args: string
+  _bot: TelegramBot,
+  _args: string
 ): Promise<string> {
   const response = await agent.chat(
     "Show me my current personal records. Read prs.yaml and display:\n" +
@@ -212,7 +212,7 @@ async function handlePRs(
  */
 async function handleDemo(
   agent: CoachAgent,
-  bot: TelegramBot,
+  _bot: TelegramBot,
   args: string
 ): Promise<string> {
   if (!args) {
@@ -231,7 +231,7 @@ async function handleDemo(
  */
 async function handleTraveling(
   agent: CoachAgent,
-  bot: TelegramBot,
+  _bot: TelegramBot,
   args: string
 ): Promise<string> {
   if (!args) {

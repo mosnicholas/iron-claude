@@ -10,12 +10,6 @@ import * as readline from 'readline';
 
 const GITHUB_API_BASE = 'https://api.github.com';
 
-interface SetupConfig {
-  githubToken: string;
-  repoName: string;
-  isPrivate: boolean;
-}
-
 async function prompt(question: string, defaultValue?: string): Promise<string> {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -61,7 +55,7 @@ async function createRepository(
     throw new Error(`Failed to create repository: ${error}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as { full_name: string };
   return data.full_name;
 }
 
@@ -241,7 +235,7 @@ async function main() {
     process.exit(1);
   }
 
-  const userData = await userResponse.json();
+  const userData = await userResponse.json() as { login: string };
   console.log(`✓ Authenticated as ${userData.login}`);
   console.log('');
 

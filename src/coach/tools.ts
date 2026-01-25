@@ -232,7 +232,7 @@ export class ToolExecutor {
 
     return {
       success: true,
-      result: `File written successfully. Commit: ${result.sha.slice(0, 7)}`,
+      result: `File written successfully. Commit: ${result.commit.sha.slice(0, 7)}`,
     };
   }
 
@@ -289,7 +289,10 @@ export class ToolExecutor {
       const response = await fetch(
         `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json`
       );
-      const data = await response.json();
+      const data = await response.json() as {
+        AbstractText?: string;
+        RelatedTopics?: Array<{ Text?: string }>;
+      };
 
       if (data.AbstractText) {
         return { success: true, result: data.AbstractText };
@@ -297,8 +300,8 @@ export class ToolExecutor {
 
       if (data.RelatedTopics && data.RelatedTopics.length > 0) {
         const results = data.RelatedTopics.slice(0, 5)
-          .filter((t: { Text?: string }) => t.Text)
-          .map((t: { Text: string }) => t.Text)
+          .filter(t => t.Text)
+          .map(t => t.Text)
           .join('\n\n');
         return { success: true, result: results || 'No results found.' };
       }

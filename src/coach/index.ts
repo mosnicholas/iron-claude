@@ -8,7 +8,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type {
   MessageParam,
-  ContentBlock,
   ToolUseBlock,
   ToolResultBlockParam,
   TextBlock,
@@ -53,94 +52,35 @@ export class CoachAgent {
     };
   }
 
-  /**
-   * Process a user message and generate a response
-   */
-  async chat(userMessage: string): Promise<CoachResponse> {
-    // Build context for system prompt
-    const context = await buildAgentContext(this.storage, this.config.timezone);
-    const contextSection = formatContextForPrompt(context, this.config.timezone);
-    const systemPrompt = buildSystemPrompt(contextSection);
-
-    // Initialize conversation
-    const messages: MessageParam[] = [
-      { role: 'user', content: userMessage },
-    ];
-
+  private async runAgentLoop(
+    userMessage: string,
+    systemPrompt: string,
+    maxTokens: number
+  ): Promise<CoachResponse> {
+    const messages: MessageParam[] = [{ role: 'user', content: userMessage }];
     const toolsUsed: string[] = [];
     let turnsUsed = 0;
 
-    // Agent loop
     while (turnsUsed < this.config.maxTurns) {
       turnsUsed++;
 
       const response = await this.client.messages.create({
         model: this.config.model,
-        max_tokens: 4096,
+        max_tokens: maxTokens,
         system: systemPrompt,
         tools: COACH_TOOLS,
         messages,
       });
 
-      // Check if we need to process tool calls
       const toolUseBlocks = response.content.filter(
         (block): block is ToolUseBlock => block.type === 'tool_use'
       );
 
-      if (toolUseBlocks.length === 0) {
-        // No tool calls, extract the final text response
+      if (toolUseBlocks.length === 0 || response.stop_reason === 'end_turn') {
         const textBlocks = response.content.filter(
           (block): block is TextBlock => block.type === 'text'
         );
-        const finalMessage = textBlocks.map(b => b.text).join('\n');
-
-        return {
-          message: finalMessage,
-          toolsUsed,
-          turnsUsed,
-        };
-      }
-
-      // Execute tool calls
-      const toolResults: ToolResultBlockParam[] = [];
-
-      for (const toolUse of toolUseBlocks) {
-        toolsUsed.push(toolUse.name);
-
-        const result = await this.toolExecutor.execute(
-          toolUse.name,
-          toolUse.input as Record<string, unknown>
-        );
-
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
-          content: result.success
-            ? result.result || 'Success'
-            : `Error: ${result.error}`,
-          is_error: !result.success,
-        });
-      }
-
-      // Add assistant message with tool use
-      messages.push({
-        role: 'assistant',
-        content: response.content,
-      });
-
-      // Add tool results
-      messages.push({
-        role: 'user',
-        content: toolResults,
-      });
-
-      // Check stop reason
-      if (response.stop_reason === 'end_turn') {
-        // Extract any text from the response
-        const textBlocks = response.content.filter(
-          (block): block is TextBlock => block.type === 'text'
-        );
-        if (textBlocks.length > 0) {
+        if (textBlocks.length > 0 || toolUseBlocks.length === 0) {
           return {
             message: textBlocks.map(b => b.text).join('\n'),
             toolsUsed,
@@ -148,111 +88,48 @@ export class CoachAgent {
           };
         }
       }
+
+      const toolResults: ToolResultBlockParam[] = [];
+      for (const toolUse of toolUseBlocks) {
+        toolsUsed.push(toolUse.name);
+        const result = await this.toolExecutor.execute(
+          toolUse.name,
+          toolUse.input as Record<string, unknown>
+        );
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content: result.success ? result.result || 'Success' : `Error: ${result.error}`,
+          is_error: !result.success,
+        });
+      }
+
+      messages.push({ role: 'assistant', content: response.content });
+      messages.push({ role: 'user', content: toolResults });
     }
 
-    // Max turns reached
     return {
-      message: "I've been working on this for a while. Let me know if you need anything specific!",
+      message: 'Processing reached maximum turns.',
       toolsUsed,
       turnsUsed,
     };
   }
 
-  /**
-   * Run a specific coaching task (for cron jobs)
-   */
+  async chat(userMessage: string): Promise<CoachResponse> {
+    const context = await buildAgentContext(this.storage, this.config.timezone);
+    const contextSection = formatContextForPrompt(context, this.config.timezone);
+    const systemPrompt = buildSystemPrompt(contextSection);
+    return this.runAgentLoop(userMessage, systemPrompt, 4096);
+  }
+
   async runTask(taskPrompt: string, additionalContext?: string): Promise<CoachResponse> {
     const context = await buildAgentContext(this.storage, this.config.timezone);
     const contextSection = formatContextForPrompt(context, this.config.timezone);
-
     let systemPrompt = buildSystemPrompt(contextSection);
-
     if (additionalContext) {
       systemPrompt += `\n\n## Additional Task Context\n\n${additionalContext}`;
     }
-
-    const messages: MessageParam[] = [
-      { role: 'user', content: taskPrompt },
-    ];
-
-    const toolsUsed: string[] = [];
-    let turnsUsed = 0;
-
-    while (turnsUsed < this.config.maxTurns) {
-      turnsUsed++;
-
-      const response = await this.client.messages.create({
-        model: this.config.model,
-        max_tokens: 8192, // Higher limit for planning/retro tasks
-        system: systemPrompt,
-        tools: COACH_TOOLS,
-        messages,
-      });
-
-      const toolUseBlocks = response.content.filter(
-        (block): block is ToolUseBlock => block.type === 'tool_use'
-      );
-
-      if (toolUseBlocks.length === 0) {
-        const textBlocks = response.content.filter(
-          (block): block is TextBlock => block.type === 'text'
-        );
-        return {
-          message: textBlocks.map(b => b.text).join('\n'),
-          toolsUsed,
-          turnsUsed,
-        };
-      }
-
-      const toolResults: ToolResultBlockParam[] = [];
-
-      for (const toolUse of toolUseBlocks) {
-        toolsUsed.push(toolUse.name);
-
-        const result = await this.toolExecutor.execute(
-          toolUse.name,
-          toolUse.input as Record<string, unknown>
-        );
-
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
-          content: result.success
-            ? result.result || 'Success'
-            : `Error: ${result.error}`,
-          is_error: !result.success,
-        });
-      }
-
-      messages.push({
-        role: 'assistant',
-        content: response.content,
-      });
-
-      messages.push({
-        role: 'user',
-        content: toolResults,
-      });
-
-      if (response.stop_reason === 'end_turn') {
-        const textBlocks = response.content.filter(
-          (block): block is TextBlock => block.type === 'text'
-        );
-        if (textBlocks.length > 0) {
-          return {
-            message: textBlocks.map(b => b.text).join('\n'),
-            toolsUsed,
-            turnsUsed,
-          };
-        }
-      }
-    }
-
-    return {
-      message: 'Task processing reached maximum turns.',
-      toolsUsed,
-      turnsUsed,
-    };
+    return this.runAgentLoop(taskPrompt, systemPrompt, 8192);
   }
 
   /**

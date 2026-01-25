@@ -213,39 +213,24 @@ function parseProfileBasics(content: string): AgentContext['profile'] {
   const frontmatter = extractFrontmatter(content);
 
   return {
-    name: frontmatter.name || 'Client',
-    timezone: frontmatter.timezone || 'America/New_York',
-    telegramChatId: frontmatter.telegram_chat_id || '',
-    primaryGym: frontmatter.primary_gym || '',
-    backupGyms: frontmatter.backup_gyms || [],
-    created: frontmatter.created || '',
-    lastUpdated: frontmatter.last_updated || '',
+    name: (frontmatter.name as string) || 'Client',
+    timezone: (frontmatter.timezone as string) || 'America/New_York',
+    telegramChatId: (frontmatter.telegram_chat_id as string) || '',
+    primaryGym: (frontmatter.primary_gym as string) || '',
     goals: {
       primary: extractListSection(content, 'Primary') || [],
       secondary: extractListSection(content, 'Secondary') || [],
     },
     schedule: {
-      targetSessionsPerWeek: frontmatter.target_sessions || 0,
-      preferredTime: '',
-      constraints: [],
-      preferredRestDay: '',
+      targetSessionsPerWeek: (frontmatter.target_sessions as number) || 0,
+      preferredRestDay: (frontmatter.preferred_rest_day as string) || '',
     },
     medical: {
       current: [],
-      historical: [],
-      movementNotes: {},
     },
     preferences: {
-      style: [],
-      dislikes: [],
-      sessionLength: {
-        ideal: 45,
-        maximum: 60,
-        minimum: 30,
-      },
-      supersets: false,
+      sessionLength: { ideal: 45 },
     },
-    workingMaxes: [],
   };
 }
 
@@ -260,10 +245,10 @@ function parseWeeklyPlanBasics(content: string, week: string): WeeklyPlan {
     week,
     startDate: start.toISOString().split('T')[0],
     endDate: end.toISOString().split('T')[0],
-    generatedAt: frontmatter.generated_at || '',
-    status: frontmatter.status || 'active',
-    plannedSessions: frontmatter.planned_sessions || 0,
-    theme: frontmatter.theme,
+    generatedAt: (frontmatter.generated_at as string) || '',
+    status: (frontmatter.status as 'active' | 'completed' | 'archived') || 'active',
+    plannedSessions: (frontmatter.planned_sessions as number) || 0,
+    theme: frontmatter.theme as string | undefined,
     days: parseDayPlans(content),
   };
 }
@@ -318,19 +303,18 @@ function parseWorkoutBasics(content: string, branch?: string): WorkoutLog {
   const frontmatter = extractFrontmatter(content);
 
   return {
-    date: frontmatter.date || '',
-    type: frontmatter.type || '',
-    started: frontmatter.started || '',
-    finished: frontmatter.finished,
-    durationMinutes: frontmatter.duration_minutes,
-    location: frontmatter.location || '',
-    energyLevel: frontmatter.energy_level,
-    status: frontmatter.status || 'in_progress',
-    planReference: frontmatter.plan_reference || '',
-    branch: branch || frontmatter.branch,
-    mergedAt: frontmatter.merged_at,
-    prsHit: frontmatter.prs_hit || [],
-    exercises: [], // Would need detailed parsing
+    date: (frontmatter.date as string) || '',
+    type: (frontmatter.type as string) || '',
+    started: (frontmatter.started as string) || '',
+    finished: frontmatter.finished as string | undefined,
+    durationMinutes: frontmatter.duration_minutes as number | undefined,
+    location: (frontmatter.location as string) || '',
+    energyLevel: frontmatter.energy_level as number | undefined,
+    status: (frontmatter.status as 'in_progress' | 'completed' | 'abandoned') || 'in_progress',
+    planReference: (frontmatter.plan_reference as string) || '',
+    branch: branch || (frontmatter.branch as string | undefined),
+    prsHit: (frontmatter.prs_hit as { exercise: string; achievement: string }[]) || [],
+    exercises: [],
   };
 }
 

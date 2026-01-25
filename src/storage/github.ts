@@ -53,7 +53,7 @@ export class GitHubStorage {
       return undefined as T;
     }
 
-    return response.json();
+    return response.json() as Promise<T>;
   }
 
   // ============================================================================
@@ -338,44 +338,16 @@ export class GitHubStorage {
     return this.readFile('profile.md');
   }
 
-  async writeProfile(content: string, message = 'Update profile'): Promise<void> {
-    await this.writeFile('profile.md', content, message);
-  }
-
   async readLearnings(): Promise<string | null> {
     return this.readFile('learnings.md');
-  }
-
-  async writeLearnings(content: string, message = 'Update learnings'): Promise<void> {
-    await this.writeFile('learnings.md', content, message);
   }
 
   async readPRs(): Promise<string | null> {
     return this.readFile('prs.yaml');
   }
 
-  async writePRs(content: string, message = 'Update PRs'): Promise<void> {
-    await this.writeFile('prs.yaml', content, message);
-  }
-
   async readWeeklyPlan(week: string): Promise<string | null> {
     return this.readFile(`plans/${week}.md`);
-  }
-
-  async writeWeeklyPlan(week: string, content: string): Promise<void> {
-    await this.writeFile(`plans/${week}.md`, content, `Generate weekly plan: ${week}`);
-  }
-
-  async readWorkout(date: string, branch = 'main'): Promise<string | null> {
-    return this.readFile(`workouts/${date}.md`, branch);
-  }
-
-  async readRetrospective(week: string): Promise<string | null> {
-    return this.readFile(`retrospectives/${week}.md`);
-  }
-
-  async writeRetrospective(week: string, content: string): Promise<void> {
-    await this.writeFile(`retrospectives/${week}.md`, content, `Generate retrospective: ${week}`);
   }
 
   async listWorkouts(): Promise<string[]> {

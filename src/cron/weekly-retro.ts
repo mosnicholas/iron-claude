@@ -8,7 +8,7 @@
 import { createCoachAgent } from '../coach/index.js';
 import { createTelegramBot } from '../bot/telegram.js';
 import { buildRetrospectivePrompt } from '../coach/prompts.js';
-import { getCurrentWeek, getPreviousWeek } from '../utils/date.js';
+import { getCurrentWeek } from '../utils/date.js';
 
 export interface WeeklyRetroResult {
   success: boolean;

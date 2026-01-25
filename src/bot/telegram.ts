@@ -4,7 +4,7 @@
  * Handles communication with the Telegram Bot API.
  */
 
-import type { TelegramUpdate, TelegramMessage, TelegramVoice } from '../storage/types.js';
+import type { TelegramUpdate, TelegramVoice } from '../storage/types.js';
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org';
 
@@ -142,7 +142,7 @@ export class TelegramBot {
       throw new Error('Failed to get file info');
     }
 
-    const data = await response.json();
+    const data = await response.json() as { result: { file_path: string } };
     const filePath = data.result.file_path;
     const fileUrl = `${TELEGRAM_API_BASE}/file/bot${this.config.botToken}/${filePath}`;
 

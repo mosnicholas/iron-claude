@@ -7,6 +7,11 @@
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org';
 
+interface TelegramResponse {
+  ok: boolean;
+  description?: string;
+}
+
 async function main() {
   const webhookUrl = process.argv[2];
 
@@ -53,7 +58,7 @@ async function main() {
     }
   );
 
-  const data = await response.json();
+  const data = await response.json() as TelegramResponse;
 
   if (data.ok) {
     console.log('');
@@ -86,7 +91,7 @@ async function deleteWebhook() {
     { method: 'POST' }
   );
 
-  const data = await response.json();
+  const data = await response.json() as TelegramResponse;
 
   if (data.ok) {
     console.log('✅ Webhook deleted');
