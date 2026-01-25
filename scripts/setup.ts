@@ -13,7 +13,7 @@ import { ui } from "./lib/ui.js";
 import { collectCredentials } from "./lib/credentials.js";
 import { createGitHubRepo, verifyGitHubToken } from "./lib/github.js";
 import { runOnboardingConversation } from "./lib/onboarding.js";
-import { deployToVercel, checkVercelCli, skipDeployment } from "./lib/deploy.js";
+import { deployToFly, checkFlyCli, skipDeployment } from "./lib/deploy.js";
 import { setWebhook } from "./lib/webhook.js";
 
 async function main() {
@@ -23,7 +23,7 @@ async function main() {
   console.log("  • Collect your API credentials");
   console.log("  • Create a private GitHub repo for your data");
   console.log("  • Set up your fitness profile (AI conversation)");
-  console.log("  • Deploy to Vercel");
+  console.log("  • Deploy to Fly.io");
   console.log("  • Connect your Telegram bot");
   ui.blank();
 
@@ -67,26 +67,26 @@ async function main() {
     await runOnboardingConversation();
 
     // ──────────────────────────────────────────────────────────────────────
-    // Step 4: Deploy to Vercel
+    // Step 4: Deploy to Fly.io
     // ──────────────────────────────────────────────────────────────────────
-    const { installed } = checkVercelCli();
+    const { installed } = checkFlyCli();
 
     let deployUrl: string | undefined;
 
     if (installed) {
       const shouldDeploy = await confirm({
-        message: "Deploy to Vercel now?",
+        message: "Deploy to Fly.io now?",
         default: true,
       });
 
       if (shouldDeploy) {
-        deployUrl = await deployToVercel(credentials, repoName);
+        deployUrl = await deployToFly(credentials, repoName);
       } else {
         skipDeployment(credentials, repoName);
       }
     } else {
       ui.step(4, 5, "Deploy");
-      ui.warn("Vercel CLI not found. Install with: npm i -g vercel");
+      ui.warn("Fly CLI not found. Install with: curl -L https://fly.io/install.sh | sh");
       skipDeployment(credentials, repoName);
     }
 
@@ -127,7 +127,7 @@ async function main() {
       console.log(`  ✅ ${ui.bold("Setup partially complete!")}`);
       ui.blank();
       console.log("  Next steps:");
-      console.log("  1. Deploy your app (vercel --prod)");
+      console.log("  1. Deploy your app (fly deploy)");
       console.log("  2. Set the webhook (npm run set-webhook <url>/api/webhook)");
       console.log("  3. Message your bot on Telegram!");
       ui.blank();

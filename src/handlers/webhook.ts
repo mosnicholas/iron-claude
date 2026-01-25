@@ -4,28 +4,21 @@
  * Main entry point for all Telegram messages.
  */
 
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createCoachAgent } from "../src/coach/index.js";
+import type { Request, Response } from "express";
+import { createCoachAgent } from "../coach/index.js";
 import {
   createTelegramBot,
   extractMessageText,
   extractVoiceMessage,
   isCommand,
   parseCommand,
-} from "../src/bot/telegram.js";
-import { executeCommand, commandExists } from "../src/bot/commands.js";
-import { transcribeVoice, isVoiceTranscriptionAvailable } from "../src/bot/voice.js";
-import type { TelegramUpdate } from "../src/storage/types.js";
+} from "../bot/telegram.js";
+import { executeCommand, commandExists } from "../bot/commands.js";
+import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js";
+import type { TelegramUpdate } from "../storage/types.js";
 
-export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+export async function webhookHandler(req: Request, res: Response): Promise<void> {
   console.log("[webhook] Received request:", req.method);
-
-  // Only accept POST requests
-  if (req.method !== "POST") {
-    console.log("[webhook] Rejected: not POST");
-    res.status(405).json({ error: "Method not allowed" });
-    return;
-  }
 
   try {
     const bot = createTelegramBot();

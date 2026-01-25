@@ -1,20 +1,37 @@
-# Deployment Guide
+# Deploying IronClaude to Fly.io
 
-Deploy IronClaude to Vercel for Telegram notifications, morning reminders, and automated weekly planning.
+Deploy IronClaude to Fly.io for Telegram notifications, morning reminders, and automated weekly planning.
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│    Telegram     │────▶│     Vercel      │────▶│     GitHub      │
-│   (messages)    │     │  (serverless)   │     │   (storage)     │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-                               │
-                               ▼
-                        ┌─────────────────┐
-                        │   Claude API    │
-                        │   (coaching)    │
-                        └─────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                     Telegram                                 │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Fly.io (Docker Container)                   │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Express Server (src/server.ts)                       │  │
+│  │  - POST /api/webhook (Telegram messages)              │  │
+│  │  - GET /api/cron/* (scheduled tasks)                  │  │
+│  │  - GET /health (health check)                         │  │
+│  └───────────────────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Supercronic (cron scheduler)                         │  │
+│  │  - Daily reminders                                    │  │
+│  │  - Weekly retrospective                               │  │
+│  │  - Weekly planning                                    │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                              │                               │
+│              ┌───────────────┴───────────────┐              │
+│              ▼                               ▼               │
+│  ┌─────────────────────┐     ┌─────────────────────────┐    │
+│  │  Claude Agent SDK   │     │  GitHub API             │    │
+│  │  (AI coaching)      │     │  (data storage)         │    │
+│  └─────────────────────┘     └─────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 **Endpoints:**
@@ -22,16 +39,35 @@ Deploy IronClaude to Vercel for Telegram notifications, morning reminders, and a
 - `GET /api/cron/daily-reminder` - Morning workout reminder
 - `GET /api/cron/weekly-plan` - Sunday planning automation
 - `GET /api/cron/weekly-retro` - Saturday retrospective
+- `GET /health` - Health check
 
 ---
 
 ## Prerequisites
 
-- [Vercel account](https://vercel.com)
+- [Fly.io account](https://fly.io)
+- [Fly CLI](https://fly.io/docs/flyctl/install/) installed
 - [Telegram account](https://telegram.org)
 - [Anthropic API key](https://console.anthropic.com)
 - GitHub repository for workout data storage
-- (Optional) [OpenAI API key](https://platform.openai.com) for voice transcription
+- (Optional) [Gemini API key](https://aistudio.google.com) for voice transcription
+
+---
+
+## Quick Deploy
+
+The easiest way to deploy is using the setup wizard:
+
+```bash
+npm run setup
+```
+
+This will:
+1. Collect your credentials
+2. Create the fitness-data GitHub repo
+3. Run the onboarding conversation
+4. Deploy to Fly.io
+5. Configure the Telegram webhook
 
 ---
 
@@ -72,51 +108,54 @@ The bot stores workout data in your GitHub repo.
 
 ---
 
-## Step 4: Deploy to Vercel
-
-### Option A: Vercel CLI
+## Step 4: Install Fly CLI
 
 ```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Deploy from project root
-vercel
-
-# Follow prompts to link to your Vercel account
+curl -L https://fly.io/install.sh | sh
+fly auth login
 ```
-
-### Option B: GitHub Integration
-
-1. Push your repo to GitHub
-2. Go to [vercel.com/new](https://vercel.com/new)
-3. Import your repository
-4. Deploy
 
 ---
 
-## Step 5: Configure Environment Variables
+## Step 5: Deploy to Fly.io
 
-In Vercel dashboard → Your Project → Settings → Environment Variables:
+### Build the application
 
-### Required
+```bash
+npm install
+npm run build
+```
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `TELEGRAM_BOT_TOKEN` | Bot token from BotFather | `123456789:ABCdef...` |
-| `TELEGRAM_CHAT_ID` | Your chat ID | `987654321` |
-| `ANTHROPIC_API_KEY` | Claude API key | `sk-ant-...` |
-| `GITHUB_TOKEN` | Fine-grained personal access token | `github_pat_...` |
-| `GITHUB_REPO` | Repository in `owner/repo` format | `username/workout-routine` |
+### Create the app (first time only)
 
-### Optional
+```bash
+fly apps create workout-coach
+```
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `TELEGRAM_WEBHOOK_SECRET` | Secret for webhook verification | _(none)_ |
-| `CRON_SECRET` | Bearer token for cron endpoints | _(none)_ |
-| `OPENAI_API_KEY` | For voice message transcription | _(none)_ |
-| `TIMEZONE` | Your timezone | `America/New_York` |
+### Set secrets
+
+```bash
+fly secrets set \
+  TELEGRAM_BOT_TOKEN=your_bot_token \
+  TELEGRAM_CHAT_ID=your_chat_id \
+  TELEGRAM_WEBHOOK_SECRET=random_secret_string \
+  ANTHROPIC_API_KEY=your_anthropic_key \
+  GITHUB_TOKEN=your_github_token \
+  DATA_REPO=username/fitness-data \
+  TIMEZONE=America/New_York \
+  CRON_SECRET=another_random_secret
+```
+
+Optional (for voice messages):
+```bash
+fly secrets set GEMINI_API_KEY=your_gemini_key
+```
+
+### Deploy
+
+```bash
+fly deploy
+```
 
 ---
 
@@ -125,16 +164,13 @@ In Vercel dashboard → Your Project → Settings → Environment Variables:
 Tell Telegram where to send messages:
 
 ```bash
-curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://your-app.vercel.app/api/webhook"
+curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://workout-coach.fly.dev/api/webhook&secret_token=<WEBHOOK_SECRET>"
 ```
 
-**With webhook secret** (recommended):
-
+Or use the helper script:
 ```bash
-curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://your-app.vercel.app/api/webhook&secret_token=YOUR_SECRET"
+npm run set-webhook https://workout-coach.fly.dev/api/webhook
 ```
-
-Then set `TELEGRAM_WEBHOOK_SECRET` to the same value in Vercel.
 
 ### Verify webhook is set:
 
@@ -144,61 +180,95 @@ curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
 
 ---
 
+## Environment Variables
+
+### Required
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `TELEGRAM_BOT_TOKEN` | Bot token from BotFather | `123456789:ABCdef...` |
+| `TELEGRAM_CHAT_ID` | Your chat ID | `987654321` |
+| `TELEGRAM_WEBHOOK_SECRET` | Secret for webhook verification | `random_string` |
+| `ANTHROPIC_API_KEY` | Claude API key | `sk-ant-...` |
+| `GITHUB_TOKEN` | Fine-grained personal access token | `github_pat_...` |
+| `DATA_REPO` | Repository in `owner/repo` format | `username/fitness-data` |
+| `TIMEZONE` | Your timezone | `America/New_York` |
+| `CRON_SECRET` | Bearer token for cron endpoints | `another_random_string` |
+
+### Optional
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GEMINI_API_KEY` | For voice message transcription | _(none)_ |
+
+---
+
 ## Cron Schedule
 
-Defined in `vercel.json`:
+Scheduled tasks run via Supercronic inside the container. Defined in `crontab`:
 
 | Job | Schedule (UTC) | Description |
 |-----|----------------|-------------|
-| Daily Reminder | `0 11 * * 1-5` | 11am UTC, Mon-Fri |
-| Weekly Retro | `0 23 * * 6` | 11pm UTC, Saturday |
-| Weekly Plan | `0 1 * * 0` | 1am UTC, Sunday |
+| Daily Reminder | `0 11 * * 1-5` | 11am UTC (6am EST), Mon-Fri |
+| Weekly Retro | `0 23 * * 6` | 11pm UTC (6pm EST), Saturday |
+| Weekly Plan | `0 1 * * 0` | 1am UTC (8pm EST), Sunday |
 
 **Note:** Adjust times based on your timezone. The default assumes US Eastern (UTC-5).
 
-To change schedules, edit `vercel.json`:
+To change schedules, edit `crontab` and redeploy:
 
-```json
-{
-  "crons": [
-    {
-      "path": "/api/cron/daily-reminder",
-      "schedule": "0 11 * * 1-5"
-    }
-  ]
-}
+```
+# Daily reminder - 11:00 UTC on weekdays
+0 11 * * 1-5 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/daily-reminder
 ```
 
 ---
 
 ## Testing
 
-### Test webhook locally
+### Test locally
 
 ```bash
-# Install dependencies
 npm install
-
-# Build
 npm run build
+npm start
 
-# Use Vercel CLI for local development
-vercel dev
+# In another terminal:
+curl http://localhost:8080/health
 ```
 
 ### Test cron endpoints manually
 
 ```bash
-# Without CRON_SECRET
-curl https://your-app.vercel.app/api/cron/daily-reminder
-
 # With CRON_SECRET
-curl -H "Authorization: Bearer YOUR_SECRET" https://your-app.vercel.app/api/cron/daily-reminder
+curl -H "Authorization: Bearer YOUR_SECRET" https://workout-coach.fly.dev/api/cron/daily-reminder
 ```
 
 ### Test bot
 
 Send a message to your bot on Telegram. You should get a response.
+
+---
+
+## Monitoring
+
+### View logs
+
+```bash
+fly logs
+```
+
+### Check status
+
+```bash
+fly status
+```
+
+### SSH into container
+
+```bash
+fly ssh console
+```
 
 ---
 
@@ -210,25 +280,31 @@ Send a message to your bot on Telegram. You should get a response.
    ```bash
    curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
    ```
-2. Verify environment variables in Vercel dashboard
-3. Check Vercel function logs: Vercel Dashboard → Deployments → Functions
+2. View application logs:
+   ```bash
+   fly logs
+   ```
+3. Verify secrets are set:
+   ```bash
+   fly secrets list
+   ```
 
 ### "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID"
 
-Environment variables not set. Add them in Vercel dashboard and redeploy.
+Secrets not set. Add them with `fly secrets set` and redeploy.
 
 ### "Unauthorized" on cron endpoints
 
-You have `CRON_SECRET` set but the request doesn't include the bearer token. Vercel cron jobs automatically include this if configured.
+You have `CRON_SECRET` set but the request doesn't include the bearer token. The internal Supercronic calls include this automatically.
 
 ### Voice messages not working
 
-Set `OPENAI_API_KEY` in environment variables. Voice transcription uses OpenAI Whisper.
+Set `GEMINI_API_KEY` secret. Voice transcription uses Gemini.
 
 ### GitHub storage errors
 
 1. Verify `GITHUB_TOKEN` has correct permissions
-2. Verify `GITHUB_REPO` format is `owner/repo`
+2. Verify `DATA_REPO` format is `owner/repo`
 3. Check token hasn't expired
 
 ---
@@ -247,9 +323,23 @@ Set `OPENAI_API_KEY` in environment variables. Voice transcription uses OpenAI W
 After code changes:
 
 ```bash
-# Redeploy
-vercel --prod
-
-# Or push to GitHub (if using GitHub integration)
-git push
+npm run build
+fly deploy
 ```
+
+---
+
+## Cost
+
+Fly.io pricing for this setup:
+- ~$5-7/month for an always-on small VM (1 shared CPU, 1GB RAM)
+- First $5/month is included in the free tier
+
+To reduce costs, you can enable auto-stop (machine stops when idle):
+```toml
+# In fly.toml
+[http_service]
+  auto_stop_machines = true
+```
+
+Note: This adds cold-start latency when the bot receives a message after being idle.

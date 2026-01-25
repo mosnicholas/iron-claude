@@ -4,28 +4,30 @@
   "description": "A Claude-powered personal fitness coach that lives in Telegram",
   "type": "module",
   "scripts": {
-    "dev": "vercel dev",
     "build": "tsc",
+    "start": "node dist/src/server.js",
+    "dev": "tsx watch src/server.ts",
     "setup": "tsx scripts/setup.ts",
     "onboard": "tsx scripts/onboard.ts",
     "set-webhook": "tsx scripts/set-webhook.ts",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/ api/ scripts/",
-    "lint:fix": "eslint src/ api/ scripts/ --fix",
-    "format": "prettier --write \"src/**/*.ts\" \"api/**/*.ts\" \"scripts/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"api/**/*.ts\" \"scripts/**/*.ts\""
+    "lint": "eslint src/ scripts/",
+    "lint:fix": "eslint src/ scripts/ --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.ts\""
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.19",
     "@anthropic-ai/sdk": "^0.71.2",
     "@google/generative-ai": "^0.24.1",
+    "express": "^4.21.2",
     "yaml": "^2.8.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@inquirer/prompts": "^7.10.1",
+    "@types/express": "^5.0.2",
     "@types/node": "^22.19.7",
-    "@vercel/node": "^5.5.27",
     "boxen": "^8.0.1",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
@@ -35,8 +37,7 @@
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.53.1",
-    "vercel": "^50.5.0"
+    "typescript-eslint": "^8.53.1"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -18,7 +18,7 @@ async function main() {
   if (!webhookUrl) {
     console.log("Usage: pnpm set-webhook <webhook-url>");
     console.log("");
-    console.log("Example: pnpm set-webhook https://your-app.vercel.app/api/webhook");
+    console.log("Example: pnpm set-webhook https://workout-coach.fly.dev/api/webhook");
     process.exit(1);
   }
 

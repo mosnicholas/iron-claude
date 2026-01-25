@@ -1,0 +1,19 @@
+app = "workout-coach"
+primary_region = "ewr"  # New York/Newark
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[env]
+  NODE_ENV = "production"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1

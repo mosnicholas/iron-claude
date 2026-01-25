@@ -1,7 +1,7 @@
 /**
- * Vercel Deployment
+ * Fly.io Deployment
  *
- * Handles deployment to Vercel with environment variable configuration.
+ * Handles deployment to Fly.io with environment variable configuration.
  */
 
 import { execSync, spawnSync } from "child_process";
@@ -9,18 +9,17 @@ import { ui } from "./ui.js";
 import type { Credentials } from "./credentials.js";
 
 /**
- * Check if Vercel CLI is installed and user is logged in
+ * Check if Fly CLI is installed and user is logged in
  */
-export function checkVercelCli(): { installed: boolean; loggedIn: boolean } {
+export function checkFlyCli(): { installed: boolean; loggedIn: boolean } {
   try {
-    execSync("vercel --version", { stdio: "ignore" });
+    execSync("fly version", { stdio: "ignore" });
   } catch {
     return { installed: false, loggedIn: false };
   }
 
   try {
-    // Check if logged in by running whoami
-    execSync("vercel whoami", { stdio: "ignore" });
+    execSync("fly auth whoami", { stdio: "ignore" });
     return { installed: true, loggedIn: true };
   } catch {
     return { installed: true, loggedIn: false };
@@ -40,45 +39,52 @@ function generateSecret(length: number = 32): string {
 }
 
 /**
- * Deploy to Vercel and configure environment variables
+ * Deploy to Fly.io and configure environment variables
  */
-export async function deployToVercel(
+export async function deployToFly(
   credentials: Credentials,
   repoName: string
 ): Promise<string | undefined> {
   ui.step(4, 5, "Deploy");
 
-  // Check Vercel CLI
-  const { installed, loggedIn } = checkVercelCli();
+  const { installed, loggedIn } = checkFlyCli();
 
   if (!installed) {
-    ui.error("Vercel CLI not found.");
-    ui.info("Install it with: npm i -g vercel");
-    throw new Error("Vercel CLI required");
+    ui.error("Fly CLI not found.");
+    ui.info("Install it with: curl -L https://fly.io/install.sh | sh");
+    throw new Error("Fly CLI required");
   }
 
   if (!loggedIn) {
-    ui.info("You need to log in to Vercel first.");
-    ui.info("Run: vercel login");
-    ui.blank();
-
-    // Try to run vercel login interactively
-    const loginResult = spawnSync("vercel", ["login"], {
-      stdio: "inherit",
-      shell: true,
-    });
-
-    if (loginResult.status !== 0) {
-      throw new Error("Vercel login failed");
-    }
+    ui.info("You need to log in to Fly.io first.");
+    const loginResult = spawnSync("fly", ["auth", "login"], { stdio: "inherit" });
+    if (loginResult.status !== 0) throw new Error("Fly login failed");
   }
 
   // Generate secrets
   const webhookSecret = generateSecret();
   const cronSecret = generateSecret();
 
-  // Build environment variables
-  const envVars: Record<string, string> = {
+  // Build the app first
+  ui.info("Building application...");
+  execSync("npm run build", { stdio: "inherit" });
+
+  // App name from fly.toml
+  const appName = "workout-coach";
+
+  try {
+    // Check if app exists
+    execSync(`fly apps list | grep ${appName}`, { stdio: "ignore" });
+    ui.info("Updating existing app...");
+  } catch {
+    // App doesn't exist, create it
+    ui.info("Creating new Fly.io app...");
+    execSync(`fly apps create ${appName}`, { stdio: "inherit" });
+  }
+
+  // Set secrets
+  ui.info("Setting secrets...");
+  const secrets: Record<string, string> = {
     TELEGRAM_BOT_TOKEN: credentials.telegram.botToken,
     TELEGRAM_CHAT_ID: credentials.telegram.chatId,
     TELEGRAM_WEBHOOK_SECRET: webhookSecret,
@@ -90,102 +96,45 @@ export async function deployToVercel(
   };
 
   if (credentials.gemini?.apiKey) {
-    envVars.GEMINI_API_KEY = credentials.gemini.apiKey;
+    secrets["GEMINI_API_KEY"] = credentials.gemini.apiKey;
   }
 
-  // Link project if not already linked
-  const linkSpinner = ui.spinner("Linking project to Vercel...");
-  try {
-    execSync("vercel link --yes", { stdio: "ignore" });
-    linkSpinner.success({ text: "Project linked" });
-  } catch {
-    linkSpinner.error({ text: "Failed to link project" });
-    throw new Error("Failed to link Vercel project");
-  }
+  // Build secrets string for fly secrets set command
+  const secretsArgs = Object.entries(secrets)
+    .map(([k, v]) => `${k}="${v}"`)
+    .join(" ");
 
-  // Disable Vercel Authentication (so Telegram webhook can access the API)
   try {
-    execSync("vercel project update --vercel-authentication=false --yes 2>/dev/null || true", {
-      stdio: "ignore",
-    });
-  } catch {
-    // Ignore - older CLI versions may not support this
-  }
-
-  // Set environment variables
-  const envSpinner = ui.spinner("Configuring environment variables...");
-  try {
-    for (const [key, value] of Object.entries(envVars)) {
-      // Remove existing env var if it exists (ignore errors)
-      try {
-        execSync(`vercel env rm ${key} production --yes`, { stdio: "ignore" });
-      } catch {
-        // Ignore - var might not exist
-      }
-
-      // Add new env var using printf to pipe the value (no trailing newline)
-      execSync(`printf '%s' "${value}" | vercel env add ${key} production`, {
-        stdio: "ignore",
-        shell: "/bin/bash",
-      });
-    }
-    envSpinner.success({ text: "Environment configured" });
+    execSync(`fly secrets set ${secretsArgs}`, { stdio: "ignore" });
+    ui.info("Secrets configured");
   } catch (error) {
-    envSpinner.error({ text: "Failed to configure environment" });
-    throw error;
+    ui.warn("Some secrets may have failed to set. Continuing with deploy...");
   }
 
-  // Deploy - use spawnSync with inherited stdio to show real-time output
-  ui.info("Deploying to Vercel...");
+  // Deploy
+  ui.info("Deploying to Fly.io...");
   ui.blank();
 
-  try {
-    const result = spawnSync("vercel", ["--prod", "--yes"], {
-      stdio: "inherit",
-      encoding: "utf-8",
-      timeout: 600000, // 10 minute timeout
-    });
+  const result = spawnSync("fly", ["deploy"], { stdio: "inherit" });
 
-    if (result.error) {
-      throw result.error;
-    }
-
-    if (result.status !== 0) {
-      throw new Error("Vercel deployment failed");
-    }
-
-    ui.blank();
-
-    // Get the deployment URL
-    const inspectOutput = execSync("vercel ls --prod 2>/dev/null | head -5", {
-      encoding: "utf-8",
-    });
-    const urlMatch = inspectOutput.match(/https:\/\/[^\s]+\.vercel\.app/);
-    const deployUrl = urlMatch?.[0];
-
-    if (deployUrl) {
-      ui.success(`Deployed: ${deployUrl}`);
-      return deployUrl;
-    }
-
-    // Fallback: get URL from vercel inspect
-    const inspectJson = execSync("vercel inspect --json 2>/dev/null || true", {
-      encoding: "utf-8",
-    });
-    const jsonMatch = inspectJson.match(/"url":\s*"([^"]+)"/);
-    if (jsonMatch) {
-      const url = `https://${jsonMatch[1]}`;
-      ui.success(`Deployed: ${url}`);
-      return url;
-    }
-
-    ui.warn("Deployment succeeded but could not determine URL.");
-    ui.info("Check your Vercel dashboard for the deployment URL.");
-    return undefined;
-  } catch (error) {
-    ui.error("Deployment failed");
-    throw error;
+  if (result.status !== 0) {
+    throw new Error("Fly deployment failed");
   }
+
+  // Get the URL
+  const hostname = `${appName}.fly.dev`;
+  ui.blank();
+  ui.success(`Deployed: https://${hostname}`);
+
+  // Store the webhook secret for later use
+  ui.blank();
+  ui.info("Webhook secret for Telegram setup:");
+  ui.info(`  ${webhookSecret}`);
+  ui.blank();
+  ui.info("Cron secret for scheduled tasks:");
+  ui.info(`  ${cronSecret}`);
+
+  return `https://${hostname}`;
 }
 
 /**
@@ -195,7 +144,7 @@ export function skipDeployment(credentials: Credentials, repoName: string): void
   ui.step(4, 5, "Deploy");
   ui.info("Skipping automatic deployment.");
   ui.blank();
-  ui.info("To deploy manually, add these environment variables to your host:");
+  ui.info("To deploy manually, set these secrets in Fly.io:");
   ui.blank();
 
   const envVars = [
@@ -218,5 +167,6 @@ export function skipDeployment(credentials: Credentials, repoName: string): void
   }
 
   ui.blank();
-  ui.info("Then deploy with: vercel --prod");
+  ui.info("Then deploy with: fly deploy");
 }
+

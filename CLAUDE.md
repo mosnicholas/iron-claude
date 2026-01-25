@@ -25,8 +25,8 @@ workout-routine/
 - Use descriptive variable names
 
 ### Environment
-- Uses Vercel for deployment
-- Telegram bot via Grammy framework
+- Uses Fly.io for deployment (Docker container with Express server)
+- Telegram bot integration
 - GitHub API for data persistence
 
 ### Testing Changes

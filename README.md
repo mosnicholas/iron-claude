@@ -15,7 +15,7 @@ The setup wizard will:
 1. Collect your API credentials (Telegram, GitHub, Anthropic)
 2. Create a private GitHub repo for your fitness data
 3. Run an AI-powered onboarding conversation to build your profile
-4. Deploy to Vercel
+4. Deploy to Fly.io
 5. Connect your Telegram bot
 
 Once complete, message your bot on Telegram to start training.
@@ -28,7 +28,7 @@ You'll need:
 - **Telegram Bot Token** - Create via [@BotFather](https://t.me/botfather)
 - **GitHub Personal Access Token** - With `repo` scope for data storage
 - **Anthropic API Key** - For Claude AI coaching
-- **OpenAI API Key** (optional) - For voice message transcription
+- **Gemini API Key** (optional) - For voice message transcription
 
 ---
 
@@ -77,10 +77,13 @@ iron-claude/
 │   ├── bot/                     ← Telegram bot
 │   ├── coach/                   ← AI coaching (Claude Agent SDK)
 │   ├── cron/                    ← Scheduled tasks
+│   ├── handlers/                ← HTTP request handlers
+│   ├── server.ts                ← Express HTTP server
 │   └── storage/                 ← GitHub data storage
-├── api/                         ← Vercel serverless endpoints
 ├── scripts/                     ← Setup wizard
-└── vercel.json                  ← Deployment & cron config
+├── Dockerfile                   ← Docker build config
+├── fly.toml                     ← Fly.io deployment config
+└── crontab                      ← Scheduled task definitions
 ```
 
 ---
@@ -143,8 +146,8 @@ claude /analyze      # Analyze progress
 
 ### Bot not responding
 1. Check webhook: `curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"`
-2. Verify environment variables in Vercel dashboard
-3. Check Vercel function logs
+2. Check Fly.io logs: `fly logs`
+3. Verify secrets are set: `fly secrets list`
 
 ### Re-run setup
 ```bash
