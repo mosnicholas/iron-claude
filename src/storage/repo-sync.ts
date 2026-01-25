@@ -1,35 +1,25 @@
 /**
  * Repository Sync
  *
- * Manages local cloning and syncing of the fitness-data repository
- * for direct file system access via Claude Agent SDK.
+ * Manages local cloning and syncing of the fitness-data repository.
+ * Uses persistent storage on Fly.io for faster subsequent syncs.
  */
 
 import { spawnSync } from "child_process";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
-import { tmpdir } from "os";
-import { createHash } from "crypto";
 
 export interface RepoConfig {
   repoUrl: string;
   token: string;
 }
 
-/**
- * Generate a unique directory name for a repo to avoid conflicts
- * in serverless environments where /tmp is shared.
- */
-function getRepoDirName(repoUrl: string): string {
-  const hash = createHash("sha256").update(repoUrl).digest("hex").slice(0, 12);
-  return `fitness-data-${hash}`;
-}
+// Use persistent volume on Fly.io, fallback to /tmp locally
+const DATA_DIR = existsSync("/data") ? "/data" : "/tmp";
+const REPO_DIR = join(DATA_DIR, "fitness-data");
 
 let cachedDataDir: string | null = null;
 
-/**
- * Get the local path where the repo is cloned
- */
 export function getLocalRepoPath(): string {
   if (!cachedDataDir) {
     throw new Error("Repo not synced yet. Call syncRepo first.");
@@ -37,10 +27,7 @@ export function getLocalRepoPath(): string {
   return cachedDataDir;
 }
 
-/**
- * Run a git command safely using spawnSync (no shell interpolation)
- */
-function git(args: string[], cwd?: string): void {
+function git(args: string[], cwd?: string): string {
   const result = spawnSync("git", args, {
     cwd,
     stdio: "pipe",
@@ -52,50 +39,69 @@ function git(args: string[], cwd?: string): void {
   }
 
   if (result.status !== 0) {
-    const stderr = result.stderr || "";
-    throw new Error(`git ${args[0]} failed: ${stderr}`);
+    throw new Error(`git ${args[0]} failed: ${result.stderr || ""}`);
   }
+
+  return result.stdout || "";
 }
 
-/**
- * Clone or pull the fitness-data repo locally
- */
+function getLocalHead(dir: string): string {
+  return git(["rev-parse", "HEAD"], dir).trim();
+}
+
+function getRemoteHead(dir: string): string {
+  git(["fetch", "origin"], dir);
+  return git(["rev-parse", "origin/main"], dir).trim();
+}
+
+function needsUpdate(dir: string): boolean {
+  const local = getLocalHead(dir);
+  const remote = getRemoteHead(dir);
+  return local !== remote;
+}
+
 export async function syncRepo(config: RepoConfig): Promise<string> {
   const { repoUrl, token } = config;
-
   const authUrl = repoUrl.replace("https://", `https://${token}@`);
-  const dataDir = join(tmpdir(), getRepoDirName(repoUrl));
-  cachedDataDir = dataDir;
 
-  if (existsSync(join(dataDir, ".git"))) {
-    git(["pull", "--ff-only"], dataDir);
+  cachedDataDir = REPO_DIR;
+
+  if (existsSync(join(REPO_DIR, ".git"))) {
+    // Repo exists - check if we need to update
+    git(["remote", "set-url", "origin", authUrl], REPO_DIR);
+
+    if (needsUpdate(REPO_DIR)) {
+      git(["pull", "--ff-only"], REPO_DIR);
+    }
   } else {
-    mkdirSync(dataDir, { recursive: true });
-    git(["clone", authUrl, dataDir]);
+    // Fresh clone
+    mkdirSync(REPO_DIR, { recursive: true });
+    git(["clone", authUrl, REPO_DIR]);
   }
 
-  git(["config", "user.email", "coach@fitness-bot.local"], dataDir);
-  git(["config", "user.name", "Fitness Coach"], dataDir);
+  git(["config", "user.email", "coach@fitness-bot.local"], REPO_DIR);
+  git(["config", "user.name", "Fitness Coach"], REPO_DIR);
 
-  return dataDir;
+  return REPO_DIR;
 }
 
-/**
- * Commit and push changes to the repo
- */
 export async function pushChanges(message: string): Promise<void> {
   if (!cachedDataDir) {
     throw new Error("Repo not synced yet. Call syncRepo first.");
   }
 
-  try {
-    git(["add", "-A"], cachedDataDir);
-    git(["commit", "-m", message], cachedDataDir);
-    git(["push"], cachedDataDir);
-  } catch (error) {
-    // "nothing to commit" is not a real error
-    if (!String(error).includes("nothing to commit")) {
-      throw error;
-    }
+  git(["add", "-A"], cachedDataDir);
+
+  const statusResult = spawnSync("git", ["status", "--porcelain"], {
+    cwd: cachedDataDir,
+    stdio: "pipe",
+    encoding: "utf-8",
+  });
+
+  if (!statusResult.stdout || statusResult.stdout.trim() === "") {
+    return;
   }
+
+  git(["commit", "-m", message], cachedDataDir);
+  git(["push"], cachedDataDir);
 }

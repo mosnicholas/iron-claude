@@ -28,7 +28,7 @@ export class CoachAgent {
 
   constructor(config: CoachConfig = {}) {
     this.config = {
-      model: config.model || "claude-sonnet-4-20250514",
+      model: config.model || "claude-sonnet-4-5-20250929",
       timezone: config.timezone || process.env.TIMEZONE || "America/New_York",
       maxTurns: config.maxTurns || 10,
     };
@@ -68,6 +68,7 @@ export class CoachAgent {
         allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
         permissionMode: "acceptEdits",
         env: {
+          ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "",
           TIMEZONE: this.config.timezone,
         },
       },
@@ -92,10 +93,10 @@ export class CoachAgent {
   }
 
   async runTask(taskPrompt: string, additionalContext?: string): Promise<CoachResponse> {
-    let systemPrompt = buildSystemPrompt(this.config.timezone);
-    if (additionalContext) {
-      systemPrompt += `\n\n## Additional Context\n\n${additionalContext}`;
-    }
+    const basePrompt = buildSystemPrompt(this.config.timezone);
+    const systemPrompt = additionalContext
+      ? `${basePrompt}\n\n## Additional Context\n\n${additionalContext}`
+      : basePrompt;
     return this.runQuery(taskPrompt, systemPrompt);
   }
 }

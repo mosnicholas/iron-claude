@@ -107,7 +107,7 @@ export async function deployToFly(
   try {
     execSync(`fly secrets set ${secretsArgs}`, { stdio: "ignore" });
     ui.info("Secrets configured");
-  } catch (error) {
+  } catch {
     ui.warn("Some secrets may have failed to set. Continuing with deploy...");
   }
 
@@ -169,4 +169,3 @@ export function skipDeployment(credentials: Credentials, repoName: string): void
   ui.blank();
   ui.info("Then deploy with: fly deploy");
 }
-
