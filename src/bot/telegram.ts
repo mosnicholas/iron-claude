@@ -497,8 +497,11 @@ export class ThrottledMessageEditor {
     this.dotCount = (this.dotCount % 3) + 1;
     const baseText = text.replace(/\.{3}$/, dots);
 
+    // Escape special chars for MarkdownV2
+    const escaped = formatForTelegram(baseText);
+
     // Format as: ✨ _status message_
-    const formattedText = `✨ _${baseText}_`;
+    const formattedText = `✨ _${escaped}_`;
 
     const now = Date.now();
     const timeSinceLastEdit = now - this.lastEditTime;

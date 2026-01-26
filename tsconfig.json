@@ -19,7 +19,7 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "allowSyntheticDefaultImports": true,
-    "types": ["node"]
+    "types": ["node", "jest"]
   },
   "include": ["src/**/*", "scripts/**/*"],
   "exclude": ["node_modules", "dist", "archive", "bot"]
