@@ -25,14 +25,21 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --omit=dev
+# Install all dependencies (including dev for build)
+RUN npm ci
 
 # Install Claude Code CLI globally (required by claude-agent-sdk)
 RUN npm install -g @anthropic-ai/claude-code
 
-# Copy built app and config
-COPY dist/ ./dist/
+# Copy source and build
+COPY src/ ./src/
+COPY tsconfig.json ./
+RUN npm run build
+
+# Remove dev dependencies after build
+RUN npm prune --omit=dev
+
+# Copy config files
 # Prompts are loaded relative to dist/src/coach, so place them at dist/prompts
 COPY prompts/ ./dist/prompts/
 COPY crontab ./crontab
