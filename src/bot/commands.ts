@@ -9,6 +9,17 @@ import { TelegramBot, ThrottledMessageEditor } from "./telegram.js";
 import { createGitHubStorage } from "../storage/github.js";
 import { getCurrentWeek } from "../utils/date.js";
 
+/**
+ * Split message on --- markers for multi-message responses
+ * Trims whitespace and filters empty chunks
+ */
+function splitOnMessageBreaks(text: string): string[] {
+  return text
+    .split(/\n---\n/)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk.length > 0);
+}
+
 export type CommandHandler = (
   agent: CoachAgent,
   bot: TelegramBot,
@@ -318,7 +329,17 @@ export async function executeCommand(
         },
       });
       console.log(`[Commands] Handler completed, finalizing`);
-      await editor.finalize(result);
+
+      // Split on --- markers for multi-message responses
+      const chunks = splitOnMessageBreaks(result);
+      await editor.finalize(chunks[0]);
+
+      // Send remaining chunks as separate messages
+      for (let i = 1; i < chunks.length; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 200)); // Small delay
+        await bot.sendMessageSafe(chunks[i]);
+      }
+
       return ""; // Empty string signals webhook not to send another message
     } catch (error) {
       console.error(`[Commands] Handler error:`, error);

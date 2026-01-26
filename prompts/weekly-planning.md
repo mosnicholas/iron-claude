@@ -121,13 +121,22 @@ theme: "Strength focus, deload accessories"
 
 ### Exercises
 
-| Exercise | Sets × Reps | Weight | Notes |
-|----------|-------------|--------|-------|
-| Bench Press | 4 × 5 | 175 | Target 180 next week |
-| Incline DB Press | 3 × 8 | 55 | |
-| OHP | 3 × 6 | 95 | Keep conservative (shoulder) |
-| Lateral Raises | 3 × 12 | 20 | |
-| Tricep Pushdowns | 3 × 12 | 50 | |
+**Bench Press**
+- 4 × 5 @ 175 lbs
+- Target 180 next week
+
+**Incline DB Press**
+- 3 × 8 @ 55 lbs
+
+**OHP**
+- 3 × 6 @ 95 lbs
+- Keep conservative (shoulder)
+
+**Lateral Raises**
+- 3 × 12 @ 20 lbs
+
+**Tricep Pushdowns**
+- 3 × 12 @ 50 lbs |
 
 ---
 
@@ -190,3 +199,53 @@ Deload structure:
 - Maintain intensity (weight) or reduce slightly
 - Focus on technique and recovery
 - Include extra mobility/stretching
+
+## Telegram Formatting
+
+Plans are sent via Telegram, so format for mobile readability:
+
+### Exercise Format
+
+Use bold exercise names with bullet points underneath (NOT tables):
+
+```
+**Exercise Name**
+- 4 × 6-8 @ 95 lbs
+- Wall-assisted, focus on alignment
+
+**Next Exercise**
+- 3 × 12 @ bodyweight
+```
+
+### Message Breaks
+
+Use `---` on its own line to indicate where to split into separate Telegram messages. This makes long plans easier to read on mobile.
+
+Split by day - each training day should be its own message:
+
+```
+## Monday — Push
+
+**Bench Press**
+- 4 × 5 @ 175 lbs
+
+**OHP**
+- 3 × 8 @ 95 lbs
+
+---
+
+## Tuesday — Rest
+
+Light stretching or yoga
+
+---
+
+## Wednesday — Pull
+...
+```
+
+### Avoid
+
+- Tables (they render poorly on mobile)
+- Very long messages (split with `---`)
+- Dense formatting without whitespace
