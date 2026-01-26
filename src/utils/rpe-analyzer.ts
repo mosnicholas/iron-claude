@@ -47,10 +47,7 @@ export interface SessionDifficulty {
  * - "Your @8 used to be 185, now it's 195 - you're stronger!"
  * - "RPE creeping up on same weights - consider deload"
  */
-export function analyzeExerciseRPE(
-  dataPoints: RPEDataPoint[],
-  exerciseName: string
-): RPETrend {
+export function analyzeExerciseRPE(dataPoints: RPEDataPoint[], exerciseName: string): RPETrend {
   const insights: RPEInsight[] = [];
 
   if (dataPoints.length < 2) {
@@ -125,7 +122,8 @@ export function analyzeExerciseRPE(
     if (points.length >= 4) {
       const rpeValues = points.slice(-4).map((p) => p.rpe);
       const avg = rpeValues.reduce((a, b) => a + b, 0) / rpeValues.length;
-      const variance = rpeValues.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / rpeValues.length;
+      const variance =
+        rpeValues.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / rpeValues.length;
 
       // Low variance = consistent
       if (variance < 0.3) {
@@ -224,7 +222,9 @@ export function generateRPESummary(trends: RPETrend[]): {
     highlights.push(`${strengthGains.length} exercise(s) showing strength gains at same RPE`);
   }
   if (fatigueWarnings.length > 0) {
-    highlights.push(`${fatigueWarnings.length} exercise(s) showing fatigue patterns - recovery may help`);
+    highlights.push(
+      `${fatigueWarnings.length} exercise(s) showing fatigue patterns - recovery may help`
+    );
   }
 
   return { strengthGains, fatigueWarnings, highlights };

@@ -92,8 +92,7 @@ export function generatePRCelebration(
   // Check if this is actually a PR
   if (existing) {
     const isWeightPR = weight > existing.current.weight;
-    const isRepPR =
-      weight === existing.current.weight && reps > existing.current.reps;
+    const isRepPR = weight === existing.current.weight && reps > existing.current.reps;
     const is1RMPR = estimated1RM > existing.current.estimated1RM && !isWeightPR;
 
     if (!isWeightPR && !isRepPR && !is1RMPR) {
@@ -134,13 +133,7 @@ export function generatePRCelebration(
   const baseMessage = messagePool[Math.floor(Math.random() * messagePool.length)];
 
   // Build the full celebration message
-  const message = buildCelebrationMessage(
-    baseMessage,
-    exercise,
-    current,
-    previous,
-    milestone
-  );
+  const message = buildCelebrationMessage(baseMessage, exercise, current, previous, milestone);
 
   // Generate journey context if we have history
   const journeyContext = prHistory
@@ -228,9 +221,7 @@ function generateJourneyContext(
   // Calculate time span
   const firstDate = new Date(first.date);
   const now = new Date();
-  const monthsSpan = Math.round(
-    (now.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24 * 30)
-  );
+  const monthsSpan = Math.round((now.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24 * 30));
 
   const lines: string[] = [];
   lines.push(`📈 Your ${formatExerciseName(exercise)} journey:`);
@@ -294,9 +285,7 @@ function getMilestoneEmoji(weight: number): string {
  * Format exercise name for display
  */
 function formatExerciseName(name: string): string {
-  return name
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /**
