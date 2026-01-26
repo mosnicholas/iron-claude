@@ -2,7 +2,7 @@
  * Repository Sync
  *
  * Manages local cloning and syncing of the fitness-data repository.
- * Uses persistent storage on Fly.io for faster subsequent syncs.
+ * Clones to /tmp on each deploy; subsequent syncs use git pull.
  */
 
 import { spawnSync } from "child_process";
@@ -14,8 +14,7 @@ export interface RepoConfig {
   token: string;
 }
 
-// Use persistent volume on Fly.io, fallback to /tmp locally
-const DATA_DIR = existsSync("/data") ? "/data" : "/tmp";
+const DATA_DIR = "/tmp";
 const REPO_DIR = join(DATA_DIR, "fitness-data");
 
 let cachedDataDir: string | null = null;

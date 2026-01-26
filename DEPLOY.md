@@ -139,11 +139,10 @@ npm install
 npm run build
 ```
 
-### Create the app and volume (first time only)
+### Create the app (first time only)
 
 ```bash
 fly apps create <your-app-name>
-fly volumes create fitness_data --region <your-region> --size 1
 ```
 
 ### Set secrets

@@ -156,6 +156,16 @@ npm run setup
 
 ---
 
+## Future Optimizations
+
+These are potential improvements not yet implemented:
+
+- **Persistent volume for repo cache**: Add a Fly.io volume mount to `/data` to persist the fitness-data repo clone across deploys. This would eliminate the need to re-clone on cold starts. Currently uses `/tmp` which is cleared on each deploy.
+- **Response streaming**: Stream Claude's responses to Telegram in chunks for faster perceived latency on long responses.
+- **Workout templates**: Pre-built program templates (5/3/1, PPL, etc.) that can be imported during onboarding.
+
+---
+
 ## License
 
 MIT

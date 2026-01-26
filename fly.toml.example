@@ -5,7 +5,6 @@
 #   cp fly.toml.example fly.toml
 #   # Edit app name and region below
 #   fly apps create <your-app-name>
-#   fly volumes create fitness_data --region <your-region> --size 1
 #   fly deploy
 
 # REQUIRED: Change this to your unique app name
@@ -29,12 +28,6 @@ primary_region = "ewr"
 
 [env]
   NODE_ENV = "production"
-
-# Persistent storage for fitness-data repo cache
-# Create with: fly volumes create fitness_data --region <your-region> --size 1
-[mounts]
-  source = "fitness_data"
-  destination = "/data"
 
 [[vm]]
   memory = "1gb"

@@ -76,12 +76,6 @@ export function generateFlyToml(config: FlyConfig): void {
   content = content.replace(/^app = "my-fitness-coach"/m, `app = "${config.appName}"`);
   content = content.replace(/^primary_region = "ewr"/m, `primary_region = "${config.region}"`);
 
-  // Update the volume creation comment with the correct region
-  content = content.replace(
-    /fly volumes create fitness_data --region \S+ --size 1/g,
-    `fly volumes create fitness_data --region ${config.region} --size 1`
-  );
-
   writeFileSync("fly.toml", content);
   ui.success(`Generated fly.toml for app "${config.appName}" in region "${config.region}"`);
 }
