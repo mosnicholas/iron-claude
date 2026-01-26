@@ -30,6 +30,7 @@ workout-routine/
 - Uses Fly.io for deployment (Docker container with Express server)
 - Telegram bot integration
 - GitHub API for data persistence
+- **Fly CLI**: Use `~/.fly/bin/fly` (not in PATH by default)
 
 ### Testing Changes
 - Run `npm run dev` for local development

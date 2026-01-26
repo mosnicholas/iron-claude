@@ -32,22 +32,29 @@ async function main() {
   }
 
   const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error("Error: TELEGRAM_WEBHOOK_SECRET environment variable is required");
+    console.log("");
+    console.log("Generate one and set it in your .env.local file:");
+    console.log("  TELEGRAM_WEBHOOK_SECRET=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)");
+    console.log("");
+    console.log("Make sure the SAME secret is set in Fly.io:");
+    console.log("  fly secrets set TELEGRAM_WEBHOOK_SECRET=your_secret_here");
+    process.exit(1);
+  }
 
   console.log("Setting webhook...");
   console.log(`URL: ${webhookUrl}`);
-  if (webhookSecret) {
-    console.log("Secret: configured");
-  }
+  console.log(
+    `Secret: ${webhookSecret.slice(0, 4)}...${webhookSecret.slice(-4)} (${webhookSecret.length} chars)`
+  );
 
   const body: Record<string, unknown> = {
     url: webhookUrl,
     allowed_updates: ["message"],
     drop_pending_updates: true,
+    secret_token: webhookSecret,
   };
-
-  if (webhookSecret) {
-    body.secret_token = webhookSecret;
-  }
 
   const response = await fetch(`${TELEGRAM_API_BASE}/bot${botToken}/setWebhook`, {
     method: "POST",
@@ -63,6 +70,9 @@ async function main() {
     console.log("");
     console.log("Your bot is now listening for messages at:");
     console.log(`  ${webhookUrl}`);
+    console.log("");
+    console.log("⚠️  Make sure TELEGRAM_WEBHOOK_SECRET in Fly.io matches:");
+    console.log(`   ${webhookSecret.slice(0, 4)}...${webhookSecret.slice(-4)}`);
     console.log("");
     console.log("Try sending a message to your bot on Telegram!");
   } else {
