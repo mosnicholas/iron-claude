@@ -1,21 +1,23 @@
-app = "workout-coach"
-primary_region = "ewr"  # New York/Newark
+# fly.toml app configuration file generated for workout-coach on 2026-01-26T05:28:21Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'workout-coach'
+primary_region = 'iad'
 
 [build]
-  # Pass commit SHA for deployment notifications:
-  # fly deploy --build-arg GIT_COMMIT_SHA=$(git rev-parse HEAD)
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = false
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
-
-[env]
-  NODE_ENV = "production"
+  processes = ['app']
 
 [[vm]]
-  memory = "1gb"
-  cpu_kind = "shared"
+  memory = '1gb'
+  cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 1024
