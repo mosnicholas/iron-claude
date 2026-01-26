@@ -39,6 +39,19 @@ Compare to previous week if available.
 - Any sessions with notably low/high energy
 - Correlation with performance
 
+### RPE Analysis
+Analyze RPE patterns across the week:
+
+**Strength Gains**: Look for exercises where the same RPE now corresponds to higher weights
+- Example: "Your @8 on bench was 185 two weeks ago, now it's 195 - you're stronger!"
+
+**Fatigue Detection**: Look for exercises where the same weight requires higher RPE
+- Example: "OHP 115 has gone from @7 to @8.5 over 3 sessions - fatigue accumulating"
+
+**Session Difficulty**: Calculate difficulty score for each session
+- Based on average RPE, max RPE, and set count
+- Categories: Easy (<40), Moderate (40-60), Hard (60-80), Brutal (80+)
+
 ## Step 3: Identify Patterns
 
 ### Positive Patterns
@@ -150,9 +163,33 @@ adherence_rate: 80%
 
 ## PRs This Week
 
-🎉 **Bench Press**: 185 × 3 (Weight PR)
+🎉🎉 **Bench Press**: 185 × 3 (WEIGHT PR!)
 - Previous: 180 × 3
 - Est. 1RM: 196 (+5 lbs)
+- Journey: Started at 135 → Now 185 (+50 lbs in 6 months!)
+
+---
+
+## RPE Analysis
+
+### Strength Trends
+| Exercise | Old @8 | Current @8 | Change |
+|----------|--------|------------|--------|
+| Bench Press | 175 | 185 | +5.7% stronger |
+| Squat | 225 | 225 | Maintaining |
+
+### Fatigue Indicators
+- OHP: RPE creeping up at 115 lbs (7 → 8 over 2 weeks) - watch closely
+- No other concerns
+
+### Session Difficulty
+| Day | Session | Difficulty | Category |
+|-----|---------|------------|----------|
+| Mon | Push | 58 | Moderate |
+| Wed | Pull | 62 | Hard |
+| Fri | Legs | 71 | Hard |
+
+**Weekly Average:** 64 (Hard) - solid training week
 
 ---
 
