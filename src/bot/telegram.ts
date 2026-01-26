@@ -44,7 +44,7 @@ export class TelegramBot {
    */
   async sendMessage(
     text: string,
-    parseMode: "Markdown" | "HTML" = "Markdown"
+    parseMode: "Markdown" | "MarkdownV2" | "HTML" = "MarkdownV2"
   ): Promise<number | undefined> {
     const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/sendMessage`;
 
@@ -127,7 +127,7 @@ export class TelegramBot {
   async editMessage(
     messageId: number,
     text: string,
-    parseMode: "Markdown" | "HTML" = "Markdown"
+    parseMode: "Markdown" | "MarkdownV2" | "HTML" = "MarkdownV2"
   ): Promise<void> {
     const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/editMessageText`;
 
@@ -261,20 +261,36 @@ export class TelegramBot {
 }
 
 /**
- * Format text for Telegram Markdown
- * - Escape special characters
+ * Format text for Telegram MarkdownV2
+ * - Escape special characters that aren't part of formatting
  * - Convert markdown tables to lists (Telegram doesn't support tables)
  */
 export function formatForTelegram(text: string): string {
   // Convert markdown tables to bullet lists
   let formatted = convertTablesToLists(text);
 
-  // Telegram Markdown requires escaping these in certain contexts
-  // But we want to keep basic formatting working
-  // For now, just clean up any problematic patterns
+  // MarkdownV2 requires escaping: _ * [ ] ( ) ~ ` > # + - = | { } . !
+  // We want to preserve intentional formatting, so we escape characters
+  // that commonly appear in text but aren't formatting
 
-  // Fix unmatched asterisks that aren't meant for formatting
-  formatted = formatted.replace(/\*([^*\n]+)\n/g, "• $1\n");
+  // Escape special characters that are typically not formatting
+  // Order matters - escape backslashes first
+  formatted = formatted
+    .replace(/\\/g, "\\\\")
+    .replace(/\./g, "\\.")
+    .replace(/!/g, "\\!")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)")
+    .replace(/\{/g, "\\{")
+    .replace(/\}/g, "\\}")
+    .replace(/\+/g, "\\+")
+    .replace(/=/g, "\\=")
+    .replace(/>/g, "\\>")
+    .replace(/#/g, "\\#")
+    .replace(/\|/g, "\\|");
+
+  // Handle hyphens: escape only when not at start of line (list items)
+  formatted = formatted.replace(/([^\n])-/g, "$1\\-");
 
   return formatted;
 }

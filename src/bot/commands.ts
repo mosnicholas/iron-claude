@@ -20,11 +20,8 @@ export const COMMANDS: Record<string, CommandHandler> = {
   today: handleToday,
   plan: handlePlan,
   done: handleDone,
-  tired: handleTired,
-  skip: handleSkip,
   prs: handlePRs,
   demo: handleDemo,
-  traveling: handleTraveling,
   me: handleMe,
   summary: handleSummary,
 };
@@ -69,17 +66,12 @@ async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string):
 
 🏋️ **During Workout**
 • /done - Finish current workout session
-• /tired - Flag low energy, get modified options
-• /skip [what] - Skip today or specific exercise
 
 📊 **Progress**
 • /prs - Show personal records and trends
 • /me - Quick facts about your profile
 • /summary - Your fitness journey overview
 • /demo [exercise] - Find video demonstration
-
-✈️ **Life**
-• /traveling [dates] [context] - Log upcoming travel
 
 💬 **Or just chat naturally:**
 • "bench 175x5" - Log an exercise
@@ -128,41 +120,6 @@ async function handleDone(agent: CoachAgent, _bot: TelegramBot, _args: string): 
 }
 
 /**
- * /tired - Flag low energy
- */
-async function handleTired(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
-  const response = await agent.chat(
-    "I'm feeling tired/low energy today. Based on today's planned workout, suggest some modified options:\n" +
-      "1. A lighter version of the planned workout\n" +
-      "2. A shorter alternative\n" +
-      "3. A complete swap if appropriate\n" +
-      "4. Full rest if that's the best call\n\n" +
-      "Be supportive and remember that a modified workout beats skipping entirely."
-  );
-  return response.message;
-}
-
-/**
- * /skip - Skip workout or exercise
- */
-async function handleSkip(agent: CoachAgent, _bot: TelegramBot, args: string): Promise<string> {
-  if (!args) {
-    const response = await agent.chat(
-      "I want to skip today's workout. Acknowledge this without guilt-tripping, " +
-        "and suggest alternatives if appropriate (light mobility, walk, etc.). " +
-        "Record this in the learnings if it's becoming a pattern."
-    );
-    return response.message;
-  }
-
-  const response = await agent.chat(
-    `I want to skip ${args} today. Note this, suggest an alternative exercise if appropriate, ` +
-      "and update my workout plan accordingly."
-  );
-  return response.message;
-}
-
-/**
  * /prs - Show personal records
  */
 async function handlePRs(agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
@@ -187,28 +144,6 @@ async function handleDemo(agent: CoachAgent, _bot: TelegramBot, args: string): P
   const response = await agent.chat(
     `Find a good video demonstration for the exercise: ${args}. ` +
       "Search for quality instructional content and provide helpful cues."
-  );
-  return response.message;
-}
-
-/**
- * /traveling - Log upcoming travel
- */
-async function handleTraveling(
-  agent: CoachAgent,
-  _bot: TelegramBot,
-  args: string
-): Promise<string> {
-  if (!args) {
-    return "When are you traveling and any context? Example: /traveling Jan 25-28 Austin, hotel gym only";
-  }
-
-  const response = await agent.chat(
-    `I'm traveling: ${args}. Please:\n` +
-      "1. Note this in learnings\n" +
-      "2. Adjust my expectations for training during this period\n" +
-      "3. Suggest travel-friendly workout options if appropriate\n" +
-      "4. Consider this when generating next week's plan if it overlaps"
   );
   return response.message;
 }
@@ -260,28 +195,14 @@ export function commandExists(command: string): boolean {
 }
 
 // Commands that benefit from loading indicator (they call agent.chat which is slow)
-const SLOW_COMMANDS = [
-  "prs",
-  "plan",
-  "today",
-  "done",
-  "tired",
-  "skip",
-  "demo",
-  "traveling",
-  "me",
-  "summary",
-];
+const SLOW_COMMANDS = ["prs", "plan", "today", "done", "demo", "me", "summary"];
 
 const LOADING_MESSAGES: Record<string, string> = {
   prs: "📊 Looking up your PRs...",
   plan: "📋 Loading your plan...",
   today: "📋 Checking today's workout...",
   done: "✅ Wrapping up your workout...",
-  tired: "💭 Thinking about alternatives...",
-  skip: "📝 Updating your plan...",
   demo: "🎥 Finding a demo...",
-  traveling: "✈️ Noting your travel...",
   me: "📋 Pulling up your profile...",
   summary: "🔍 Reviewing your journey...",
 };

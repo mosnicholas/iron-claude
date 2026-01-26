@@ -21,30 +21,38 @@ export interface DailyReminderResult {
  */
 export async function runDailyReminder(): Promise<DailyReminderResult> {
   const timezone = process.env.TIMEZONE || "America/New_York";
+  console.log("[daily-reminder] Starting daily reminder job");
 
   try {
+    console.log("[daily-reminder] Initializing bot, agent, and storage");
     const bot = createTelegramBot();
     const agent = createCoachAgent({ timezone });
     const storage = createGitHubStorage();
 
     // Check if profile exists (if not, skip)
+    console.log("[daily-reminder] Checking for profile");
     const profile = await storage.readProfile();
     if (!profile) {
+      console.log("[daily-reminder] No profile found, skipping");
       return {
         success: true,
         message: "No profile configured, skipping reminder",
       };
     }
+    console.log("[daily-reminder] Profile found");
 
     // Get current week and today's date
     const currentWeek = getCurrentWeek(timezone);
     const today = getToday(timezone);
+    console.log(`[daily-reminder] Week: ${currentWeek}, Today: ${today}`);
 
     // Read the weekly plan
+    console.log("[daily-reminder] Reading weekly plan");
     const planContent = await storage.readWeeklyPlan(currentWeek);
 
     if (!planContent) {
       // No plan for this week
+      console.log("[daily-reminder] No weekly plan found, prompting user");
       await bot.sendMessage(
         `Good morning! No plan loaded for this week (${currentWeek}). ` +
           `Want me to generate one? Just say "plan my week" or run /plan.`
@@ -54,8 +62,10 @@ export async function runDailyReminder(): Promise<DailyReminderResult> {
         message: "No weekly plan found, sent prompt to generate",
       };
     }
+    console.log("[daily-reminder] Weekly plan found");
 
     // Use the agent to generate a good morning message
+    console.log("[daily-reminder] Starting agent task to generate reminder");
     const response = await agent.runTask(
       `Generate a morning workout reminder for today (${formatDateHuman(new Date(today))}).
 
@@ -71,8 +81,11 @@ Read the weekly plan (plans/${currentWeek}.md) and create a motivating message t
 
 Keep it concise - this is for Telegram. Use emoji sparingly.`
     );
+    console.log("[daily-reminder] Agent completed task");
 
+    console.log("[daily-reminder] Sending message to Telegram");
     await bot.sendMessageSafe(response.message);
+    console.log("[daily-reminder] Message sent successfully");
 
     return {
       success: true,
@@ -80,6 +93,7 @@ Keep it concise - this is for Telegram. Use emoji sparingly.`
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error("[daily-reminder] Error:", errorMessage);
 
     // Notify user of failure
     try {

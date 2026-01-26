@@ -55,6 +55,7 @@ export function createCronHandler(task: CronTask) {
       }
 
       if (result.success) {
+        console.log(`[cron] Task ${task} completed successfully: ${result.message}`);
         res.status(200).json({ ok: true, message: result.message });
       } else {
         console.error(`[cron] Task ${task} failed:`, result.error);
