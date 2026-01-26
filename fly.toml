@@ -15,12 +15,6 @@ primary_region = "ewr"  # New York/Newark
 [env]
   NODE_ENV = "production"
 
-# Persistent storage for fitness-data repo cache
-# Create with: fly volumes create fitness_data --region ewr --size 1
-[[mounts]]
-  source = "fitness_data"
-  destination = "/data"
-
 [[vm]]
   memory = "1gb"
   cpu_kind = "shared"
