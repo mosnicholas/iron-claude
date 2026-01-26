@@ -15,6 +15,8 @@ import {
 } from "../bot/telegram.js";
 import { executeCommand, commandExists } from "../bot/commands.js";
 import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js";
+import { createGitHubStorage } from "../storage/github.js";
+import { generatePlanWithContext } from "../cron/weekly-plan.js";
 import type { TelegramUpdate } from "../storage/types.js";
 
 export async function webhookHandler(req: Request, res: Response): Promise<void> {
@@ -114,6 +116,20 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
         await bot.sendMessage(`Unknown command /${command}. Try /help to see available commands.`);
       }
 
+      res.status(200).json({ ok: true });
+      return;
+    }
+
+    // Check for pending planning state - if waiting for input, generate the plan
+    const storage = createGitHubStorage();
+    const planningState = await storage.getPlanningState();
+
+    if (planningState) {
+      console.log(`[webhook] Pending planning for ${planningState.week}, generating plan`);
+      // Don't await - let it run in background so we can respond quickly
+      generatePlanWithContext(planningState.week, messageText).catch((err) => {
+        console.error("[webhook] Plan generation failed:", err);
+      });
       res.status(200).json({ ok: true });
       return;
     }

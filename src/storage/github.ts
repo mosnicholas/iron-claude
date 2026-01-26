@@ -348,6 +348,49 @@ export class GitHubStorage {
   async listRetrospectives(): Promise<string[]> {
     return this.listFiles("retrospectives");
   }
+
+  // ============================================================================
+  // Planning State Management
+  // ============================================================================
+
+  /**
+   * Save planning-pending state (cron asks questions, waiting for response)
+   */
+  async savePlanningState(week: string): Promise<void> {
+    const state = {
+      week,
+      askedAt: new Date().toISOString(),
+    };
+    await this.writeFile(
+      "state/planning-pending.json",
+      JSON.stringify(state, null, 2),
+      `Start planning for ${week}`
+    );
+  }
+
+  /**
+   * Get pending planning state (if any)
+   */
+  async getPlanningState(): Promise<{ week: string; askedAt: string } | null> {
+    const content = await this.readFile("state/planning-pending.json");
+    if (!content) return null;
+    try {
+      return JSON.parse(content);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Clear planning state (after plan is generated)
+   */
+  async clearPlanningState(): Promise<void> {
+    try {
+      await this.deleteFile("state/planning-pending.json", "Plan finalized");
+    } catch {
+      // File might not exist, that's fine
+    }
+  }
 }
 
 /**

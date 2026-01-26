@@ -53,12 +53,34 @@ workout-routine/
 3. Provide brief feedback on the session
 4. Note any patterns for `learnings.md`
 
-### Weekly Workflow (Sundays)
+### Weekly Planning Flow (Sundays)
+
+The weekly planning is **interactive** - questions first, then plan:
+
+1. **Cron triggers** (Sunday 8pm): Sends coaching questions via Telegram
+   - "How are you feeling? Any fatigue or soreness?"
+   - "Any schedule changes this week?"
+   - "Anything you want to focus on?"
+
+2. **User responds**: Their input is captured by the webhook
+
+3. **Plan generation**: `generatePlanWithContext()` creates the plan incorporating their input
+   - Adjusts intensity based on fatigue/energy
+   - Works around schedule constraints
+   - Prioritizes requested focus areas
+
+4. **State tracking**: `state/planning-pending.json` in fitness-data tracks pending planning
+
+**Key files:**
+- `src/cron/weekly-plan.ts` - Cron job and plan generation
+- `src/handlers/webhook.ts` - Detects pending planning state
+- `src/storage/github.ts` - Planning state management
+
+### Weekly Analysis
 1. **Read**: profile.md, learnings.md, last 2-4 weeks of workouts/plans
 2. **Analyze**: Weight progression, volume, RPE, skill progress, fatigue markers
-3. **Generate**: Next week's plan in `plans/`
-4. **Update**: PRs if new records, learnings.md if new patterns emerge
-5. **Create**: Retrospective in `retrospectives/`
+3. **Update**: PRs if new records, learnings.md if new patterns emerge
+4. **Create**: Retrospective in `retrospectives/`
 
 ### Data Updates
 All athlete data changes go to their fitness-data repo:

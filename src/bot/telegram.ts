@@ -281,12 +281,14 @@ export function formatForTelegram(text: string): string {
   formatted = formatted.replace(/\*\*(.+?)\*\*/g, "*$1*");
 
   // Convert markdown bullets to Unicode bullets
-  formatted = formatted.replace(/^- /gm, "• ").replace(/^\* (?!\*)/gm, "• ");
-
-  // Convert nested bullets (indented with spaces)
+  // Process nested bullets FIRST (they have leading spaces), then top-level
   formatted = formatted
-    .replace(/^ {4}• /gm, "    ▪ ") // 4 spaces → small square
-    .replace(/^ {2}• /gm, "  ◦ "); // 2 spaces → hollow circle
+    .replace(/^ {4}- /gm, "    ▪ ") // 4 spaces + hyphen → small square
+    .replace(/^ {2}- /gm, "  ◦ ") // 2 spaces + hyphen → hollow circle
+    .replace(/^- /gm, "• ") // top-level hyphen bullet
+    .replace(/^ {4}\* /gm, "    ▪ ") // 4 spaces + asterisk
+    .replace(/^ {2}\* /gm, "  ◦ ") // 2 spaces + asterisk
+    .replace(/^\* (?!\*)/gm, "• "); // top-level asterisk bullet
 
   // Convert markdown tables to bullet lists
   formatted = convertTablesToLists(formatted);
@@ -311,8 +313,8 @@ export function formatForTelegram(text: string): string {
     .replace(/#/g, "\\#")
     .replace(/\|/g, "\\|");
 
-  // Handle hyphens: escape only when not at start of line (list items)
-  formatted = formatted.replace(/([^\n])-/g, "$1\\-");
+  // Escape all hyphens (bullet markers are already converted to Unicode)
+  formatted = formatted.replace(/-/g, "\\-");
 
   return formatted;
 }

@@ -24,7 +24,7 @@ export const COMMANDS: Record<string, CommandHandler> = {
   help: handleHelp,
   today: handleToday,
   plan: handlePlan,
-  "plan-full": handlePlanFull,
+  fullplan: handlePlanFull,
   done: handleDone,
   prs: handlePRs,
   demo: handleDemo,
@@ -68,7 +68,7 @@ async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string):
 
 📋 **Planning**
 • /plan - Show this week's plan (summary)
-• /plan-full - Show full plan with all exercises
+• /fullplan - Show full plan with all exercises
 • /today - Show today's workout
 
 🏋️ **During Workout**
@@ -124,7 +124,7 @@ async function handlePlan(
 }
 
 /**
- * /plan-full - Show this week's plan with all exercise details
+ * /fullplan - Show this week's plan with all exercise details
  */
 async function handlePlanFull(
   agent: CoachAgent,
@@ -258,12 +258,12 @@ export function commandExists(command: string): boolean {
 }
 
 // Commands that benefit from loading indicator (they call agent.chat which is slow)
-const SLOW_COMMANDS = ["prs", "plan", "plan-full", "today", "done", "demo", "me", "summary"];
+const SLOW_COMMANDS = ["prs", "plan", "fullplan", "today", "done", "demo", "me", "summary"];
 
 const LOADING_MESSAGES: Record<string, string> = {
   prs: "✨ _Looking up your PRs..._",
   plan: "✨ _Loading your plan..._",
-  "plan-full": "✨ _Loading full plan details..._",
+  fullplan: "✨ _Loading full plan details..._",
   today: "✨ _Checking today's workout..._",
   done: "✨ _Wrapping up your workout..._",
   demo: "✨ _Finding a demo..._",

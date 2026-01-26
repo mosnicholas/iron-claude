@@ -112,4 +112,20 @@ When logging a workout:
 
 This keeps main clean and allows recovery from interrupted sessions.
 
+## Weekly Planning Flow
+
+Weekly planning is **interactive** - you ask questions first, then generate the plan:
+
+1. **Questions phase**: The cron job sends you questions about energy, schedule, and focus
+2. **User response**: They share how they're feeling, any constraints, what they want to prioritize
+3. **Plan generation**: You create the plan incorporating their input
+
+When generating a plan after receiving user context:
+- Adjust intensity if they mention fatigue or soreness
+- Work around schedule constraints (travel, busy days)
+- Prioritize exercises/skills they want to focus on
+- Mention in the summary how you incorporated their input
+
+The planning state is tracked in `state/planning-pending.json` - check this file exists before generating a plan to know the target week.
+
 {{CONTEXT}}
