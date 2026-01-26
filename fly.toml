@@ -17,7 +17,7 @@ primary_region = "ewr"  # New York/Newark
 
 # Persistent storage for fitness-data repo cache
 # Create with: fly volumes create fitness_data --region ewr --size 1
-[mounts]
+[[mounts]]
   source = "fitness_data"
   destination = "/data"
 

@@ -8,7 +8,11 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { syncRepo, pushChanges } from "../storage/repo-sync.js";
 import { buildSystemPrompt } from "./prompts.js";
-import { extractTextFromMessage, extractToolsFromMessage } from "../utils/sdk-helpers.js";
+import {
+  extractTextFromMessage,
+  extractToolsFromMessage,
+  formatToolStatus,
+} from "../utils/sdk-helpers.js";
 
 export interface CoachConfig {
   model?: string;
@@ -20,6 +24,10 @@ export interface CoachResponse {
   message: string;
   toolsUsed: string[];
   turnsUsed: number;
+}
+
+export interface StreamingCallbacks {
+  onStatus?: (status: string) => void;
 }
 
 export class CoachAgent {
@@ -51,12 +59,24 @@ export class CoachAgent {
     return this.repoPath;
   }
 
-  private async runQuery(prompt: string, systemPrompt: string): Promise<CoachResponse> {
+  private async runQuery(
+    prompt: string,
+    systemPrompt: string,
+    callbacks?: StreamingCallbacks
+  ): Promise<CoachResponse> {
     const repoPath = await this.ensureRepoSynced();
 
     const toolsUsed: string[] = [];
     let responseText = "";
     let turnsUsed = 0;
+
+    // Track tool inputs by tool_use_id for accurate status messages
+    const toolInputsById: Map<string, { name: string; input: Record<string, unknown> }> = new Map();
+
+    // Send initial "Thinking..." status
+    if (callbacks?.onStatus) {
+      callbacks.onStatus("Thinking...");
+    }
 
     const q = query({
       prompt,
@@ -74,12 +94,53 @@ export class CoachAgent {
       },
     });
 
-    for await (const message of q) {
-      if (message.type === "assistant") {
-        responseText = extractTextFromMessage(message);
-        toolsUsed.push(...extractToolsFromMessage(message));
-        turnsUsed++;
+    try {
+      for await (const message of q) {
+        if (message.type === "assistant") {
+          responseText = extractTextFromMessage(message);
+          const tools = extractToolsFromMessage(message);
+          toolsUsed.push(...tools);
+          turnsUsed++;
+
+          // Extract tool inputs by tool_use_id for status formatting
+          const content = message.message.content as Array<{
+            type: string;
+            id?: string;
+            name?: string;
+            input?: Record<string, unknown>;
+          }>;
+          for (const block of content) {
+            if (block.type === "tool_use" && block.id && block.name) {
+              toolInputsById.set(block.id, {
+                name: block.name,
+                input: block.input || {},
+              });
+              // Also send status when tool starts
+              if (callbacks?.onStatus) {
+                const status = formatToolStatus(block.name, block.input || {});
+                callbacks.onStatus(status);
+              }
+            }
+          }
+        } else if (message.type === "tool_progress" && callbacks?.onStatus) {
+          const progressMsg = message as {
+            tool_use_id?: string;
+            tool_name?: string;
+            elapsed_time_seconds?: number;
+          };
+
+          if (progressMsg.tool_use_id) {
+            const toolInfo = toolInputsById.get(progressMsg.tool_use_id);
+            const toolName = toolInfo?.name || progressMsg.tool_name || "tool";
+            const input = toolInfo?.input || {};
+            const status = formatToolStatus(toolName, input, progressMsg.elapsed_time_seconds);
+            callbacks.onStatus(status);
+          }
+        }
       }
+    } catch (error) {
+      console.error("[Coach] Query error:", error);
+      throw error;
     }
 
     await pushChanges("Update from coach conversation");
@@ -87,17 +148,21 @@ export class CoachAgent {
     return { message: responseText, toolsUsed, turnsUsed };
   }
 
-  async chat(userMessage: string): Promise<CoachResponse> {
+  async chat(userMessage: string, callbacks?: StreamingCallbacks): Promise<CoachResponse> {
     const systemPrompt = buildSystemPrompt(this.config.timezone);
-    return this.runQuery(userMessage, systemPrompt);
+    return this.runQuery(userMessage, systemPrompt, callbacks);
   }
 
-  async runTask(taskPrompt: string, additionalContext?: string): Promise<CoachResponse> {
+  async runTask(
+    taskPrompt: string,
+    additionalContext?: string,
+    callbacks?: StreamingCallbacks
+  ): Promise<CoachResponse> {
     const basePrompt = buildSystemPrompt(this.config.timezone);
     const systemPrompt = additionalContext
       ? `${basePrompt}\n\n## Additional Context\n\n${additionalContext}`
       : basePrompt;
-    return this.runQuery(taskPrompt, systemPrompt);
+    return this.runQuery(taskPrompt, systemPrompt, callbacks);
   }
 }
 
