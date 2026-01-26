@@ -28,3 +28,5 @@ export { runWeeklyPlan, forceRegeneratePlan } from "./cron/weekly-plan.js";
 // Utilities
 export * from "./utils/date.js";
 export * from "./utils/pr-calculator.js";
+export * from "./utils/rpe-analyzer.js";
+export * from "./utils/pr-celebrations.js";

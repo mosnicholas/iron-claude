@@ -156,12 +156,41 @@ npm run setup
 
 ---
 
-## Future Optimizations
+## Future Enhancements
 
 These are potential improvements not yet implemented:
 
+### Infrastructure
 - **Persistent volume for repo cache**: Add a Fly.io volume mount to `/data` to persist the fitness-data repo clone across deploys. This would eliminate the need to re-clone on cold starts. Currently uses `/tmp` which is cleared on each deploy.
 - **Workout templates**: Pre-built program templates (5/3/1, PPL, etc.) that can be imported during onboarding.
+
+### Wearable Integration (via MCP)
+Connect to health wearables to pull recovery and readiness data directly into coaching decisions:
+
+- **Whoop**: Recovery score, strain, HRV, sleep performance
+- **Apple Watch / HealthKit**: Activity rings, heart rate, sleep data
+- **Oura Ring**: Readiness score, sleep stages, HRV trends
+- **Garmin**: Training status, body battery, stress levels
+
+**How it would work**:
+1. Configure MCP server for your wearable's API
+2. Coach automatically pulls daily readiness scores
+3. Training intensity adjusts based on recovery: "Whoop shows 45% recovery - programming a lighter day"
+4. Weekly retrospectives include recovery correlation analysis
+
+### Progress Photo Tracking
+Send weekly photos to track physical progress alongside strength gains:
+
+- **Weekly photo logging**: Send a progress photo via Telegram each week
+- **Side-by-side comparisons**: "Here's week 1 vs week 12"
+- **Organized storage**: Photos saved to `fitness-data/photos/YYYY-WXX.jpg`
+- **Privacy-first**: All photos stored in your private GitHub repo
+
+**Suggested workflow**:
+1. Sunday planning message includes photo reminder
+2. Send photo via Telegram
+3. Coach confirms receipt and stores securely
+4. Monthly summaries include visual progress alongside PR charts
 
 ---
 
