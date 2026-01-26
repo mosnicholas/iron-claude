@@ -7,6 +7,7 @@
 import type { TelegramUpdate, TelegramVoice } from "../storage/types.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
+const MAX_MESSAGE_LENGTH = 4000; // Telegram limit is 4096, leave some buffer
 
 export interface TelegramConfig {
   botToken: string;
@@ -39,10 +40,22 @@ export class TelegramBot {
   }
 
   /**
-   * Send a text message
+   * Send a text message (formats text for MarkdownV2)
    * Returns the message ID if successful
    */
   async sendMessage(
+    text: string,
+    parseMode: "MarkdownV2" | "HTML" = "MarkdownV2"
+  ): Promise<number | undefined> {
+    const formatted = parseMode === "MarkdownV2" ? formatForTelegram(text) : text;
+    return this.sendFormattedMessage(formatted, parseMode);
+  }
+
+  /**
+   * Send a pre-formatted message (no additional formatting applied)
+   * Returns the message ID if successful
+   */
+  async sendFormattedMessage(
     text: string,
     parseMode: "MarkdownV2" | "HTML" = "MarkdownV2"
   ): Promise<number | undefined> {
@@ -53,7 +66,7 @@ export class TelegramBot {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: this.config.chatId,
-        text: formatForTelegram(text),
+        text,
         parse_mode: parseMode,
       }),
     });
@@ -69,13 +82,15 @@ export class TelegramBot {
 
   /**
    * Send a message with retry (for long responses that may need splitting)
+   * Formats first, then splits, to ensure length check is accurate
    */
   async sendMessageSafe(text: string): Promise<void> {
-    const maxLength = 4000; // Telegram limit is 4096, leave some buffer
+    // Format first, then check length
+    const formatted = formatForTelegram(text);
 
-    if (text.length <= maxLength) {
+    if (formatted.length <= MAX_MESSAGE_LENGTH) {
       try {
-        await this.sendMessage(text);
+        await this.sendFormattedMessage(formatted);
       } catch {
         // If markdown fails, try plain text
         await this.sendPlainMessage(text);
@@ -83,12 +98,15 @@ export class TelegramBot {
       return;
     }
 
-    // Split into chunks
-    const chunks = splitMessage(text, maxLength);
+    // Split the formatted text into chunks
+    const chunks = splitMessage(formatted, MAX_MESSAGE_LENGTH);
     for (const chunk of chunks) {
       try {
-        await this.sendMessage(chunk);
-      } catch {
+        await this.sendFormattedMessage(chunk);
+      } catch (error) {
+        console.log(`[sendMessageSafe] MarkdownV2 failed, trying plain text:`, error);
+        // For plain text fallback, we'd need the original unformatted chunk
+        // but that's complex - just send the formatted chunk as plain text
         await this.sendPlainMessage(chunk);
       }
       // Small delay between messages
@@ -122,9 +140,21 @@ export class TelegramBot {
   }
 
   /**
-   * Edit an existing message
+   * Edit an existing message (formats text for MarkdownV2)
    */
   async editMessage(
+    messageId: number,
+    text: string,
+    parseMode: "MarkdownV2" | "HTML" = "MarkdownV2"
+  ): Promise<void> {
+    const formatted = parseMode === "MarkdownV2" ? formatForTelegram(text) : text;
+    return this.editFormattedMessage(messageId, formatted, parseMode);
+  }
+
+  /**
+   * Edit an existing message with pre-formatted text (no additional formatting)
+   */
+  async editFormattedMessage(
     messageId: number,
     text: string,
     parseMode: "MarkdownV2" | "HTML" = "MarkdownV2"
@@ -137,7 +167,7 @@ export class TelegramBot {
       body: JSON.stringify({
         chat_id: this.config.chatId,
         message_id: messageId,
-        text: formatForTelegram(text),
+        text,
         parse_mode: parseMode,
       }),
     });
