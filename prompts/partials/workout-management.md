@@ -12,7 +12,7 @@ When the user sends their first exercise of a session:
 2. **Create new workout session**
    - Determine workout type from first exercise or ask
    - Create branch: `workout/YYYY-MM-DD-{type}`
-   - Create `workouts/in-progress.md` with frontmatter:
+   - Create `weeks/YYYY-WXX/in-progress.md` with frontmatter (in the appropriate week folder):
    ```yaml
    ---
    date: "YYYY-MM-DD"

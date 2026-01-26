@@ -290,11 +290,17 @@ export class GitHubStorage {
   async findInProgressWorkout(): Promise<string | null> {
     const workoutBranches = await this.listBranches("workout/");
 
-    // Check each branch for in-progress.md
+    // Check each branch for in-progress.md in the week folder
     for (const branch of workoutBranches) {
-      const hasInProgress = await this.fileExists("workouts/in-progress.md", branch);
-      if (hasInProgress) {
-        return branch;
+      // Branch name format: workout/2026-01-27-push
+      const parts = branch.split("/")[1]?.split("-");
+      if (parts && parts.length >= 3) {
+        const dateStr = `${parts[0]}-${parts[1]}-${parts[2]}`;
+        const week = this.getWeekFromDate(dateStr);
+        const hasInProgress = await this.fileExists(`weeks/${week}/in-progress.md`, branch);
+        if (hasInProgress) {
+          return branch;
+        }
       }
     }
 
@@ -302,13 +308,25 @@ export class GitHubStorage {
   }
 
   /**
+   * Get week string (YYYY-WXX) from a date string (YYYY-MM-DD)
+   */
+  private getWeekFromDate(dateStr: string): string {
+    const date = new Date(dateStr + "T12:00:00");
+    const year = date.getFullYear();
+    const firstDayOfYear = new Date(year, 0, 1);
+    const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
+    const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+    return `${year}-W${weekNum.toString().padStart(2, "0")}`;
+  }
+
+  /**
    * Complete a workout - finalize and merge
    */
-  async completeWorkout(branch: string, finalDate: string): Promise<void> {
+  async completeWorkout(branch: string, finalDate: string, week: string): Promise<void> {
     // Rename in-progress.md to the final date
     await this.moveFile(
-      "workouts/in-progress.md",
-      `workouts/${finalDate}.md`,
+      `weeks/${week}/in-progress.md`,
+      `weeks/${week}/${finalDate}.md`,
       "Finalize workout file",
       branch
     );
@@ -334,19 +352,30 @@ export class GitHubStorage {
   }
 
   async readWeeklyPlan(week: string): Promise<string | null> {
-    return this.readFile(`plans/${week}.md`);
+    return this.readFile(`weeks/${week}/plan.md`);
   }
 
-  async listWorkouts(): Promise<string[]> {
-    return this.listFiles("workouts");
+  async readWeeklyRetro(week: string): Promise<string | null> {
+    return this.readFile(`weeks/${week}/retro.md`);
   }
 
-  async listPlans(): Promise<string[]> {
-    return this.listFiles("plans");
+  async listWeekWorkouts(week: string): Promise<string[]> {
+    return this.listFiles(`weeks/${week}`).then((files) =>
+      files.filter((f) => !f.endsWith("plan.md") && !f.endsWith("retro.md"))
+    );
   }
 
-  async listRetrospectives(): Promise<string[]> {
-    return this.listFiles("retrospectives");
+  async listWeeks(): Promise<string[]> {
+    try {
+      const endpoint = `/repos/${this.owner}/${this.repo}/contents/weeks?ref=main`;
+      const data = await this.request<Array<{ name: string; type: string }>>(endpoint);
+      return data.filter((item) => item.type === "dir").map((item) => item.name);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("404")) {
+        return [];
+      }
+      throw error;
+    }
   }
 
   // ============================================================================

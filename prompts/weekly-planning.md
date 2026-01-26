@@ -8,9 +8,10 @@ Read these files:
 - `profile.md` — Goals, constraints, preferences
 - `learnings.md` — Discovered patterns
 - `prs.yaml` — Current strength levels
-- Last 2-4 weeks of plans in `plans/`
-- Last 2-4 weeks of workout logs in `workouts/`
-- The most recent retrospective
+- Last 2-4 weeks of data in `weeks/YYYY-WXX/` folders:
+  - `plan.md` — Weekly training plan
+  - `retro.md` — Weekly retrospective
+  - `YYYY-MM-DD.md` — Workout logs by date
 
 ## Step 2: Analyze Patterns
 
@@ -90,7 +91,7 @@ Don't just say "rest":
 
 ## Step 4: Generate the Plan
 
-Create file: `plans/YYYY-WXX.md`
+Create file: `weeks/YYYY-WXX/plan.md`
 
 ### Plan Structure
 
@@ -121,22 +122,13 @@ theme: "Strength focus, deload accessories"
 
 ### Exercises
 
-**Bench Press**
-- 4 × 5 @ 175 lbs
-- Target 180 next week
-
-**Incline DB Press**
-- 3 × 8 @ 55 lbs
-
-**OHP**
-- 3 × 6 @ 95 lbs
-- Keep conservative (shoulder)
-
-**Lateral Raises**
-- 3 × 12 @ 20 lbs
-
-**Tricep Pushdowns**
-- 3 × 12 @ 50 lbs |
+| Exercise | Sets × Reps | Weight | Notes |
+|----------|-------------|--------|-------|
+| Bench Press | 4 × 5 | 175 | Target 180 next week |
+| Incline DB Press | 3 × 8 | 55 | |
+| OHP | 3 × 6 | 95 | Keep conservative (shoulder) |
+| Lateral Raises | 3 × 12 | 20 | |
+| Tricep Pushdowns | 3 × 12 | 50 | |
 
 ---
 
@@ -200,28 +192,29 @@ Deload structure:
 - Focus on technique and recovery
 - Include extra mobility/stretching
 
-## Telegram Formatting
+## Telegram Display Format
 
-Plans are sent via Telegram, so format for mobile readability:
+When sending plans to the user via Telegram, reformat the stored data for mobile readability.
 
-### Exercise Format
+**Note:** Store plans using tables (as shown above), but display them using this format in Telegram messages.
 
-Use bold exercise names with bullet points underneath (NOT tables):
+### Exercise Display Format
+
+Convert tables to bold exercise names with bullet points:
 
 ```
-**Exercise Name**
-- 4 × 6-8 @ 95 lbs
-- Wall-assisted, focus on alignment
+**Bench Press**
+- 4 × 5 @ 175 lbs
+- Target 180 next week
 
-**Next Exercise**
-- 3 × 12 @ bodyweight
+**OHP**
+- 3 × 6 @ 95 lbs
+- Keep conservative (shoulder)
 ```
 
 ### Message Breaks
 
-Use `---` on its own line to indicate where to split into separate Telegram messages. This makes long plans easier to read on mobile.
-
-Split by day - each training day should be its own message:
+Use `---` on its own line to split into separate Telegram messages. Each training day should be its own message:
 
 ```
 ## Monday — Push
@@ -244,8 +237,9 @@ Light stretching or yoga
 ...
 ```
 
-### Avoid
+### Display Guidelines
 
-- Tables (they render poorly on mobile)
-- Very long messages (split with `---`)
-- Dense formatting without whitespace
+- Convert tables to bold + bullets (easier to read on mobile)
+- Split long messages with `---`
+- Add whitespace between exercises
+- Keep each day's content in its own message

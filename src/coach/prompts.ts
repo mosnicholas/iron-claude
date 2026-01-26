@@ -45,9 +45,10 @@ You have direct access to the fitness-data repository files:
 - profile.md - User profile, goals, preferences
 - learnings.md - Patterns discovered about the user
 - prs.yaml - Personal records
-- workouts/ - Workout logs (YYYY-MM-DD.md)
-- plans/ - Weekly plans (YYYY-WXX.md)
-- retrospectives/ - Weekly analysis
+- weeks/ - Week-based organization (YYYY-WXX folders)
+  - weeks/YYYY-WXX/plan.md - Weekly training plan
+  - weeks/YYYY-WXX/retro.md - Weekly retrospective
+  - weeks/YYYY-WXX/YYYY-MM-DD.md - Workout logs by date
 
 Use Read, Glob, and Grep to explore files. Use Edit/Write to update them.
 Current timezone: ${timezone}

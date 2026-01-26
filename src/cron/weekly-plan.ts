@@ -159,7 +159,7 @@ Take this into account when building the plan. Adjust intensity, volume, or focu
 ${planningPrompt}
 
 After generating the plan:
-1. Save it to plans/${week}.md
+1. Save it to weeks/${week}/plan.md
 2. Send a summary to the user
 
 The summary should include:
@@ -209,8 +209,8 @@ The summary should include:
  */
 export async function planExists(week: string): Promise<boolean> {
   const storage = createGitHubStorage();
-  const plans = await storage.listPlans();
-  return plans.some((p) => p.includes(week));
+  const plan = await storage.readWeeklyPlan(week);
+  return plan !== null;
 }
 
 /**
@@ -235,7 +235,7 @@ export async function forceRegeneratePlan(week: string): Promise<WeeklyPlanResul
 ${planningPrompt}
 
 After generating the plan:
-1. Save it to plans/${week}.md (overwrite if exists)
+1. Save it to weeks/${week}/plan.md (overwrite if exists)
 2. Send a summary to the user`,
       `Force regenerating plan for: ${week}`
     );

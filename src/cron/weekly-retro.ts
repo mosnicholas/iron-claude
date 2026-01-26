@@ -49,8 +49,7 @@ export async function runWeeklyRetro(): Promise<WeeklyRetroResult> {
 
     // Check if we have workout data this week
     console.log("[weekly-retro] Listing workout files");
-    const workoutFiles = await storage.listWorkouts();
-    const thisWeekWorkouts = workoutFiles.filter((f) => f.includes(currentWeek.replace("-W", "-")));
+    const thisWeekWorkouts = await storage.listWeekWorkouts(currentWeek);
     console.log(`[weekly-retro] Found ${thisWeekWorkouts.length} workouts this week`);
 
     // Load the retrospective prompt
@@ -65,7 +64,7 @@ export async function runWeeklyRetro(): Promise<WeeklyRetroResult> {
 ${retroPrompt}
 
 After generating the retrospective:
-1. Save it to retrospectives/${currentWeek}.md
+1. Save it to weeks/${currentWeek}/retro.md
 2. Update learnings.md if you discovered new patterns
 3. Send a summary to the user
 
@@ -117,6 +116,6 @@ Workout files found: ${thisWeekWorkouts.length}`
  */
 export async function retroExists(week: string): Promise<boolean> {
   const storage = createGitHubStorage();
-  const retros = await storage.listRetrospectives();
-  return retros.some((r) => r.includes(week));
+  const retro = await storage.readWeeklyRetro(week);
+  return retro !== null;
 }

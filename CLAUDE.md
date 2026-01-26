@@ -48,7 +48,7 @@ workout-routine/
 3. Update any relevant files (prs.yaml if PRs mentioned, learnings.md if patterns noted)
 
 ### After Logging a Workout
-1. Save workout log to `workouts/YYYY-MM-DD.md`
+1. Save workout log to `weeks/YYYY-WXX/YYYY-MM-DD.md` (in the appropriate week folder)
 2. Check for new PRs and update `prs.yaml` if found
 3. Provide brief feedback on the session
 4. Note any patterns for `learnings.md`
@@ -87,6 +87,7 @@ All athlete data changes go to their fitness-data repo:
 - `profile.md` - Goals, preferences, limitations
 - `learnings.md` - Coaching observations
 - `prs.yaml` - Personal records
-- `workouts/` - Session logs
-- `plans/` - Training plans
-- `retrospectives/` - Weekly analysis
+- `weeks/` - Week-based organization (YYYY-WXX folders)
+  - `weeks/YYYY-WXX/plan.md` - Weekly training plan
+  - `weeks/YYYY-WXX/retro.md` - Weekly retrospective
+  - `weeks/YYYY-WXX/YYYY-MM-DD.md` - Workout logs by date

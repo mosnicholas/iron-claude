@@ -130,7 +130,7 @@ bench_press:
     reps: 3
     date: "2025-01-24"
     estimated_1rm: 202
-    workout_ref: "workouts/2025-01-24.md"
+    workout_ref: "weeks/2025-W04/2025-01-24.md"
   history:
     - weight: 190
       reps: 3

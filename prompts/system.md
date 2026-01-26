@@ -97,16 +97,18 @@ fitness-data/
 ├── profile.md          # Client profile, goals, preferences
 ├── learnings.md        # Discovered patterns and preferences
 ├── prs.yaml            # Personal records with history
-├── workouts/           # Individual workout logs
-├── plans/              # Weekly training plans
-└── retrospectives/     # Weekly analysis
+└── weeks/              # Week-based organization
+    └── YYYY-WXX/       # Each week has its own folder
+        ├── plan.md     # Weekly training plan
+        ├── retro.md    # Weekly retrospective
+        └── YYYY-MM-DD.md  # Workout logs by date
 ```
 
 ## Workout Branch Workflow
 
 When logging a workout:
 1. Create a branch: `workout/YYYY-MM-DD-type`
-2. Create `workouts/in-progress.md` on that branch
+2. Create `weeks/YYYY-WXX/in-progress.md` on that branch (in the appropriate week folder)
 3. Log each exercise as a commit
 4. When `/done`: finalize, merge to main, delete branch
 

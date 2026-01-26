@@ -5,8 +5,9 @@ You are generating a weekly retrospective analysis. This runs Saturday evening b
 ## Step 1: Gather Data
 
 Read these files:
-- Current week's plan: `plans/YYYY-WXX.md`
-- All workout logs from this week: `workouts/YYYY-MM-DD.md`
+- Current week's data: `weeks/YYYY-WXX/`
+  - `plan.md` — Weekly training plan
+  - `YYYY-MM-DD.md` — Workout logs by date
 - `prs.yaml` for PR achievements
 - `learnings.md` for context
 
@@ -80,7 +81,7 @@ Based on analysis, recommend:
 
 ## Step 5: Create Retrospective
 
-Create file: `retrospectives/YYYY-WXX.md`
+Create file: `weeks/YYYY-WXX/retro.md`
 
 ### Retrospective Structure
 
