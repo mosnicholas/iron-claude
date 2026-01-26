@@ -9,6 +9,7 @@
 
 import type { PRRecord, PRsData } from "../storage/types.js";
 import { calculate1RM } from "./pr-calculator.js";
+import { getPlateMilestones, getMilestoneNames, getWeightUnitLabel } from "./weight-config.js";
 
 export interface PRCelebration {
   type: "weight" | "rep" | "estimated_1rm" | "milestone";
@@ -26,30 +27,6 @@ export interface MilestoneInfo {
   description: string;
   emoji: string;
 }
-
-// Standard plate milestones (in lbs)
-const PLATE_MILESTONES: Record<string, number[]> = {
-  bench_press: [135, 185, 225, 275, 315, 365, 405],
-  squat: [135, 185, 225, 275, 315, 365, 405, 455, 495, 545],
-  deadlift: [135, 225, 315, 405, 495, 585, 635],
-  overhead_press: [95, 135, 185, 225],
-};
-
-const MILESTONE_NAMES: Record<number, string> = {
-  95: "Green plate club",
-  135: "One plate club",
-  185: "One plate + 25s",
-  225: "Two plate club",
-  275: "Two plate + 25s",
-  315: "Three plate club",
-  365: "Three plate + 25s",
-  405: "Four plate club",
-  455: "Four plate + 25s",
-  495: "Five plate club",
-  545: "Five plate + 25s",
-  585: "Six plate club",
-  635: "Six plate + 25s",
-};
 
 const CELEBRATION_MESSAGES = {
   weight_pr: [
@@ -175,23 +152,25 @@ function buildCelebrationMessage(
   lines.push("");
   lines.push(`${formatExerciseName(exercise)}: ${current.weight} x ${current.reps}`);
 
+  const unit = getWeightUnitLabel();
+
   if (previous) {
     const weightDiff = current.weight - previous.weight;
     const est1RMDiff = current.estimated1RM - previous.estimated1RM;
 
     if (weightDiff > 0) {
       lines.push(`Previous best: ${previous.weight} x ${previous.reps}`);
-      lines.push(`+${weightDiff} lbs!`);
+      lines.push(`+${weightDiff} ${unit}!`);
     } else if (current.reps > previous.reps) {
       lines.push(`Previous best at ${current.weight}: ${previous.reps} reps`);
       lines.push(`+${current.reps - previous.reps} reps!`);
     }
 
     if (est1RMDiff > 0) {
-      lines.push(`Est. 1RM: ${current.estimated1RM} lbs (+${est1RMDiff})`);
+      lines.push(`Est. 1RM: ${current.estimated1RM} ${unit} (+${est1RMDiff})`);
     }
   } else {
-    lines.push(`First recorded PR! Est. 1RM: ${current.estimated1RM} lbs`);
+    lines.push(`First recorded PR! Est. 1RM: ${current.estimated1RM} ${unit}`);
   }
 
   return lines.join("\n");
@@ -218,25 +197,37 @@ function generateJourneyContext(
   const totalGain = current.weight - first.weight;
   const est1RMGain = current.estimated1RM - first.estimated1RM;
 
-  // Calculate time span
+  // Calculate time span in days first (more precise), then convert to months
   const firstDate = new Date(first.date);
   const now = new Date();
-  const monthsSpan = Math.round((now.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24 * 30));
+  const daysSpan = Math.max(
+    1,
+    Math.floor((now.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24))
+  );
+  const monthsSpan = Math.max(1, Math.round(daysSpan / 30)); // Minimum 1 month to avoid division issues
 
+  const unit = getWeightUnitLabel();
   const lines: string[] = [];
   lines.push(`📈 Your ${formatExerciseName(exercise)} journey:`);
-  lines.push(`Started: ${first.weight} lbs → Now: ${current.weight} lbs`);
+  lines.push(`Started: ${first.weight} ${unit} → Now: ${current.weight} ${unit}`);
 
   if (totalGain > 0) {
-    lines.push(`Total gain: +${totalGain} lbs over ${monthsSpan} months`);
-    if (monthsSpan > 0) {
+    // Use days for very recent PRs, months otherwise
+    if (daysSpan < 30) {
+      lines.push(`Total gain: +${totalGain} ${unit} over ${daysSpan} days`);
+      const dailyRate = (totalGain / daysSpan).toFixed(2);
+      lines.push(`That's ~${dailyRate} ${unit}/day!`);
+    } else {
+      lines.push(
+        `Total gain: +${totalGain} ${unit} over ${monthsSpan} month${monthsSpan > 1 ? "s" : ""}`
+      );
       const monthlyRate = (totalGain / monthsSpan).toFixed(1);
-      lines.push(`That's ~${monthlyRate} lbs/month!`);
+      lines.push(`That's ~${monthlyRate} ${unit}/month!`);
     }
   }
 
   if (est1RMGain > 0) {
-    lines.push(`Est. 1RM improvement: +${est1RMGain} lbs`);
+    lines.push(`Est. 1RM improvement: +${est1RMGain} ${unit}`);
   }
 
   return lines.join("\n");
@@ -245,12 +236,16 @@ function generateJourneyContext(
 /**
  * Check if a weight hits a milestone
  */
-function checkMilestone(
+export function checkMilestone(
   exercise: string,
   newWeight: number,
   previousWeight?: number
 ): MilestoneInfo | null {
-  const milestones = PLATE_MILESTONES[exercise];
+  const plateMilestones = getPlateMilestones();
+  const milestoneNames = getMilestoneNames();
+  const unit = getWeightUnitLabel();
+
+  const milestones = plateMilestones[exercise];
   if (!milestones) return null;
 
   // Find milestones that were crossed
@@ -260,8 +255,8 @@ function checkMilestone(
 
     if (crossedMilestone) {
       return {
-        name: MILESTONE_NAMES[milestone] || `${milestone} lb club`,
-        description: `You've joined the ${milestone} lb club on ${formatExerciseName(exercise)}!`,
+        name: milestoneNames[milestone] || `${milestone} ${unit} club`,
+        description: `You've joined the ${milestone} ${unit} club on ${formatExerciseName(exercise)}!`,
         emoji: getMilestoneEmoji(milestone),
       };
     }
@@ -284,14 +279,14 @@ function getMilestoneEmoji(weight: number): string {
 /**
  * Format exercise name for display
  */
-function formatExerciseName(name: string): string {
+export function formatExerciseName(name: string): string {
   return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /**
  * Normalize exercise name to canonical form
  */
-function normalizeExerciseName(name: string): string {
+export function normalizeExerciseName(name: string): string {
   const lower = name.toLowerCase().trim();
   const aliases: Record<string, string> = {
     "bench press": "bench_press",

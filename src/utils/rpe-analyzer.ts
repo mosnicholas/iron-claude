@@ -7,6 +7,8 @@
  * - Session difficulty scoring
  */
 
+import { getWeightUnitLabel } from "./weight-config.js";
+
 export interface RPEDataPoint {
   date: string;
   exercise: string;
@@ -72,10 +74,11 @@ export function analyzeExerciseRPE(dataPoints: RPEDataPoint[], exerciseName: str
       if (newest.weight > oldest.weight) {
         const improvement = newest.weight - oldest.weight;
         const percentGain = ((improvement / oldest.weight) * 100).toFixed(1);
+        const unit = getWeightUnitLabel();
         insights.push({
           type: "strength_gain",
           severity: "positive",
-          message: `Your @${rpe} used to be ${oldest.weight} lbs, now it's ${newest.weight} lbs - you're ${percentGain}% stronger!`,
+          message: `Your @${rpe} used to be ${oldest.weight} ${unit}, now it's ${newest.weight} ${unit} - you're ${percentGain}% stronger!`,
           data: {
             rpe: Number(rpe),
             oldWeight: oldest.weight,
@@ -101,10 +104,11 @@ export function analyzeExerciseRPE(dataPoints: RPEDataPoint[], exerciseName: str
       if (isIncreasingTrend(rpeValues)) {
         const avgIncrease = (rpeValues[2] - rpeValues[0]) / 2;
         if (avgIncrease >= 0.5) {
+          const unit = getWeightUnitLabel();
           insights.push({
             type: "fatigue_warning",
             severity: "warning",
-            message: `RPE creeping up at ${weight} lbs (${rpeValues[0]} → ${rpeValues[2]}) - consider a deload or extra recovery`,
+            message: `RPE creeping up at ${weight} ${unit} (${rpeValues[0]} → ${rpeValues[2]}) - consider a deload or extra recovery`,
             data: {
               weight: Number(weight),
               rpeStart: rpeValues[0],
@@ -127,10 +131,11 @@ export function analyzeExerciseRPE(dataPoints: RPEDataPoint[], exerciseName: str
 
       // Low variance = consistent
       if (variance < 0.3) {
+        const unit = getWeightUnitLabel();
         insights.push({
           type: "consistency",
           severity: "info",
-          message: `Consistent RPE at ${weight} lbs over ${points.length} sessions - technique is dialed in`,
+          message: `Consistent RPE at ${weight} ${unit} over ${points.length} sessions - technique is dialed in`,
           data: {
             weight: Number(weight),
             averageRPE: Math.round(avg * 10) / 10,
@@ -269,9 +274,10 @@ export function compareRPEPeriods(
       interpretation = "Maintaining current level";
     }
 
+    const unit = getWeightUnitLabel();
     results.push({
       exercise,
-      change: `Weight: ${weightDiff >= 0 ? "+" : ""}${weightDiff.toFixed(0)} lbs, RPE: ${rpeDiff >= 0 ? "+" : ""}${rpeDiff.toFixed(1)}`,
+      change: `Weight: ${weightDiff >= 0 ? "+" : ""}${weightDiff.toFixed(0)} ${unit}, RPE: ${rpeDiff >= 0 ? "+" : ""}${rpeDiff.toFixed(1)}`,
       interpretation,
     });
   }
@@ -279,38 +285,31 @@ export function compareRPEPeriods(
   return results;
 }
 
-// Helper functions
+// Helper functions (exported for testing)
 
-function groupByRPE(dataPoints: RPEDataPoint[]): Record<string, RPEDataPoint[]> {
-  const groups: Record<string, RPEDataPoint[]> = {};
-  for (const point of dataPoints) {
-    const key = point.rpe.toString();
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(point);
+function groupBy<T, K extends keyof T>(items: T[], key: K): Record<string, T[]> {
+  const groups: Record<string, T[]> = {};
+  for (const item of items) {
+    const groupKey = String(item[key]);
+    if (!groups[groupKey]) groups[groupKey] = [];
+    groups[groupKey].push(item);
   }
   return groups;
 }
 
-function groupByWeight(dataPoints: RPEDataPoint[]): Record<string, RPEDataPoint[]> {
-  const groups: Record<string, RPEDataPoint[]> = {};
-  for (const point of dataPoints) {
-    const key = point.weight.toString();
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(point);
-  }
-  return groups;
+export function groupByRPE(dataPoints: RPEDataPoint[]): Record<string, RPEDataPoint[]> {
+  return groupBy(dataPoints, "rpe");
 }
 
-function groupByExercise(dataPoints: RPEDataPoint[]): Record<string, RPEDataPoint[]> {
-  const groups: Record<string, RPEDataPoint[]> = {};
-  for (const point of dataPoints) {
-    if (!groups[point.exercise]) groups[point.exercise] = [];
-    groups[point.exercise].push(point);
-  }
-  return groups;
+export function groupByWeight(dataPoints: RPEDataPoint[]): Record<string, RPEDataPoint[]> {
+  return groupBy(dataPoints, "weight");
 }
 
-function isIncreasingTrend(values: number[]): boolean {
+export function groupByExercise(dataPoints: RPEDataPoint[]): Record<string, RPEDataPoint[]> {
+  return groupBy(dataPoints, "exercise");
+}
+
+export function isIncreasingTrend(values: number[]): boolean {
   if (values.length < 2) return false;
   let increases = 0;
   for (let i = 1; i < values.length; i++) {
