@@ -2,23 +2,77 @@
  * Integration Data Storage
  *
  * Stores normalized integration data in the fitness-data repository.
- * Data is organized by source and type for easy access by the coach agent.
+ * Data is organized by week (matching the existing structure) with integration
+ * data stored alongside workout logs and plans.
+ *
+ * Structure:
+ *   weeks/YYYY-WXX/
+ *   ├── plan.md
+ *   ├── retro.md
+ *   ├── YYYY-MM-DD.md (workout logs)
+ *   └── integrations/
+ *       ├── YYYY-MM-DD-whoop-sleep.json
+ *       ├── YYYY-MM-DD-whoop-recovery.json
+ *       └── YYYY-MM-DD-whoop-workout-weightlifting.json
  */
 
 import { createGitHubStorage } from "../storage/github.js";
 import type { WebhookEvent, SleepData, RecoveryData, WorkoutData } from "./types.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Date/Week Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Get the ISO week string (YYYY-WXX) for a given date.
+ */
+export function getISOWeek(dateStr: string): string {
+  const date = new Date(dateStr + "T12:00:00Z"); // Noon UTC to avoid timezone issues
+  const year = date.getFullYear();
+
+  // Get the first Thursday of the year (ISO week 1 contains first Thursday)
+  const jan4 = new Date(year, 0, 4);
+  const dayOfWeek = jan4.getDay() || 7; // Sunday = 7
+  const firstThursday = new Date(jan4);
+  firstThursday.setDate(jan4.getDate() - dayOfWeek + 4);
+
+  // Calculate week number
+  const diffMs = date.getTime() - firstThursday.getTime();
+  const diffDays = Math.floor(diffMs / 86400000);
+  const weekNum = Math.ceil((diffDays + 1) / 7);
+
+  // Handle year boundaries (week 52/53 spillover)
+  if (weekNum < 1) {
+    return getISOWeek(`${year - 1}-12-28`);
+  }
+  if (weekNum > 52) {
+    const dec28 = new Date(year, 11, 28);
+    const lastWeekDay = dec28.getDay() || 7;
+    const lastThursday = new Date(dec28);
+    lastThursday.setDate(dec28.getDate() - lastWeekDay + 4);
+    if (date > lastThursday) {
+      return `${year + 1}-W01`;
+    }
+  }
+
+  return `${year}-W${String(weekNum).padStart(2, "0")}`;
+}
+
+/**
+ * Get today's date in YYYY-MM-DD format.
+ */
+function getToday(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Storage Paths
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Get the storage path for a data type.
+ * Get the storage path for integration data.
  *
- * Structure:
- *   integrations/{source}/sleep/{date}.json
- *   integrations/{source}/recovery/{date}.json
- *   integrations/{source}/workouts/{date}-{type}.json
+ * Format: weeks/YYYY-WXX/integrations/YYYY-MM-DD-{source}-{type}[-{subtype}].json
  */
 function getStoragePath(
   source: string,
@@ -26,17 +80,17 @@ function getStoragePath(
   date: string,
   workoutType?: string
 ): string {
-  const basePath = `integrations/${source}`;
+  const week = getISOWeek(date);
+  const basePath = `weeks/${week}/integrations`;
 
   switch (type) {
     case "sleep":
-      return `${basePath}/sleep/${date}.json`;
+      return `${basePath}/${date}-${source}-sleep.json`;
     case "recovery":
-      return `${basePath}/recovery/${date}.json`;
+      return `${basePath}/${date}-${source}-recovery.json`;
     case "workout": {
-      // Include workout type in filename to support multiple workouts per day
       const sanitizedType = (workoutType || "activity").toLowerCase().replace(/\s+/g, "-");
-      return `${basePath}/workouts/${date}-${sanitizedType}.json`;
+      return `${basePath}/${date}-${source}-workout-${sanitizedType}.json`;
     }
   }
 }
@@ -109,8 +163,7 @@ export async function readRecoveryData(source: string, date: string): Promise<Re
 }
 
 /**
- * Read all workout data for a specific date from all sources.
- * Note: This requires listing files, which we'll do via the coach agent.
+ * Read workout data for a specific date, source, and type.
  */
 export async function readWorkoutData(
   source: string,
@@ -129,13 +182,6 @@ export async function readWorkoutData(
 // ─────────────────────────────────────────────────────────────────────────────
 // Latest Data Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Get today's date in YYYY-MM-DD format.
- */
-function getToday(): string {
-  return new Date().toISOString().split("T")[0];
-}
 
 /**
  * Get the most recent recovery data for a source.

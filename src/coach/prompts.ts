@@ -97,10 +97,10 @@ function buildIntegrationContext(): string {
 
 You have access to data from connected fitness devices: **${integrationNames}**
 
-Integration data is stored in the \`integrations/\` folder:
-- \`integrations/{device}/sleep/{YYYY-MM-DD}.json\` - Sleep data (duration, stages, score)
-- \`integrations/{device}/recovery/{YYYY-MM-DD}.json\` - Recovery data (score, HRV, RHR)
-- \`integrations/{device}/workouts/{YYYY-MM-DD}-{type}.json\` - Device-recorded workouts
+Integration data is stored alongside workout logs in the weekly folders:
+- \`weeks/YYYY-WXX/integrations/YYYY-MM-DD-{device}-sleep.json\` - Sleep data
+- \`weeks/YYYY-WXX/integrations/YYYY-MM-DD-{device}-recovery.json\` - Recovery data
+- \`weeks/YYYY-WXX/integrations/YYYY-MM-DD-{device}-workout-{type}.json\` - Device workouts
 
 ### Using Recovery Data
 
@@ -119,7 +119,7 @@ Recovery scores indicate readiness for training:
 
 ### Data Format Examples
 
-**Recovery JSON**:
+**Recovery JSON** (weeks/2026-W05/integrations/2026-01-27-whoop-recovery.json):
 \`\`\`json
 {
   "source": "whoop",
@@ -130,7 +130,7 @@ Recovery scores indicate readiness for training:
 }
 \`\`\`
 
-**Sleep JSON**:
+**Sleep JSON** (weeks/2026-W05/integrations/2026-01-27-whoop-sleep.json):
 \`\`\`json
 {
   "source": "whoop",
@@ -141,7 +141,7 @@ Recovery scores indicate readiness for training:
 }
 \`\`\`
 
-Use Glob with pattern \`integrations/*/recovery/*.json\` to find available recovery data.
+Use Glob with pattern \`weeks/*/integrations/*-recovery.json\` to find recovery data.
 `;
 }
 
