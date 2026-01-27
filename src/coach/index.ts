@@ -5,6 +5,7 @@
  * Uses local file system access for exploring workout data.
  */
 
+import { spawnSync } from "child_process";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { syncRepo, pushChanges } from "../storage/repo-sync.js";
 import { buildSystemPrompt } from "./prompts.js";
@@ -13,6 +14,30 @@ import {
   extractToolsFromMessage,
   formatToolStatus,
 } from "../utils/sdk-helpers.js";
+
+// Cache the git binary path - only need to look it up once
+let cachedGitPath: string | null = null;
+
+function getGitBinaryPath(): string {
+  if (cachedGitPath) {
+    return cachedGitPath;
+  }
+
+  // Try 'which git' to find the git binary
+  const result = spawnSync("which", ["git"], {
+    stdio: "pipe",
+    encoding: "utf-8",
+  });
+
+  if (result.status === 0 && result.stdout) {
+    cachedGitPath = result.stdout.trim();
+  } else {
+    // Fallback to common locations
+    cachedGitPath = "/usr/bin/git";
+  }
+
+  return cachedGitPath;
+}
 
 export interface CoachConfig {
   model?: string;
@@ -61,10 +86,21 @@ export class CoachAgent {
 
   private async runQuery(
     prompt: string,
-    systemPrompt: string,
+    additionalContext?: string,
     callbacks?: StreamingCallbacks
   ): Promise<CoachResponse> {
     const repoPath = await this.ensureRepoSynced();
+    const gitBinaryPath = getGitBinaryPath();
+
+    // Build system prompt with environment paths
+    const basePrompt = buildSystemPrompt({
+      timezone: this.config.timezone,
+      repoPath,
+      gitBinaryPath,
+    });
+    const systemPrompt = additionalContext
+      ? `${basePrompt}\n\n## Additional Context\n\n${additionalContext}`
+      : basePrompt;
 
     const toolsUsed: string[] = [];
     let responseText = "";
@@ -149,8 +185,7 @@ export class CoachAgent {
   }
 
   async chat(userMessage: string, callbacks?: StreamingCallbacks): Promise<CoachResponse> {
-    const systemPrompt = buildSystemPrompt(this.config.timezone);
-    return this.runQuery(userMessage, systemPrompt, callbacks);
+    return this.runQuery(userMessage, undefined, callbacks);
   }
 
   async runTask(
@@ -158,11 +193,7 @@ export class CoachAgent {
     additionalContext?: string,
     callbacks?: StreamingCallbacks
   ): Promise<CoachResponse> {
-    const basePrompt = buildSystemPrompt(this.config.timezone);
-    const systemPrompt = additionalContext
-      ? `${basePrompt}\n\n## Additional Context\n\n${additionalContext}`
-      : basePrompt;
-    return this.runQuery(taskPrompt, systemPrompt, callbacks);
+    return this.runQuery(taskPrompt, additionalContext, callbacks);
   }
 }
 
