@@ -12,6 +12,7 @@ import {
   extractVoiceMessage,
   isCommand,
   parseCommand,
+  ThrottledMessageEditor,
 } from "../bot/telegram.js";
 import { executeCommand, commandExists } from "../bot/commands.js";
 import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js";
@@ -134,9 +135,25 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Handle natural language - send to coach agent
-    const response = await agent.chat(messageText);
-    await bot.sendMessageSafe(response.message);
+    // Handle natural language - send to coach agent with status updates
+    const messageId = await bot.sendMessage("✨ _Thinking..._", "MarkdownV2");
+
+    if (messageId) {
+      const editor = new ThrottledMessageEditor(bot, messageId);
+
+      const response = await agent.chat(messageText, {
+        onStatus: (status) => {
+          console.log(`[webhook] Status update: ${status}`);
+          editor.update(status);
+        },
+      });
+
+      await editor.finalize(response.message);
+    } else {
+      // Fallback if we couldn't get a message ID
+      const response = await agent.chat(messageText);
+      await bot.sendMessageSafe(response.message);
+    }
 
     res.status(200).json({ ok: true });
   } catch (error) {
