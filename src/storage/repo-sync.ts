@@ -78,6 +78,9 @@ export async function syncRepo(config: RepoConfig): Promise<string> {
     git(["clone", authUrl, REPO_DIR]);
   }
 
+  // Fetch all remote branches so agent can see existing workout branches
+  git(["fetch", "--all"], REPO_DIR);
+
   // Configure git identity (customizable via env vars)
   const gitEmail = process.env.GIT_COMMIT_EMAIL || "coach@fitness-bot.local";
   const gitName = process.env.GIT_COMMIT_NAME || "Fitness Coach";

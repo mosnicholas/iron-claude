@@ -31,6 +31,49 @@ export function loadPartial(name: string): string {
   return readFileSync(path, "utf-8");
 }
 
+function getCurrentDateInfo(timezone: string): {
+  date: string;
+  time: string;
+  dayOfWeek: string;
+  isoWeek: string;
+} {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
+
+  const year = get("year");
+  const month = get("month");
+  const day = get("day");
+  const dayOfWeek = get("weekday");
+  const hour = get("hour");
+  const minute = get("minute");
+
+  // Calculate ISO week number
+  const date = new Date(`${year}-${month}-${day}T12:00:00`);
+  const startOfYear = new Date(date.getFullYear(), 0, 1);
+  const days = Math.floor((date.getTime() - startOfYear.getTime()) / 86400000);
+  const weekNum = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+  const isoWeek = `${year}-W${String(weekNum).padStart(2, "0")}`;
+
+  return {
+    date: `${year}-${month}-${day}`,
+    time: `${hour}:${minute}`,
+    dayOfWeek,
+    isoWeek,
+  };
+}
+
 export function buildSystemPrompt(timezone: string): string {
   const systemPrompt = loadPrompt("system");
 
@@ -38,7 +81,17 @@ export function buildSystemPrompt(timezone: string): string {
   const workoutManagement = loadPartial("workout-management");
   const prDetection = loadPartial("pr-detection");
 
+  const dateInfo = getCurrentDateInfo(timezone);
+
   const contextNote = `
+## Current Date & Time
+
+- **Today**: ${dateInfo.dayOfWeek}, ${dateInfo.date}
+- **Current time**: ${dateInfo.time} (${timezone})
+- **Current week**: ${dateInfo.isoWeek}
+
+Use these values when creating file paths and branch names.
+
 ## File Access
 
 You have direct access to the fitness-data repository files:
