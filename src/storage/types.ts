@@ -62,6 +62,8 @@ export interface WorkoutLog {
   status: "in_progress" | "completed" | "abandoned";
   planReference: string;
   branch?: string;
+  warmupCompleted?: boolean;
+  cooldownCompleted?: boolean;
   prsHit: { exercise: string; achievement: string }[];
   exercises: LoggedExercise[];
 }
@@ -99,7 +101,9 @@ export interface DayPlan {
   type: "workout" | "rest" | "optional";
   workoutType?: string;
   targetDuration?: number;
+  warmup?: string[]; // Warm-up activities
   exercises?: PlannedExercise[];
+  cooldown?: string[]; // Cool-down/stretching activities
   options?: string[];
 }
 
@@ -108,6 +112,7 @@ export interface PlannedExercise {
   sets: number;
   reps: number | string;
   weight: number | string;
+  restSeconds?: number; // Rest period between sets in seconds
   notes?: string;
 }
 

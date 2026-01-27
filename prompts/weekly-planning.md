@@ -79,8 +79,27 @@ Include for each day:
 - Workout type
 - Target duration
 - Location
-- Exercise list with sets/reps/weight
+- **Warm-up section** (5-10 min, based on workout type)
+- Exercise list with sets/reps/weight and **rest periods**
+- **Cool-down section** (5 min, stretching/mobility)
 - Specific notes
+
+### Rest Period Guidelines
+
+Assign rest periods based on exercise type and intensity:
+
+| Exercise Type | Rest Period | Rationale |
+|---------------|-------------|-----------|
+| Heavy compounds (1-5 reps) | 3-5 min | Full ATP recovery for max strength |
+| Moderate compounds (6-8 reps) | 2-3 min | Strength-hypertrophy balance |
+| Hypertrophy (8-12 reps) | 60-90 sec | Metabolic stress for growth |
+| Accessory/isolation | 45-60 sec | Pump and time efficiency |
+| Supersets | 30-45 sec | Between exercises in superset |
+
+Adjust rest based on:
+- User preference from profile (efficiency vs more rest)
+- Fatigue level (longer rest when fatigued)
+- Time constraints (shorter rest if session limited)
 
 ### Rest Day Programming
 
@@ -118,17 +137,29 @@ theme: "Strength focus, deload accessories"
 
 **Type:** Chest / Shoulders / Triceps
 **Location:** [Gym name]
-**Target Duration:** 50 min
+**Target Duration:** 55 min
+
+### Warm-up (5-10 min)
+- 5 min light cardio (bike/row)
+- Arm circles and shoulder dislocates
+- Band pull-aparts: 2 × 15
+- Light bench or push-ups: 2 × 10
 
 ### Exercises
 
-| Exercise | Sets × Reps | Weight | Notes |
-|----------|-------------|--------|-------|
-| Bench Press | 4 × 5 | 175 | Target 180 next week |
-| Incline DB Press | 3 × 8 | 55 | |
-| OHP | 3 × 6 | 95 | Keep conservative (shoulder) |
-| Lateral Raises | 3 × 12 | 20 | |
-| Tricep Pushdowns | 3 × 12 | 50 | |
+| Exercise | Sets × Reps | Weight | Rest | Notes |
+|----------|-------------|--------|------|-------|
+| Bench Press | 4 × 5 | 175 | 3 min | Target 180 next week |
+| Incline DB Press | 3 × 8 | 55 | 90 sec | |
+| OHP | 3 × 6 | 95 | 2 min | Keep conservative (shoulder) |
+| Lateral Raises | 3 × 12 | 20 | 60 sec | |
+| Tricep Pushdowns | 3 × 12 | 50 | 60 sec | |
+
+### Cool-down (5 min)
+- Chest doorway stretch: 30 sec each side
+- Overhead tricep stretch: 30 sec each arm
+- Shoulder cross-body stretch: 30 sec each
+- Deep breathing and light walk
 
 ---
 
@@ -200,16 +231,25 @@ When sending plans to the user via Telegram, reformat the stored data for mobile
 
 ### Exercise Display Format
 
-Convert tables to bold exercise names with bullet points:
+Convert tables to bold exercise names with bullet points, including rest periods:
 
 ```
+**🔥 Warm-up (5-10 min)**
+- Light cardio + arm circles
+- Band pull-aparts: 2 × 15
+
 **Bench Press**
 - 4 × 5 @ 175 lbs
+- Rest: 3 min between sets
 - Target 180 next week
 
 **OHP**
 - 3 × 6 @ 95 lbs
+- Rest: 2 min between sets
 - Keep conservative (shoulder)
+
+**🧘 Cool-down (5 min)**
+- Chest & shoulder stretches
 ```
 
 ### Message Breaks
@@ -219,11 +259,19 @@ Use `---` on its own line to split into separate Telegram messages. Each trainin
 ```
 ## Monday — Push
 
+**🔥 Warm-up**
+- 5 min cardio + band work
+
 **Bench Press**
 - 4 × 5 @ 175 lbs
+- Rest: 3 min
 
 **OHP**
 - 3 × 8 @ 95 lbs
+- Rest: 2 min
+
+**🧘 Cool-down**
+- Chest & shoulder stretches (5 min)
 
 ---
 
