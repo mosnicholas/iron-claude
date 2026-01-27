@@ -105,5 +105,10 @@ export async function pushChanges(message: string): Promise<void> {
   }
 
   git(["commit", "-m", message], cachedDataDir);
-  git(["push"], cachedDataDir);
+
+  // Get current branch name to handle new branches that need upstream set
+  const currentBranch = git(["rev-parse", "--abbrev-ref", "HEAD"], cachedDataDir).trim();
+
+  // Use -u to set upstream, which works for both new and existing branches
+  git(["push", "-u", "origin", currentBranch], cachedDataDir);
 }
