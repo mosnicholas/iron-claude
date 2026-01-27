@@ -144,7 +144,20 @@ export interface AgentContext {
   recentWorkouts: WorkoutLog[];
   currentPRs: PRsData;
   todaysPlan: DayPlan | null;
+  fatigueScore?: number;
+  fatigueRecommendation?: string;
 }
+
+// ============================================================================
+// Fatigue Detection Types (re-exported from fatigue-analyzer.ts for convenience)
+// ============================================================================
+
+export type {
+  FatigueSignal,
+  FatigueSignals,
+  DeloadRecord,
+  FatigueAnalysisResult,
+} from "../utils/fatigue-analyzer.js";
 
 // ============================================================================
 // Telegram Types

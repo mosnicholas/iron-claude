@@ -420,6 +420,66 @@ export class GitHubStorage {
       // File might not exist, that's fine
     }
   }
+
+  // ============================================================================
+  // Fatigue Signals Management
+  // ============================================================================
+
+  /**
+   * Read fatigue signals from analytics/fatigue-signals.yaml
+   */
+  async readFatigueSignals(): Promise<string | null> {
+    return this.readFile("analytics/fatigue-signals.yaml");
+  }
+
+  /**
+   * Write fatigue signals to analytics/fatigue-signals.yaml
+   */
+  async writeFatigueSignals(content: string): Promise<void> {
+    await this.writeFile("analytics/fatigue-signals.yaml", content, "Update fatigue signals");
+  }
+
+  /**
+   * Mark a week as a deload week
+   */
+  async markDeloadWeek(week: string, reason?: string): Promise<void> {
+    const state = {
+      week,
+      reason,
+      markedAt: new Date().toISOString(),
+    };
+    await this.writeFile(
+      `state/deload-${week}.json`,
+      JSON.stringify(state, null, 2),
+      `Mark ${week} as deload week`
+    );
+  }
+
+  /**
+   * Check if a week is marked as deload
+   */
+  async isDeloadWeek(week: string): Promise<boolean> {
+    const content = await this.readFile(`state/deload-${week}.json`);
+    return content !== null;
+  }
+
+  /**
+   * List all deload weeks from state files
+   */
+  async listDeloadWeeks(): Promise<string[]> {
+    try {
+      const files = await this.listFiles("state");
+      return files
+        .filter((f) => f.includes("deload-") && f.endsWith(".json"))
+        .map((f) => {
+          const match = f.match(/deload-(\d{4}-W\d{2})\.json/);
+          return match ? match[1] : null;
+        })
+        .filter((w): w is string => w !== null);
+    } catch {
+      return [];
+    }
+  }
 }
 
 /**

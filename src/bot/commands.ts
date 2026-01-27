@@ -8,6 +8,13 @@ import { CoachAgent, StreamingCallbacks } from "../coach/index.js";
 import { TelegramBot, ThrottledMessageEditor } from "./telegram.js";
 import { createGitHubStorage } from "../storage/github.js";
 import { getCurrentWeek } from "../utils/date.js";
+import {
+  parseFatigueSignals,
+  createInitialFatigueSignals,
+  markDeloadWeek,
+  dismissDeloadWarning,
+  serializeFatigueSignals,
+} from "../utils/fatigue-analyzer.js";
 
 /**
  * Split message on --- markers for multi-message responses
@@ -41,6 +48,9 @@ export const COMMANDS: Record<string, CommandHandler> = {
   demo: handleDemo,
   me: handleMe,
   summary: handleSummary,
+  fatigue: handleFatigue,
+  deload: handleDeload,
+  dismissfatigue: handleDismissFatigue,
 };
 
 /**
@@ -90,6 +100,11 @@ async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string):
 • /me - Quick facts about your profile
 • /summary - Your fitness journey overview
 • /demo [exercise] - Find video demonstration
+
+🔋 **Recovery**
+• /fatigue - Check your fatigue score and signals
+• /deload - Mark this week as a deload week
+• /dismissfatigue - Dismiss current fatigue warning
 
 💬 **Or just chat naturally:**
 • "bench 175x5" - Log an exercise
@@ -255,6 +270,162 @@ async function handleSummary(
 }
 
 /**
+ * /fatigue - Show current fatigue score and signals
+ */
+async function handleFatigue(
+  _agent: CoachAgent,
+  _bot: TelegramBot,
+  _args: string
+): Promise<string> {
+  const storage = createGitHubStorage();
+
+  try {
+    const fatigueYaml = await storage.readFatigueSignals();
+
+    if (!fatigueYaml) {
+      return `**Fatigue Status**
+
+No fatigue data recorded yet. Fatigue signals will be tracked as you log workouts with RPE data.
+
+The system monitors:
+• RPE creep (same weight feeling harder)
+• Missed reps (not hitting planned counts)
+• Weeks since last deload
+
+Once you have enough workout data, you'll see your fatigue score here.`;
+    }
+
+    const fatigueData = parseFatigueSignals(fatigueYaml) || createInitialFatigueSignals();
+
+    // Build the status message
+    const scoreEmoji =
+      fatigueData.currentScore >= 7 ? "🔴" : fatigueData.currentScore >= 5 ? "🟡" : "🟢";
+
+    let message = `**Fatigue Status** ${scoreEmoji}
+
+**Score:** ${fatigueData.currentScore}/10
+**Weeks since deload:** ${fatigueData.weeksSinceDeload}
+`;
+
+    // Add last deload info
+    if (fatigueData.lastDeload) {
+      message += `**Last deload:** ${fatigueData.lastDeload.week}\n`;
+    } else {
+      message += `**Last deload:** None recorded\n`;
+    }
+
+    message += `\n`;
+
+    // Add active signals
+    if (fatigueData.signals.length > 0) {
+      message += `**Active Signals:**\n`;
+      for (const signal of fatigueData.signals) {
+        const severityIcon =
+          signal.severity === "high" ? "🔴" : signal.severity === "medium" ? "🟡" : "🟢";
+        message += `${severityIcon} ${signal.description}\n`;
+      }
+    } else {
+      message += `**Active Signals:** None - you're recovering well!\n`;
+    }
+
+    // Add recommendation if score is high
+    if (fatigueData.currentScore >= 7) {
+      message += `\n⚠️ **Recommendation:** Consider a deload week. Use /deload to mark this week as recovery.`;
+    }
+
+    return message;
+  } catch (error) {
+    console.error("[Commands] Error reading fatigue signals:", error);
+    return "Error reading fatigue data. Please try again.";
+  }
+}
+
+/**
+ * /deload - Mark the current week as a deload week
+ */
+async function handleDeload(_agent: CoachAgent, _bot: TelegramBot, args: string): Promise<string> {
+  const storage = createGitHubStorage();
+  const currentWeek = getCurrentWeek();
+
+  try {
+    // Check if already a deload week
+    const isAlreadyDeload = await storage.isDeloadWeek(currentWeek);
+    if (isAlreadyDeload) {
+      return `Week ${currentWeek} is already marked as a deload week. Rest up! 🧘`;
+    }
+
+    // Mark the week as deload
+    await storage.markDeloadWeek(currentWeek, args || "User requested");
+
+    // Update fatigue signals
+    const fatigueYaml = await storage.readFatigueSignals();
+    let fatigueData = fatigueYaml
+      ? parseFatigueSignals(fatigueYaml) || createInitialFatigueSignals()
+      : createInitialFatigueSignals();
+
+    fatigueData = markDeloadWeek(fatigueData, currentWeek, "manual", args || undefined);
+    await storage.writeFatigueSignals(serializeFatigueSignals(fatigueData));
+
+    return `✅ **Deload Week Marked**
+
+Week ${currentWeek} is now marked as a deload week.
+
+**What this means:**
+• Volume reduced by 40-50%
+• Focus on technique and recovery
+• Extra mobility/stretching
+• Fatigue score has been adjusted
+
+Take it easy and let your body recover. You'll come back stronger! 💪`;
+  } catch (error) {
+    console.error("[Commands] Error marking deload:", error);
+    return "Error marking deload week. Please try again.";
+  }
+}
+
+/**
+ * /dismissfatigue - Dismiss the current fatigue warning
+ */
+async function handleDismissFatigue(
+  _agent: CoachAgent,
+  _bot: TelegramBot,
+  args: string
+): Promise<string> {
+  const storage = createGitHubStorage();
+
+  try {
+    const fatigueYaml = await storage.readFatigueSignals();
+
+    if (!fatigueYaml) {
+      return "No fatigue warnings to dismiss.";
+    }
+
+    let fatigueData = parseFatigueSignals(fatigueYaml) || createInitialFatigueSignals();
+
+    if (fatigueData.currentScore < 7) {
+      return "Your fatigue score is currently below the warning threshold. No warning to dismiss.";
+    }
+
+    fatigueData = dismissDeloadWarning(fatigueData, args || undefined);
+    await storage.writeFatigueSignals(serializeFatigueSignals(fatigueData));
+
+    return `✅ **Warning Dismissed**
+
+I've noted that you want to continue training as normal despite elevated fatigue (${fatigueData.currentScore}/10).
+
+Listen to your body and consider taking it easier if:
+• Lifts start feeling unusually heavy
+• Sleep quality decreases
+• Motivation drops significantly
+
+Stay safe! 💪`;
+  } catch (error) {
+    console.error("[Commands] Error dismissing fatigue:", error);
+    return "Error dismissing warning. Please try again.";
+  }
+}
+
+/**
  * Handle an unknown command
  */
 export function handleUnknownCommand(command: string): string {
@@ -268,8 +439,20 @@ export function commandExists(command: string): boolean {
   return command in COMMANDS;
 }
 
-// Commands that benefit from loading indicator (they call agent.chat which is slow)
-const SLOW_COMMANDS = ["prs", "plan", "fullplan", "today", "done", "demo", "me", "summary"];
+// Commands that benefit from loading indicator (they make API calls or use agent)
+const SLOW_COMMANDS = [
+  "prs",
+  "plan",
+  "fullplan",
+  "today",
+  "done",
+  "demo",
+  "me",
+  "summary",
+  "fatigue",
+  "deload",
+  "dismissfatigue",
+];
 
 const LOADING_MESSAGES: Record<string, string> = {
   prs: "✨ _Looking up your PRs..._",
@@ -280,6 +463,9 @@ const LOADING_MESSAGES: Record<string, string> = {
   demo: "✨ _Finding a demo..._",
   me: "✨ _Pulling up your profile..._",
   summary: "✨ _Reviewing your journey..._",
+  fatigue: "✨ _Checking fatigue signals..._",
+  deload: "✨ _Marking deload week..._",
+  dismissfatigue: "✨ _Dismissing warning..._",
 };
 
 /**

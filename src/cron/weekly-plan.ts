@@ -15,6 +15,7 @@ import { createTelegramBot } from "../bot/telegram.js";
 import { createGitHubStorage } from "../storage/github.js";
 import { buildWeeklyPlanningPrompt } from "../coach/prompts.js";
 import { getCurrentWeek, getNextWeek } from "../utils/date.js";
+import { parseFatigueSignals, createInitialFatigueSignals } from "../utils/fatigue-analyzer.js";
 
 export interface WeeklyPlanResult {
   success: boolean;
@@ -24,9 +25,9 @@ export interface WeeklyPlanResult {
 }
 
 /**
- * Planning questions to ask the user before generating the plan
+ * Base planning questions to ask the user before generating the plan
  */
-const PLANNING_QUESTIONS = `Hey! Time to plan next week 📋
+const BASE_PLANNING_QUESTIONS = `Hey! Time to plan next week 📋
 
 Before I put together your plan, a few quick questions:
 
@@ -37,6 +38,25 @@ Before I put together your plan, a few quick questions:
 3. **Anything you want to focus on?** A lift you want to push, skill to work on, or area to prioritize?
 
 Just reply with whatever's on your mind and I'll build your plan around it.`;
+
+/**
+ * Build planning questions with optional fatigue warning
+ */
+function buildPlanningQuestions(fatigueRecommendation?: string): string {
+  if (!fatigueRecommendation) {
+    return BASE_PLANNING_QUESTIONS;
+  }
+
+  return `⚠️ **Recovery Check**
+
+${fatigueRecommendation}
+
+Reply "yes" for a recovery week, or "no" and I'll proceed with normal planning.
+
+---
+
+${BASE_PLANNING_QUESTIONS}`;
+}
 
 /**
  * Run the weekly planning job - asks questions first
@@ -89,10 +109,50 @@ export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
       };
     }
 
+    // Check fatigue signals for proactive deload recommendation
+    console.log("[weekly-plan] Checking fatigue signals");
+    let fatigueRecommendation: string | undefined;
+    try {
+      const fatigueYaml = await storage.readFatigueSignals();
+      if (fatigueYaml) {
+        const fatigueData = parseFatigueSignals(fatigueYaml) || createInitialFatigueSignals();
+        if (fatigueData.currentScore >= 7) {
+          // Build a recommendation message
+          const reasons: string[] = [];
+          const rpeCreep = fatigueData.signals.filter((s) => s.type === "rpe_creep");
+          const missedReps = fatigueData.signals.filter((s) => s.type === "missed_reps");
+
+          if (rpeCreep.length > 0) reasons.push("RPE creeping up");
+          if (missedReps.length > 0) reasons.push("missing planned reps");
+          if (fatigueData.weeksSinceDeload >= 5) {
+            reasons.push(`been pushing hard for ${fatigueData.weeksSinceDeload} weeks`);
+          }
+
+          fatigueRecommendation =
+            `Fatigue indicators are elevated (score: ${fatigueData.currentScore}/10)` +
+            (reasons.length > 0 ? "—" + reasons.join(" and ") : "") +
+            ". Want a recovery week?";
+
+          console.log(
+            `[weekly-plan] Fatigue score ${fatigueData.currentScore}/10, recommending deload`
+          );
+        } else {
+          console.log(
+            `[weekly-plan] Fatigue score ${fatigueData.currentScore}/10, normal planning`
+          );
+        }
+      } else {
+        console.log("[weekly-plan] No fatigue signals file found, proceeding with normal planning");
+      }
+    } catch (error) {
+      console.log("[weekly-plan] Error reading fatigue signals, proceeding:", error);
+    }
+
     // Save planning state and ask questions
     console.log("[weekly-plan] Saving planning state and asking questions");
     await storage.savePlanningState(nextWeek);
-    await bot.sendMessageSafe(PLANNING_QUESTIONS);
+    const planningQuestions = buildPlanningQuestions(fatigueRecommendation);
+    await bot.sendMessageSafe(planningQuestions);
     console.log("[weekly-plan] Questions sent, waiting for user response");
 
     return {

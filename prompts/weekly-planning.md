@@ -8,6 +8,7 @@ Read these files:
 - `profile.md` — Goals, constraints, preferences
 - `learnings.md` — Discovered patterns
 - `prs.yaml` — Current strength levels
+- `analytics/fatigue-signals.yaml` — Current fatigue score and signals
 - Last 2-4 weeks of data in `weeks/YYYY-WXX/` folders:
   - `plan.md` — Weekly training plan
   - `retro.md` — Weekly retrospective
@@ -33,11 +34,17 @@ Read these files:
 - Any stalls to address?
 
 ### Fatigue Signals
-Check for deload indicators:
-- RPE consistently >8.5 on main lifts?
-- Reps declining at same weight?
+Check `analytics/fatigue-signals.yaml` for:
+- **Current fatigue score** (1-10): If 7+, prioritize deload
+- **RPE creep**: Same weight/reps but RPE trending up over 2-3 sessions
+- **Missed reps**: Failing to hit planned reps indicates accumulated fatigue
+- **Weeks since deload**: Most athletes need one every 4-6 weeks
+
+Also check subjective indicators:
 - Sleep/energy consistently poor?
 - User reporting unusual fatigue?
+
+**If fatigue score is 7+**, strongly recommend a deload week unless user explicitly dismisses the warning.
 
 ## Step 3: Plan the Week
 
@@ -211,17 +218,39 @@ If workout data is incomplete:
 
 ## Deload Week Logic
 
-Trigger a deload when 4+ weeks since last deload AND any of:
-- RPE consistently >8.5
-- Performance declining
-- User reports fatigue
-- Life stress is high
+### Automated Detection
 
-Deload structure:
+The fatigue detection system in `analytics/fatigue-signals.yaml` tracks:
+- **Fatigue score (1-10)**: Composite of all signals below
+- **RPE creep**: Same weight feeling harder over multiple sessions
+- **Missed reps**: Not hitting planned rep counts
+- **Weeks since deload**: Time since last recovery week
+
+### When to Trigger a Deload
+
+**Automatic trigger** (fatigue score 7+):
+- System will proactively suggest: "Fatigue indicators are elevated—RPE creeping up and you've been pushing hard for 5 weeks. Want a recovery week?"
+- Generate deload plan unless user dismisses
+
+**Manual triggers** (even with lower score):
+- User reports fatigue, poor sleep, high life stress
+- Performance noticeably declining
+- User requests a lighter week
+
+### Deload Structure
+
 - Reduce volume by 40-50%
 - Maintain intensity (weight) or reduce slightly
 - Focus on technique and recovery
 - Include extra mobility/stretching
+- Mark the week as deload in `state/deload-YYYY-WXX.json`
+
+### After Deload
+
+After a deload week:
+- Fatigue score should reset to lower levels
+- Resume progressive overload
+- Note the deload in `analytics/fatigue-signals.yaml` history
 
 ## Telegram Display Format
 
