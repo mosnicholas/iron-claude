@@ -5,6 +5,7 @@
  * Based on: https://developer.whoop.com/docs/developing/webhooks
  */
 
+import crypto from "node:crypto";
 import type { Request } from "express";
 import type { WebhookEvent, SleepData, RecoveryData, WorkoutData } from "../types.js";
 import { WhoopClient, getSportName } from "./client.js";
@@ -36,38 +37,78 @@ interface WhoopWebhookPayload {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Compute HMAC-SHA256 signature for webhook verification.
+ */
+function computeHmacSignature(payload: string, secret: string): string {
+  return crypto.createHmac("sha256", secret).update(payload).digest("hex");
+}
+
+/**
+ * Constant-time string comparison to prevent timing attacks.
+ */
+function secureCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+/**
  * Verify a Whoop webhook request.
  *
- * Whoop doesn't use HMAC signatures by default, but you can configure
- * a secret in the webhook settings. For now, we just verify the payload
- * structure is valid.
+ * Validates:
+ * 1. Payload structure is valid
+ * 2. HMAC signature matches (if webhook secret is configured)
+ * 3. User ID matches expected user (if configured)
  *
- * In production, you might want to:
- * 1. Verify the source IP is from Whoop
- * 2. Use a webhook secret header
- * 3. Verify the user_id matches your configured user
+ * SECURITY: If WHOOP_WEBHOOK_SECRET is set, signature verification is REQUIRED.
+ * Requests without valid signatures will be rejected.
  */
 export function verifyWhoopWebhook(req: Request): boolean {
   const payload = req.body as WhoopWebhookPayload;
 
   // Basic structure validation
   if (!payload || typeof payload !== "object") {
+    console.log("[whoop-webhook] Invalid payload: not an object");
     return false;
   }
 
   if (!payload.type || !["workout", "sleep", "recovery"].includes(payload.type)) {
+    console.log("[whoop-webhook] Invalid payload: unknown type");
     return false;
   }
 
   if (typeof payload.user_id !== "number" || typeof payload.id !== "number") {
+    console.log("[whoop-webhook] Invalid payload: missing user_id or id");
     return false;
   }
 
-  // Optional: Verify webhook secret if configured
+  // HMAC signature verification (required if secret is configured)
   const webhookSecret = process.env.WHOOP_WEBHOOK_SECRET;
   if (webhookSecret) {
-    const headerSecret = req.headers["x-whoop-signature"] as string;
-    if (headerSecret !== webhookSecret) {
+    const signature = req.headers["x-whoop-signature"] as string | undefined;
+
+    if (!signature) {
+      console.log("[whoop-webhook] Missing signature header");
+      return false;
+    }
+
+    // Get raw body for signature verification
+    // Note: Express must be configured with raw body parsing for this route
+    const rawBody = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+    const expectedSignature = computeHmacSignature(rawBody, webhookSecret);
+
+    if (!secureCompare(signature, expectedSignature)) {
+      console.log("[whoop-webhook] Invalid signature");
+      return false;
+    }
+  }
+
+  // Optional: Verify user ID matches expected user
+  const expectedUserId = process.env.WHOOP_USER_ID;
+  if (expectedUserId) {
+    if (payload.user_id !== parseInt(expectedUserId, 10)) {
+      console.log("[whoop-webhook] User ID mismatch");
       return false;
     }
   }
@@ -185,8 +226,21 @@ export async function parseWhoopWebhook(
 
     case "recovery": {
       // Recovery ID is actually the cycle_id, we need to find it via date range
-      const today = new Date().toISOString().split("T")[0];
-      const recoveries = await client.getRecovery(today, today);
+      // Use the webhook timestamp to determine the date, with fallback to today
+      const webhookDate = webhookPayload.timestamp
+        ? new Date(webhookPayload.timestamp).toISOString().split("T")[0]
+        : new Date().toISOString().split("T")[0];
+
+      // Search a range around the webhook date to handle timezone issues
+      const searchStart = new Date(webhookDate);
+      searchStart.setDate(searchStart.getDate() - 1);
+      const searchEnd = new Date(webhookDate);
+      searchEnd.setDate(searchEnd.getDate() + 1);
+
+      const recoveries = await client.getRecovery(
+        searchStart.toISOString().split("T")[0],
+        searchEnd.toISOString().split("T")[0]
+      );
       const recovery = recoveries.find((r) => r.cycle_id === webhookPayload.id);
 
       if (!recovery || recovery.score_state !== "SCORED") {
@@ -212,31 +266,4 @@ export async function parseWhoopWebhook(
     default:
       return null;
   }
-}
-
-/**
- * Parse a Whoop webhook without fetching additional data.
- * Returns a minimal event that can be used to trigger a full sync.
- */
-export function parseWhoopWebhookMinimal(payload: unknown): {
-  type: "sleep" | "recovery" | "workout";
-  id: number;
-  userId: number;
-} | null {
-  const webhookPayload = payload as WhoopWebhookPayload;
-
-  if (!webhookPayload.type || !webhookPayload.id || !webhookPayload.user_id) {
-    return null;
-  }
-
-  // Skip delete events
-  if (webhookPayload.action === "delete") {
-    return null;
-  }
-
-  return {
-    type: webhookPayload.type,
-    id: webhookPayload.id,
-    userId: webhookPayload.user_id,
-  };
 }

@@ -10,6 +10,22 @@ import { getIntegration, getConfiguredIntegrations } from "./registry.js";
 import { storeIntegrationData } from "./storage.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Security Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Escape HTML special characters to prevent XSS attacks.
+ */
+function escapeHtml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Webhook Handler
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -88,13 +104,19 @@ export async function integrationOAuthCallbackHandler(req: Request, res: Respons
   console.log(`[integration-oauth] Callback for: ${device}`);
 
   if (error) {
+    // Escape user-supplied values to prevent XSS
+    const safeError = escapeHtml(String(error));
+    const safeDescription = error_description
+      ? escapeHtml(String(error_description))
+      : "No additional details available.";
+
     res.status(400).send(`
       <html>
         <head><title>Authorization Failed</title></head>
         <body style="font-family: system-ui; padding: 40px; max-width: 600px; margin: 0 auto;">
           <h1>Authorization Failed</h1>
-          <p><strong>Error:</strong> ${error}</p>
-          <p>${error_description || "No additional details available."}</p>
+          <p><strong>Error:</strong> ${safeError}</p>
+          <p>${safeDescription}</p>
           <p>Please try the authorization process again.</p>
         </body>
       </html>
@@ -116,7 +138,9 @@ export async function integrationOAuthCallbackHandler(req: Request, res: Respons
   }
 
   // Display the code for manual setup
-  // In a full implementation, we'd exchange this for tokens automatically
+  // Escape the code to prevent XSS
+  const safeCode = escapeHtml(String(code));
+
   res.send(`
     <html>
       <head><title>Authorization Successful</title></head>
@@ -124,7 +148,7 @@ export async function integrationOAuthCallbackHandler(req: Request, res: Respons
         <h1>Authorization Successful!</h1>
         <p>Copy this authorization code and paste it into the setup wizard:</p>
         <div style="background: #f0f0f0; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <code style="font-size: 14px; word-break: break-all;">${code}</code>
+          <code style="font-size: 14px; word-break: break-all;">${safeCode}</code>
         </div>
         <p>You can close this window after copying the code.</p>
       </body>

@@ -6,7 +6,7 @@
  */
 
 import type { TokenSet } from "../types.js";
-import { getStoredTokens, isTokenExpired, refreshAccessToken } from "./oauth.js";
+import { getStoredTokens, isTokenExpired, refreshAccessToken, persistTokens } from "./oauth.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -221,6 +221,20 @@ export function getSportName(sportId: number): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Rate Limiting
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_RETRIES = 4;
+const INITIAL_BACKOFF_MS = 1000;
+
+/**
+ * Sleep for a specified number of milliseconds.
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Client Class
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -232,8 +246,22 @@ export class WhoopClient {
   }
 
   /**
+   * Update the client's tokens (after refresh).
+   */
+  updateTokens(tokens: TokenSet): void {
+    this.tokens = tokens;
+  }
+
+  /**
+   * Get the current tokens.
+   */
+  getTokens(): TokenSet {
+    return this.tokens;
+  }
+
+  /**
    * Create a client from stored environment tokens.
-   * Automatically refreshes if expired.
+   * Automatically refreshes if expired and persists the new tokens.
    */
   static async fromEnvironment(): Promise<WhoopClient> {
     const tokens = getStoredTokens();
@@ -245,7 +273,8 @@ export class WhoopClient {
     if (isTokenExpired(tokens)) {
       console.log("[whoop] Access token expired, refreshing...");
       const newTokens = await refreshAccessToken(tokens.refreshToken);
-      // Note: In production, you'd want to persist these new tokens
+      // Persist the refreshed tokens
+      persistTokens(newTokens);
       return new WhoopClient(newTokens);
     }
 
@@ -253,7 +282,8 @@ export class WhoopClient {
   }
 
   /**
-   * Make an authenticated request to the Whoop API.
+   * Make an authenticated request to the Whoop API with retry logic.
+   * Implements exponential backoff for rate limiting (429) and transient errors.
    */
   private async request<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
     const url = new URL(`${WHOOP_API_BASE}${endpoint}`);
@@ -263,18 +293,58 @@ export class WhoopClient {
       });
     }
 
-    const response = await fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${this.tokens.accessToken}`,
-      },
-    });
+    let lastError: Error | null = null;
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Whoop API error: ${response.status} - ${error}`);
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        const backoffMs = INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1);
+        console.log(`[whoop] Retry ${attempt}/${MAX_RETRIES} after ${backoffMs}ms`);
+        await sleep(backoffMs);
+      }
+
+      try {
+        const response = await fetch(url.toString(), {
+          headers: {
+            Authorization: `Bearer ${this.tokens.accessToken}`,
+          },
+        });
+
+        // Handle rate limiting
+        if (response.status === 429) {
+          const retryAfter = response.headers.get("Retry-After");
+          const waitMs = retryAfter
+            ? parseInt(retryAfter, 10) * 1000
+            : INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+          console.log(`[whoop] Rate limited, waiting ${waitMs}ms`);
+          lastError = new Error("Rate limited by Whoop API");
+          continue;
+        }
+
+        // Handle server errors (retriable)
+        if (response.status >= 500 && response.status < 600) {
+          const error = await response.text();
+          lastError = new Error(`Whoop API server error: ${response.status} - ${error}`);
+          continue;
+        }
+
+        // Handle client errors (not retriable)
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(`Whoop API error: ${response.status} - ${error}`);
+        }
+
+        return response.json() as Promise<T>;
+      } catch (error) {
+        // Network errors are retriable
+        if (error instanceof TypeError && error.message.includes("fetch")) {
+          lastError = error;
+          continue;
+        }
+        throw error;
+      }
     }
 
-    return response.json() as Promise<T>;
+    throw lastError || new Error("Max retries exceeded");
   }
 
   /**

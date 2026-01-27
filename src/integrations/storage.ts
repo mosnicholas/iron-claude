@@ -137,6 +137,19 @@ export async function storeIntegrationData(event: WebhookEvent): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Safely parse JSON with error handling.
+ * Returns null if parsing fails.
+ */
+function safeJsonParse<T>(content: string, path: string): T | null {
+  try {
+    return JSON.parse(content) as T;
+  } catch (error) {
+    console.error(`[integration-storage] Failed to parse JSON at ${path}:`, error);
+    return null;
+  }
+}
+
+/**
  * Read sleep data for a specific date and source.
  */
 export async function readSleepData(source: string, date: string): Promise<SleepData | null> {
@@ -146,7 +159,7 @@ export async function readSleepData(source: string, date: string): Promise<Sleep
   const content = await storage.readFile(path);
   if (!content) return null;
 
-  return JSON.parse(content) as SleepData;
+  return safeJsonParse<SleepData>(content, path);
 }
 
 /**
@@ -159,7 +172,7 @@ export async function readRecoveryData(source: string, date: string): Promise<Re
   const content = await storage.readFile(path);
   if (!content) return null;
 
-  return JSON.parse(content) as RecoveryData;
+  return safeJsonParse<RecoveryData>(content, path);
 }
 
 /**
@@ -176,7 +189,7 @@ export async function readWorkoutData(
   const content = await storage.readFile(path);
   if (!content) return null;
 
-  return JSON.parse(content) as WorkoutData;
+  return safeJsonParse<WorkoutData>(content, path);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

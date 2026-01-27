@@ -1,5 +1,12 @@
-import { normalizeSleep, normalizeRecovery, normalizeWorkout } from "./webhooks.js";
+import crypto from "node:crypto";
+import {
+  normalizeSleep,
+  normalizeRecovery,
+  normalizeWorkout,
+  verifyWhoopWebhook,
+} from "./webhooks.js";
 import type { WhoopSleep, WhoopRecovery, WhoopWorkout } from "./client.js";
+import type { Request } from "express";
 
 describe("Whoop webhook normalization", () => {
   describe("normalizeSleep", () => {
@@ -207,6 +214,154 @@ describe("Whoop webhook normalization", () => {
       const normalized = normalizeWorkout(unknownSportWorkout);
 
       expect(normalized.type).toBe("Activity");
+    });
+  });
+});
+
+describe("Whoop webhook verification", () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  function createMockRequest(body: unknown, headers: Record<string, string> = {}): Request {
+    return {
+      body,
+      headers,
+    } as unknown as Request;
+  }
+
+  describe("payload structure validation", () => {
+    it("rejects null payload", () => {
+      const req = createMockRequest(null);
+      expect(verifyWhoopWebhook(req)).toBe(false);
+    });
+
+    it("rejects non-object payload", () => {
+      const req = createMockRequest("not an object");
+      expect(verifyWhoopWebhook(req)).toBe(false);
+    });
+
+    it("rejects payload without type", () => {
+      const req = createMockRequest({ user_id: 123, id: 456 });
+      expect(verifyWhoopWebhook(req)).toBe(false);
+    });
+
+    it("rejects payload with invalid type", () => {
+      const req = createMockRequest({ type: "invalid", user_id: 123, id: 456 });
+      expect(verifyWhoopWebhook(req)).toBe(false);
+    });
+
+    it("rejects payload without user_id", () => {
+      const req = createMockRequest({ type: "sleep", id: 456 });
+      expect(verifyWhoopWebhook(req)).toBe(false);
+    });
+
+    it("rejects payload without id", () => {
+      const req = createMockRequest({ type: "sleep", user_id: 123 });
+      expect(verifyWhoopWebhook(req)).toBe(false);
+    });
+
+    it("accepts valid sleep payload", () => {
+      const req = createMockRequest({ type: "sleep", user_id: 123, id: 456 });
+      expect(verifyWhoopWebhook(req)).toBe(true);
+    });
+
+    it("accepts valid recovery payload", () => {
+      const req = createMockRequest({ type: "recovery", user_id: 123, id: 456 });
+      expect(verifyWhoopWebhook(req)).toBe(true);
+    });
+
+    it("accepts valid workout payload", () => {
+      const req = createMockRequest({ type: "workout", user_id: 123, id: 456 });
+      expect(verifyWhoopWebhook(req)).toBe(true);
+    });
+  });
+
+  describe("HMAC signature verification", () => {
+    const webhookSecret = "test-webhook-secret";
+
+    beforeEach(() => {
+      process.env.WHOOP_WEBHOOK_SECRET = webhookSecret;
+    });
+
+    it("rejects request without signature when secret is configured", () => {
+      const req = createMockRequest({ type: "sleep", user_id: 123, id: 456 });
+      expect(verifyWhoopWebhook(req)).toBe(false);
+    });
+
+    it("rejects request with invalid signature", () => {
+      const req = createMockRequest(
+        { type: "sleep", user_id: 123, id: 456 },
+        { "x-whoop-signature": "invalid-signature" }
+      );
+      expect(verifyWhoopWebhook(req)).toBe(false);
+    });
+
+    it("accepts request with valid HMAC signature", () => {
+      const payload = { type: "sleep", user_id: 123, id: 456 };
+      const payloadString = JSON.stringify(payload);
+      const signature = crypto
+        .createHmac("sha256", webhookSecret)
+        .update(payloadString)
+        .digest("hex");
+
+      const req = createMockRequest(payload, { "x-whoop-signature": signature });
+      expect(verifyWhoopWebhook(req)).toBe(true);
+    });
+  });
+
+  describe("user ID verification", () => {
+    beforeEach(() => {
+      process.env.WHOOP_USER_ID = "12345";
+    });
+
+    it("rejects webhook from different user", () => {
+      const req = createMockRequest({ type: "sleep", user_id: 99999, id: 456 });
+      expect(verifyWhoopWebhook(req)).toBe(false);
+    });
+
+    it("accepts webhook from expected user", () => {
+      const req = createMockRequest({ type: "sleep", user_id: 12345, id: 456 });
+      expect(verifyWhoopWebhook(req)).toBe(true);
+    });
+  });
+
+  describe("combined verification", () => {
+    const webhookSecret = "combined-test-secret";
+
+    beforeEach(() => {
+      process.env.WHOOP_WEBHOOK_SECRET = webhookSecret;
+      process.env.WHOOP_USER_ID = "12345";
+    });
+
+    it("accepts request with valid signature and matching user", () => {
+      const payload = { type: "recovery", user_id: 12345, id: 789 };
+      const payloadString = JSON.stringify(payload);
+      const signature = crypto
+        .createHmac("sha256", webhookSecret)
+        .update(payloadString)
+        .digest("hex");
+
+      const req = createMockRequest(payload, { "x-whoop-signature": signature });
+      expect(verifyWhoopWebhook(req)).toBe(true);
+    });
+
+    it("rejects request with valid signature but wrong user", () => {
+      const payload = { type: "recovery", user_id: 99999, id: 789 };
+      const payloadString = JSON.stringify(payload);
+      const signature = crypto
+        .createHmac("sha256", webhookSecret)
+        .update(payloadString)
+        .digest("hex");
+
+      const req = createMockRequest(payload, { "x-whoop-signature": signature });
+      expect(verifyWhoopWebhook(req)).toBe(false);
     });
   });
 });

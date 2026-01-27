@@ -5,6 +5,8 @@
  * Based on: https://developer.whoop.com/docs/developing/oauth
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import type { TokenSet } from "../types.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,6 +15,9 @@ import type { TokenSet } from "../types.js";
 
 const WHOOP_AUTH_URL = "https://api.prod.whoop.com/oauth/oauth2/auth";
 const WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token";
+
+/** Path to store refreshed tokens (persists across restarts) */
+const TOKEN_STORAGE_PATH = process.env.WHOOP_TOKEN_FILE || "/data/whoop-tokens.json";
 
 /** Available OAuth scopes for Whoop API */
 export const WHOOP_SCOPES = [
@@ -68,10 +73,54 @@ export function isWhoopOAuthConfigured(): boolean {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Get stored Whoop tokens from environment.
+ * Persist tokens to file storage.
+ * This allows refreshed tokens to survive restarts.
+ */
+export function persistTokens(tokens: TokenSet): void {
+  try {
+    const dir = path.dirname(TOKEN_STORAGE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(TOKEN_STORAGE_PATH, JSON.stringify(tokens, null, 2), "utf-8");
+    console.log("[whoop-oauth] Tokens persisted to file storage");
+  } catch (error) {
+    console.error("[whoop-oauth] Failed to persist tokens:", error);
+    // Non-fatal - tokens will still work from memory
+  }
+}
+
+/**
+ * Load tokens from file storage.
+ */
+function loadPersistedTokens(): TokenSet | null {
+  try {
+    if (fs.existsSync(TOKEN_STORAGE_PATH)) {
+      const content = fs.readFileSync(TOKEN_STORAGE_PATH, "utf-8");
+      const tokens = JSON.parse(content) as TokenSet;
+      if (tokens.accessToken && tokens.refreshToken) {
+        return tokens;
+      }
+    }
+  } catch (error) {
+    console.error("[whoop-oauth] Failed to load persisted tokens:", error);
+  }
+  return null;
+}
+
+/**
+ * Get stored Whoop tokens.
+ * Checks file storage first, then falls back to environment variables.
  * Returns null if not configured.
  */
 export function getStoredTokens(): TokenSet | null {
+  // First, check file storage (for refreshed tokens)
+  const persistedTokens = loadPersistedTokens();
+  if (persistedTokens) {
+    return persistedTokens;
+  }
+
+  // Fall back to environment variables (initial setup)
   const accessToken = process.env.WHOOP_ACCESS_TOKEN;
   const refreshToken = process.env.WHOOP_REFRESH_TOKEN;
   const expiresAt = process.env.WHOOP_TOKEN_EXPIRES;
@@ -85,6 +134,20 @@ export function getStoredTokens(): TokenSet | null {
     refreshToken,
     expiresAt: expiresAt ? parseInt(expiresAt, 10) : 0,
   };
+}
+
+/**
+ * Clear persisted tokens (for logout/revoke).
+ */
+export function clearPersistedTokens(): void {
+  try {
+    if (fs.existsSync(TOKEN_STORAGE_PATH)) {
+      fs.unlinkSync(TOKEN_STORAGE_PATH);
+      console.log("[whoop-oauth] Persisted tokens cleared");
+    }
+  } catch (error) {
+    console.error("[whoop-oauth] Failed to clear persisted tokens:", error);
+  }
 }
 
 /**

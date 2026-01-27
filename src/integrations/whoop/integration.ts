@@ -20,6 +20,7 @@ import {
   getAuthorizationUrl,
   exchangeCodeForTokens,
   refreshAccessToken,
+  persistTokens,
   DEFAULT_SCOPES,
 } from "./oauth.js";
 import { WhoopClient, createWhoopClient } from "./client.js";
@@ -76,14 +77,30 @@ export class WhoopIntegration implements DeviceIntegration {
   }
 
   /**
-   * Refresh the access token.
+   * Refresh the access token and persist the new tokens.
    */
   async refreshToken(): Promise<TokenSet> {
     const tokens = getStoredTokens();
     if (!tokens) {
       throw new Error("No tokens to refresh");
     }
-    return refreshAccessToken(tokens.refreshToken);
+    const newTokens = await refreshAccessToken(tokens.refreshToken);
+
+    // Persist the new tokens
+    persistTokens(newTokens);
+
+    // Invalidate cached client so it uses new tokens
+    this.invalidateClient();
+
+    return newTokens;
+  }
+
+  /**
+   * Invalidate the cached client.
+   * Call this after token refresh to ensure new tokens are used.
+   */
+  invalidateClient(): void {
+    this.client = null;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -92,6 +109,7 @@ export class WhoopIntegration implements DeviceIntegration {
 
   /**
    * Get or create the API client.
+   * Creates a new client if none exists or if tokens have been refreshed.
    */
   private async getClient(): Promise<WhoopClient> {
     if (!this.client) {
