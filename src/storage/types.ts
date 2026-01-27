@@ -147,6 +147,56 @@ export interface AgentContext {
 }
 
 // ============================================================================
+// Estimated 1RM Tracking Types
+// ============================================================================
+
+/**
+ * A single e1RM entry for an exercise in a session
+ */
+export interface E1RMEntry {
+  e1rm: number;
+  weight: number;
+  reps: number;
+  rpe?: number;
+  rpeAdjusted: boolean;
+}
+
+/**
+ * Session e1RM data for all exercises in a workout
+ */
+export interface SessionE1RMData {
+  date: string;
+  workoutRef: string;
+  exercises: Record<string, E1RMEntry>;
+}
+
+/**
+ * Exercise e1RM history over time
+ */
+export interface ExerciseE1RMHistory {
+  exercise: string;
+  sessions: Array<{
+    date: string;
+    e1rm: number;
+    weight: number;
+    reps: number;
+    rpe?: number;
+    workoutRef: string;
+  }>;
+  currentBest: {
+    e1rm: number;
+    date: string;
+    weight: number;
+    reps: number;
+  };
+}
+
+/**
+ * Full e1RM history data structure (stored in analytics/e1rm-history.yaml)
+ */
+export type E1RMHistoryData = Record<string, ExerciseE1RMHistory>;
+
+// ============================================================================
 // Telegram Types
 // ============================================================================
 

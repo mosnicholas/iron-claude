@@ -351,6 +351,14 @@ export class GitHubStorage {
     return this.readFile("prs.yaml");
   }
 
+  async readE1RMHistory(): Promise<string | null> {
+    return this.readFile("analytics/e1rm-history.yaml");
+  }
+
+  async writeE1RMHistory(content: string, message: string): Promise<void> {
+    await this.writeFile("analytics/e1rm-history.yaml", content, message);
+  }
+
   async readWeeklyPlan(week: string): Promise<string | null> {
     return this.readFile(`weeks/${week}/plan.md`);
   }

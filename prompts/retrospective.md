@@ -52,6 +52,18 @@ Analyze RPE patterns across the week:
 - Based on average RPE, max RPE, and set count
 - Categories: Easy (<40), Moderate (40-60), Hard (60-80), Brutal (80+)
 
+### e1RM (Estimated 1RM) Trends
+Track strength progress via estimated 1RM for compound lifts:
+
+**Read analytics/e1rm-history.yaml** and compare:
+- Current e1RM vs 4 weeks ago for each compound lift
+- Flag any exercises with significant changes (±10+ lbs)
+- Highlight e1RM PRs from this week
+
+**Formula**: Epley method: weight × (1 + reps/30)
+- With RPE: weight × (1 + (reps + (10 - RPE))/30)
+- Only valid for sets ≤10 reps
+
 ## Step 3: Identify Patterns
 
 ### Positive Patterns
@@ -190,6 +202,22 @@ adherence_rate: 80%
 | Fri | Legs | 71 | Hard |
 
 **Weekly Average:** 64 (Hard) - solid training week
+
+---
+
+## e1RM Trends
+
+| Exercise | Current e1RM | 4 Weeks Ago | Change |
+|----------|-------------|-------------|--------|
+| Bench Press | 225 | 215 | ↑ +10 |
+| Squat | 315 | 305 | ↑ +10 |
+| Deadlift | 405 | 385 | ↑ +20 |
+| OHP | 145 | 145 | → 0 |
+
+**e1RM PRs This Week:**
+- Deadlift: 405 (previous best: 395)
+
+**Analysis:** Deadlift progressing fastest. OHP stalled - consider rep scheme change.
 
 ---
 
