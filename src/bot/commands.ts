@@ -112,7 +112,9 @@ async function handleToday(
 ): Promise<string> {
   const dateInfo = getDateInfoTZAware();
 
-  console.log(`[/today] Day: ${dateInfo.dayOfWeek}, Date: ${dateInfo.date}, Week: ${dateInfo.isoWeek}`);
+  console.log(
+    `[/today] Day: ${dateInfo.dayOfWeek}, Date: ${dateInfo.date}, Week: ${dateInfo.isoWeek}`
+  );
 
   const response = await agent.chat(
     `Show me today's workout plan. Today is ${dateInfo.dayOfWeek}. ` +
