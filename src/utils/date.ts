@@ -48,17 +48,6 @@ export function formatDateHuman(date: Date): string {
   return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}`;
 }
 
-export function getDayName(date: Date): string {
-  return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][
-    date.getDay()
-  ];
-}
-
-export function isWeekend(date: Date): boolean {
-  const day = date.getDay();
-  return day === 0 || day === 6;
-}
-
 function getDateInTimezone(date: Date, timezone: string): Date {
   return new Date(date.toLocaleString("en-US", { timeZone: timezone }));
 }
@@ -83,12 +72,6 @@ export function parseISOWeek(weekString: string): { start: Date; end: Date } {
   return { start, end };
 }
 
-export function getPreviousWeek(weekString: string): string {
-  const { start } = parseISOWeek(weekString);
-  start.setUTCDate(start.getUTCDate() - 7);
-  return formatISOWeek(start);
-}
-
 export function getNextWeek(weekString: string): string {
   const { start } = parseISOWeek(weekString);
   start.setUTCDate(start.getUTCDate() + 7);
@@ -103,4 +86,66 @@ export function getCurrentWeek(timezone?: string): string {
 export function getToday(timezone?: string): string {
   const now = timezone ? getDateInTimezone(new Date(), timezone) : new Date();
   return formatDate(now);
+}
+
+/**
+ * Comprehensive date info for a specific timezone
+ * Used for system prompts and logging
+ */
+export interface DateInfo {
+  date: string; // YYYY-MM-DD
+  time: string; // HH:MM
+  dayOfWeek: string; // e.g., "Tuesday"
+  isoWeek: string; // e.g., "2026-W05"
+  timezone: string; // The timezone used
+}
+
+const DEFAULT_TIMEZONE = "America/New_York";
+
+/**
+ * Get the configured timezone from environment
+ */
+export function getTimezone(): string {
+  return process.env.TIMEZONE || DEFAULT_TIMEZONE;
+}
+
+/**
+ * Get comprehensive date info using the configured timezone.
+ * Pulls TIMEZONE from environment variable (defaults to America/New_York).
+ */
+export function getDateInfoTZAware(): DateInfo {
+  const timezone = getTimezone();
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
+
+  const year = get("year");
+  const month = get("month");
+  const day = get("day");
+  const dayOfWeek = get("weekday");
+  const hour = get("hour");
+  const minute = get("minute");
+
+  // Calculate ISO week using timezone-aware date
+  const tzDate = getDateInTimezone(now, timezone);
+  const isoWeek = formatISOWeek(tzDate);
+
+  return {
+    date: `${year}-${month}-${day}`,
+    time: `${hour}:${minute}`,
+    dayOfWeek,
+    isoWeek,
+    timezone,
+  };
 }

@@ -7,6 +7,7 @@
 import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { getDateInfoTZAware } from "../utils/date.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROMPTS_DIR = join(__dirname, "../../prompts");
@@ -31,61 +32,13 @@ export function loadPartial(name: string): string {
   return readFileSync(path, "utf-8");
 }
 
-function getCurrentDateInfo(timezone: string): {
-  date: string;
-  time: string;
-  dayOfWeek: string;
-  isoWeek: string;
-} {
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    weekday: "long",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-
-  const parts = formatter.formatToParts(now);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
-
-  const year = get("year");
-  const month = get("month");
-  const day = get("day");
-  const dayOfWeek = get("weekday");
-  const hour = get("hour");
-  const minute = get("minute");
-
-  // Calculate ISO week number
-  const date = new Date(`${year}-${month}-${day}T12:00:00`);
-  const startOfYear = new Date(date.getFullYear(), 0, 1);
-  const days = Math.floor((date.getTime() - startOfYear.getTime()) / 86400000);
-  const weekNum = Math.ceil((days + startOfYear.getDay() + 1) / 7);
-  const isoWeek = `${year}-W${String(weekNum).padStart(2, "0")}`;
-
-  return {
-    date: `${year}-${month}-${day}`,
-    time: `${hour}:${minute}`,
-    dayOfWeek,
-    isoWeek,
-  };
-}
-
 export interface SystemPromptContext {
-  timezone: string;
   repoPath?: string;
   gitBinaryPath?: string;
 }
 
-export function buildSystemPrompt(context: SystemPromptContext | string): string {
-  // Support legacy string-only call for backwards compatibility
-  const { timezone, repoPath, gitBinaryPath } =
-    typeof context === "string"
-      ? { timezone: context, repoPath: undefined, gitBinaryPath: undefined }
-      : context;
+export function buildSystemPrompt(context?: SystemPromptContext): string {
+  const { repoPath, gitBinaryPath } = context || {};
 
   const systemPrompt = loadPrompt("system");
 
@@ -93,7 +46,7 @@ export function buildSystemPrompt(context: SystemPromptContext | string): string
   const workoutManagement = loadPartial("workout-management");
   const prDetection = loadPartial("pr-detection");
 
-  const dateInfo = getCurrentDateInfo(timezone);
+  const dateInfo = getDateInfoTZAware();
 
   // Build environment info section if we have paths
   const envInfo =
@@ -111,11 +64,13 @@ IMPORTANT: Your working directory is already set to the fitness-data repo. Use r
   const contextNote = `
 ## Current Date & Time
 
-- **Today**: ${dateInfo.dayOfWeek}, ${dateInfo.date}
-- **Current time**: ${dateInfo.time} (${timezone})
+**IMPORTANT: Use this date for all calculations. Do NOT infer the day from plan content.**
+
+- **Today is**: ${dateInfo.dayOfWeek}, ${dateInfo.date} (THIS IS THE CORRECT DAY)
+- **Current time**: ${dateInfo.time} (${dateInfo.timezone})
 - **Current week**: ${dateInfo.isoWeek}
 
-Use these values when creating file paths and branch names.
+Use these values when creating file paths and branch names. When asked about "today's workout", use ${dateInfo.dayOfWeek} to find the correct day in the plan.
 ${envInfo}
 ## File Access
 
@@ -129,7 +84,7 @@ You have direct access to the fitness-data repository files:
   - weeks/YYYY-WXX/YYYY-MM-DD.md - Workout logs by date
 
 Use Read, Glob, and Grep to explore files. Use Edit/Write to update them.
-Current timezone: ${timezone}
+Current timezone: ${dateInfo.timezone}
 
 ## Reference Guides
 

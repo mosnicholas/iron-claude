@@ -7,7 +7,7 @@
 import { CoachAgent, StreamingCallbacks } from "../coach/index.js";
 import { TelegramBot, ThrottledMessageEditor } from "./telegram.js";
 import { createGitHubStorage } from "../storage/github.js";
-import { getCurrentWeek } from "../utils/date.js";
+import { getCurrentWeek, getDateInfoTZAware } from "../utils/date.js";
 
 /**
  * Split message on --- markers for multi-message responses
@@ -110,8 +110,15 @@ async function handleToday(
   _args: string,
   callbacks?: StreamingCallbacks
 ): Promise<string> {
+  const dateInfo = getDateInfoTZAware();
+
+  console.log(
+    `[/today] Day: ${dateInfo.dayOfWeek}, Date: ${dateInfo.date}, Week: ${dateInfo.isoWeek}`
+  );
+
   const response = await agent.chat(
-    "Show me today's workout plan. Read the current week's plan and tell me what's scheduled for today. " +
+    `Show me today's workout plan. Today is ${dateInfo.dayOfWeek}. ` +
+      "Read the current week's plan and tell me what's scheduled for this day. " +
       "If today is a rest day, let me know. If there's no plan, suggest what I should do.",
     callbacks
   );

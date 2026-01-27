@@ -94,7 +94,6 @@ export class CoachAgent {
 
     // Build system prompt with environment paths
     const basePrompt = buildSystemPrompt({
-      timezone: this.config.timezone,
       repoPath,
       gitBinaryPath,
     });
