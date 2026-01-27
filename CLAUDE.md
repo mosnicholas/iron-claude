@@ -26,6 +26,19 @@ workout-routine/
 - **Always run `npm run lint:fix` after making code changes** to auto-format and fix issues
 - Run `npx knip` periodically to detect unused code/dependencies
 
+### Date Handling
+**Always use `src/utils/date.ts` for date manipulations** - never use inline `new Date()` formatting.
+
+Key functions:
+- `getDateInfoTZAware()` - Get comprehensive date info (date, time, dayOfWeek, isoWeek, timezone) - pulls timezone from `TIMEZONE` env var
+- `getTimezone()` - Get configured timezone from env (defaults to America/New_York)
+- `getCurrentWeek(timezone?)` - Get current ISO week string (e.g., "2026-W05")
+- `getToday(timezone?)` - Get today's date as YYYY-MM-DD
+- `getDayNameInTimezone(date, timezone)` - Get day name for a date in a specific timezone
+- `formatISOWeek(date)` - Format a Date as ISO week string
+
+The `getDateInfoTZAware()` function includes sanity checks and logging to help debug timezone issues.
+
 ### Environment
 - Uses Fly.io for deployment (Docker container with Express server)
 - Telegram bot integration
