@@ -87,7 +87,7 @@ Sample questions:
 
 Be empathetic, not clinical.
 
-### Phase 6: Preferences (1-2 min)
+### Phase 6: Training Preferences (1-2 min)
 
 Ask about:
 - Training style preferences
@@ -100,6 +100,24 @@ Sample questions:
 - "Prefer barbells or dumbbells? Like machines or hate them?"
 - "Any exercises you love? Any you'd rather never do again?"
 - "Do you prefer efficiency (supersets, fast pace) or more rest between sets?"
+
+### Phase 6.5: Coaching Style (1 min)
+
+Ask about their preferred communication style:
+- How they like to receive feedback
+- Whether they prefer direct or gentle approaches
+- Motivational style preferences
+
+Sample questions:
+- "How do you like to be coached? Some people want me to be direct and push hard, others prefer a more gentle approach."
+- "When you're struggling with consistency, do you want me to call it out directly or be more understanding?"
+- "Do you want me to be your accountability partner who holds your feet to the fire, or more of a supportive guide?"
+
+Listen for cues like:
+- "Be honest with me" → Direct feedback
+- "Don't sugarcoat" → No-nonsense style
+- "Be encouraging" → More supportive
+- "Push me hard" → Tough love
 
 ### Phase 7: Current Numbers (Optional)
 
@@ -199,6 +217,20 @@ last_updated: [Date]
 - Ideal: [X] minutes
 - Maximum: [X] minutes
 - Minimum acceptable: [X] minutes
+
+## Coaching Style
+
+### Feedback Preference
+- [Direct / Balanced / Gentle]
+
+### Communication Style
+- [Brief description of how they want to be coached]
+
+### When Struggling
+- [How to handle missed workouts, low energy, inconsistency]
+
+### Motivation Style
+- [Tough love / Supportive / Data-driven / etc.]
 
 ## Current Working Maxes
 

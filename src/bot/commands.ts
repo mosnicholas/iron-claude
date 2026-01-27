@@ -41,6 +41,7 @@ export const COMMANDS: Record<string, CommandHandler> = {
   demo: handleDemo,
   me: handleMe,
   summary: handleSummary,
+  funfacts: handleFunFacts,
 };
 
 /**
@@ -90,6 +91,7 @@ async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string):
 • /me - Quick facts about your profile
 • /summary - Your fitness journey overview
 • /demo [exercise] - Find video demonstration
+• /funfacts - Get fun fitness facts
 
 💬 **Or just chat naturally:**
 • "bench 175x5" - Log an exercise
@@ -255,6 +257,27 @@ async function handleSummary(
 }
 
 /**
+ * /funfacts - Share interesting fitness facts personalized to the user
+ */
+async function handleFunFacts(
+  agent: CoachAgent,
+  _bot: TelegramBot,
+  _args: string,
+  callbacks?: StreamingCallbacks
+): Promise<string> {
+  const response = await agent.chat(
+    "Share some fun and interesting fitness facts! First read profile.md and prs.yaml to understand my training, " +
+      "then give me 2-3 fun facts that are relevant to my workout style. Include:\n" +
+      "1. A surprising science fact about strength training or muscle growth\n" +
+      "2. A fun fact related to one of my main lifts or exercises\n" +
+      "3. An interesting historical or cultural fact about fitness\n\n" +
+      "Make it engaging and tie it back to my training when possible. Keep it concise for Telegram.",
+    callbacks
+  );
+  return response.message;
+}
+
+/**
  * Handle an unknown command
  */
 export function handleUnknownCommand(command: string): string {
@@ -269,7 +292,17 @@ export function commandExists(command: string): boolean {
 }
 
 // Commands that benefit from loading indicator (they call agent.chat which is slow)
-const SLOW_COMMANDS = ["prs", "plan", "fullplan", "today", "done", "demo", "me", "summary"];
+const SLOW_COMMANDS = [
+  "prs",
+  "plan",
+  "fullplan",
+  "today",
+  "done",
+  "demo",
+  "me",
+  "summary",
+  "funfacts",
+];
 
 const LOADING_MESSAGES: Record<string, string> = {
   prs: "✨ _Looking up your PRs..._",
@@ -280,6 +313,7 @@ const LOADING_MESSAGES: Record<string, string> = {
   demo: "✨ _Finding a demo..._",
   me: "✨ _Pulling up your profile..._",
   summary: "✨ _Reviewing your journey..._",
+  funfacts: "✨ _Finding fun facts..._",
 };
 
 /**
