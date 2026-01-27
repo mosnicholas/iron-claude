@@ -98,6 +98,8 @@ status: completed
 plan_reference: "2025-W04"
 branch: "workout/2025-01-24-upper"
 merged_at: "2025-01-24T07:35:00-05:00"
+warmup_completed: true
+cooldown_completed: true
 prs_hit:
   - exercise: Bench Press
     achievement: "175 x 6 (rep PR at this weight)"
@@ -105,25 +107,39 @@ prs_hit:
 
 # Workout — Friday, Jan 24
 
+## Warm-up
+*Planned: 5 min cardio + band work*
+
+- 5 min bike ✓
+- Band pull-aparts: 2 × 15 ✓
+- Light bench: 2 × 10 @ bar ✓
+
 ## Exercises
 
 ### Bench Press
-*Planned: 3 x 3 @ 165 (speed work)*
+*Planned: 3 x 3 @ 165 (speed work) — Rest: 3 min*
 
-| Set | Weight | Reps | Notes |
-|-----|--------|------|-------|
-| 1 | 165 | 3 | Fast, good bar speed |
-| 2 | 165 | 3 | |
-| 3 | 175 | 6 | Felt good, went heavier 🎉 **PR** |
+| Set | Weight | Reps | Rest | Notes |
+|-----|--------|------|------|-------|
+| 1 | 165 | 3 | 3 min | Fast, good bar speed |
+| 2 | 165 | 3 | 3 min | |
+| 3 | 175 | 6 | — | Felt good, went heavier 🎉 **PR** |
 
 ### Pull-ups
-*Planned: 3 x 8 @ BW*
+*Planned: 3 x 8 @ BW — Rest: 90 sec*
 
-| Set | Weight | Reps | Notes |
-|-----|--------|------|-------|
-| 1 | BW | 8 | |
-| 2 | BW | 8 | |
-| 3 | BW | 8 | |
+| Set | Weight | Reps | Rest | Notes |
+|-----|--------|------|------|-------|
+| 1 | BW | 8 | 90 sec | |
+| 2 | BW | 8 | 90 sec | |
+| 3 | BW | 8 | — | |
+
+## Cool-down
+*Planned: 5 min stretching*
+
+- Chest doorway stretch ✓
+- Shoulder stretches ✓
+- Light walk ✓
 
 ---
 
@@ -134,6 +150,8 @@ prs_hit:
 - Skipped: None
 - Added: None
 - Modified: Bench — went heavier than planned
+- Warm-up: ✓ Completed
+- Cool-down: ✓ Completed
 
 **Observations**
 - Bench felt strong, decided to push it
