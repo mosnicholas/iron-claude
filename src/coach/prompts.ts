@@ -160,10 +160,3 @@ export function buildRetrospectivePrompt(): string {
 export function buildOnboardingPrompt(): string {
   return loadPrompt("onboarding");
 }
-
-export const DEFAULT_PERSONA = {
-  name: "Coach",
-  style: "direct but warm",
-  emojiUsage: "sparingly and meaningfully",
-  messageStyle: "concise, mobile-first",
-};
