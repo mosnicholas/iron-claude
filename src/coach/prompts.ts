@@ -74,7 +74,19 @@ function getCurrentDateInfo(timezone: string): {
   };
 }
 
-export function buildSystemPrompt(timezone: string): string {
+export interface SystemPromptContext {
+  timezone: string;
+  repoPath?: string;
+  gitBinaryPath?: string;
+}
+
+export function buildSystemPrompt(context: SystemPromptContext | string): string {
+  // Support legacy string-only call for backwards compatibility
+  const { timezone, repoPath, gitBinaryPath } =
+    typeof context === "string"
+      ? { timezone: context, repoPath: undefined, gitBinaryPath: undefined }
+      : context;
+
   const systemPrompt = loadPrompt("system");
 
   const exerciseParsing = loadPartial("exercise-parsing");
@@ -82,6 +94,19 @@ export function buildSystemPrompt(timezone: string): string {
   const prDetection = loadPartial("pr-detection");
 
   const dateInfo = getCurrentDateInfo(timezone);
+
+  // Build environment info section if we have paths
+  const envInfo =
+    repoPath || gitBinaryPath
+      ? `
+## Environment
+
+${repoPath ? `- **Fitness data repo**: \`${repoPath}\` (this is your current working directory)` : ""}
+${gitBinaryPath ? `- **Git binary**: \`${gitBinaryPath}\` (use this full path for git commands)` : ""}
+
+IMPORTANT: Your working directory is already set to the fitness-data repo. Use relative paths like \`profile.md\` or \`weeks/2024-W05/plan.md\`, not absolute paths.
+`
+      : "";
 
   const contextNote = `
 ## Current Date & Time
@@ -91,7 +116,7 @@ export function buildSystemPrompt(timezone: string): string {
 - **Current week**: ${dateInfo.isoWeek}
 
 Use these values when creating file paths and branch names.
-
+${envInfo}
 ## File Access
 
 You have direct access to the fitness-data repository files:
