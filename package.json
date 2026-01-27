@@ -8,6 +8,8 @@
     "start": "node dist/src/server.js",
     "dev": "tsx watch src/server.ts",
     "setup": "tsx scripts/setup.ts",
+    "setup:integration": "tsx scripts/setup-integration.ts",
+    "setup:whoop": "tsx scripts/setup-integration.ts whoop",
     "onboard": "tsx scripts/onboard.ts",
     "set-webhook": "tsx scripts/set-webhook.ts",
     "typecheck": "tsc --noEmit",

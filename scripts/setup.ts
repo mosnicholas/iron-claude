@@ -8,7 +8,7 @@
  * Usage: npm run setup
  */
 
-import { confirm } from "@inquirer/prompts";
+import { confirm, checkbox } from "@inquirer/prompts";
 import { ui } from "./lib/ui.js";
 import { collectCredentials } from "./lib/credentials.js";
 import { createGitHubRepo, verifyGitHubToken } from "./lib/github.js";
@@ -16,6 +16,8 @@ import { runOnboardingConversation } from "./lib/onboarding.js";
 import { flyTomlExists, collectFlyConfig, generateFlyToml } from "./lib/flyconfig.js";
 import { deployToFly, checkFlyCli, skipDeployment } from "./lib/deploy.js";
 import { setWebhook } from "./lib/webhook.js";
+import { setupWhoop, isWhoopConfigured } from "../src/integrations/whoop/setup.js";
+import { INTEGRATION_METADATA } from "../src/integrations/registry.js";
 
 async function main() {
   ui.header("IronClaude Setup");
@@ -24,6 +26,7 @@ async function main() {
   console.log("  • Collect your API credentials");
   console.log("  • Create a private GitHub repo for your data");
   console.log("  • Set up your fitness profile (AI conversation)");
+  console.log("  • Connect fitness devices (Whoop, etc.) - optional");
   console.log("  • Configure Fly.io deployment");
   console.log("  • Deploy and connect your Telegram bot");
   ui.blank();
@@ -37,7 +40,7 @@ async function main() {
     // ──────────────────────────────────────────────────────────────────────
     // Step 2: Create GitHub repo
     // ──────────────────────────────────────────────────────────────────────
-    ui.step(2, 5, "GitHub");
+    ui.step(2, 7, "GitHub");
 
     const repoSpinner = ui.spinner("Creating fitness-data repository...");
     let repoName: string;
@@ -68,9 +71,76 @@ async function main() {
     await runOnboardingConversation();
 
     // ──────────────────────────────────────────────────────────────────────
-    // Step 4: Configure Fly.io
+    // Step 4: Device Integrations (optional)
     // ──────────────────────────────────────────────────────────────────────
-    ui.step(4, 6, "Fly.io Config");
+    ui.step(4, 7, "Device Integrations");
+
+    const availableIntegrations = INTEGRATION_METADATA.filter((m) => m.available);
+
+    // Show current status
+    ui.info("Connect your fitness devices for automatic sleep/recovery tracking.");
+    ui.blank();
+
+    // Check what's already configured
+    const configuredDevices: string[] = [];
+    if (isWhoopConfigured()) {
+      configuredDevices.push("Whoop");
+    }
+
+    if (configuredDevices.length > 0) {
+      ui.success(`Already configured: ${configuredDevices.join(", ")}`);
+    }
+
+    const wantIntegrations = await confirm({
+      message:
+        configuredDevices.length > 0
+          ? "Set up additional device integrations?"
+          : "Do you have any fitness devices to connect? (Whoop, etc.)",
+      default: false,
+    });
+
+    if (wantIntegrations) {
+      const deviceChoices = availableIntegrations.map((meta) => {
+        const configured = meta.slug === "whoop" && isWhoopConfigured();
+        return {
+          value: meta.slug,
+          name: `${meta.name}${configured ? " (reconfigure)" : ""} - ${meta.description}`,
+          checked: false,
+        };
+      });
+
+      // Add coming soon items as disabled
+      const comingSoon = INTEGRATION_METADATA.filter((m) => !m.available);
+      for (const meta of comingSoon) {
+        deviceChoices.push({
+          value: meta.slug,
+          name: `${meta.name} - ${meta.description}`,
+          // @ts-expect-error - checkbox supports disabled string
+          disabled: "Coming soon",
+          checked: false,
+        });
+      }
+
+      const selectedDevices = await checkbox({
+        message: "Select devices to set up:",
+        choices: deviceChoices,
+      });
+
+      for (const device of selectedDevices) {
+        if (device === "whoop") {
+          await setupWhoop();
+        }
+        // Future: Add other device setups here
+      }
+    } else {
+      ui.info("Skipping device integrations. You can set them up later with:");
+      ui.info("  npm run setup:integration");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Step 5: Configure Fly.io
+    // ──────────────────────────────────────────────────────────────────────
+    ui.step(5, 7, "Fly.io Config");
 
     if (!flyTomlExists()) {
       const flyConfig = await collectFlyConfig();
@@ -98,16 +168,16 @@ async function main() {
         skipDeployment(credentials, repoName);
       }
     } else {
-      ui.step(5, 6, "Deploy");
+      ui.step(6, 7, "Deploy");
       ui.warn("Fly CLI not found. Install with: curl -L https://fly.io/install.sh | sh");
       skipDeployment(credentials, repoName);
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // Step 6: Set webhook
+    // Step 7: Set webhook
     // ──────────────────────────────────────────────────────────────────────
     if (deployUrl) {
-      ui.step(6, 6, "Connect Bot");
+      ui.step(7, 7, "Connect Bot");
 
       const webhookSpinner = ui.spinner("Setting Telegram webhook...");
       try {
@@ -119,7 +189,7 @@ async function main() {
         throw error;
       }
     } else {
-      ui.step(6, 6, "Connect Bot");
+      ui.step(7, 7, "Connect Bot");
       ui.info("Skipped - deploy first, then run:");
       ui.info("  npm run set-webhook <your-deploy-url>/api/webhook");
     }

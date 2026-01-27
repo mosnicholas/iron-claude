@@ -7,6 +7,7 @@
 import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { getConfiguredIntegrations, hasConfiguredIntegrations } from "../integrations/registry.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROMPTS_DIR = join(__dirname, "../../prompts");
@@ -80,6 +81,70 @@ export interface SystemPromptContext {
   gitBinaryPath?: string;
 }
 
+/**
+ * Build context about connected device integrations.
+ */
+function buildIntegrationContext(): string {
+  if (!hasConfiguredIntegrations()) {
+    return "";
+  }
+
+  const integrations = getConfiguredIntegrations();
+  const integrationNames = integrations.map((i) => i.name).join(", ");
+
+  return `
+## Device Integrations
+
+You have access to data from connected fitness devices: **${integrationNames}**
+
+Integration data is stored in the \`integrations/\` folder:
+- \`integrations/{device}/sleep/{YYYY-MM-DD}.json\` - Sleep data (duration, stages, score)
+- \`integrations/{device}/recovery/{YYYY-MM-DD}.json\` - Recovery data (score, HRV, RHR)
+- \`integrations/{device}/workouts/{YYYY-MM-DD}-{type}.json\` - Device-recorded workouts
+
+### Using Recovery Data
+
+Recovery scores indicate readiness for training:
+- **80-100%**: High recovery - good day for intense training or attempting PRs
+- **60-79%**: Moderate recovery - standard training intensity recommended
+- **40-59%**: Low recovery - consider lighter intensity or active recovery
+- **0-39%**: Very low recovery - prioritize rest and recovery
+
+### When to Reference Integration Data
+
+1. **Daily reminders**: Check today's recovery score and mention it if available
+2. **Weekly planning**: Consider the week's recovery trends when setting intensity
+3. **Retrospectives**: Include HRV and recovery trends in analysis
+4. **Workout feedback**: Compare device-recorded strain/HR with planned intensity
+
+### Data Format Examples
+
+**Recovery JSON**:
+\`\`\`json
+{
+  "source": "whoop",
+  "date": "2026-01-27",
+  "score": 78,
+  "hrv": 45.2,
+  "restingHeartRate": 52
+}
+\`\`\`
+
+**Sleep JSON**:
+\`\`\`json
+{
+  "source": "whoop",
+  "date": "2026-01-27",
+  "durationMinutes": 420,
+  "score": 85,
+  "stages": { "rem": 90, "deep": 85, "light": 200, "awake": 45 }
+}
+\`\`\`
+
+Use Glob with pattern \`integrations/*/recovery/*.json\` to find available recovery data.
+`;
+}
+
 export function buildSystemPrompt(context: SystemPromptContext | string): string {
   // Support legacy string-only call for backwards compatibility
   const { timezone, repoPath, gitBinaryPath } =
@@ -108,6 +173,9 @@ IMPORTANT: Your working directory is already set to the fitness-data repo. Use r
 `
       : "";
 
+  // Build integration context (if any devices are connected)
+  const integrationContext = buildIntegrationContext();
+
   const contextNote = `
 ## Current Date & Time
 
@@ -130,7 +198,7 @@ You have direct access to the fitness-data repository files:
 
 Use Read, Glob, and Grep to explore files. Use Edit/Write to update them.
 Current timezone: ${timezone}
-
+${integrationContext}
 ## Reference Guides
 
 <exercise-parsing>
