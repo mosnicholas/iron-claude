@@ -2,7 +2,8 @@
  * Repository Sync
  *
  * Manages local cloning and syncing of the fitness-data repository.
- * Clones to /tmp on each deploy; subsequent syncs reset to origin/main.
+ * Clones to /tmp on each deploy. For existing repos, attempts a non-destructive
+ * sync but preserves local work - the agent can handle conflicts via Bash.
  */
 
 import { spawnSync } from "child_process";
@@ -26,6 +27,15 @@ export function getLocalRepoPath(): string {
   return cachedDataDir;
 }
 
+interface GitResult {
+  success: boolean;
+  stdout: string;
+  stderr: string;
+}
+
+/**
+ * Run git command, throwing on failure
+ */
 function git(args: string[], cwd?: string): string {
   const result = spawnSync("git", args, {
     cwd,
@@ -44,6 +54,27 @@ function git(args: string[], cwd?: string): string {
   return result.stdout || "";
 }
 
+/**
+ * Run git command without throwing - returns result for caller to handle
+ */
+function gitSafe(args: string[], cwd?: string): GitResult {
+  const result = spawnSync("git", args, {
+    cwd,
+    stdio: "pipe",
+    encoding: "utf-8",
+  });
+
+  if (result.error) {
+    return { success: false, stdout: "", stderr: result.error.message };
+  }
+
+  return {
+    success: result.status === 0,
+    stdout: result.stdout || "",
+    stderr: result.stderr || "",
+  };
+}
+
 export async function syncRepo(config: RepoConfig): Promise<string> {
   const { repoUrl, token } = config;
   const authUrl = repoUrl.replace("https://", `https://${token}@`);
@@ -51,23 +82,34 @@ export async function syncRepo(config: RepoConfig): Promise<string> {
   cachedDataDir = REPO_DIR;
 
   if (existsSync(join(REPO_DIR, ".git"))) {
-    // Repo exists - check if we need to update
+    // Repo exists - update credentials and try non-destructive sync
     git(["remote", "set-url", "origin", authUrl], REPO_DIR);
 
-    // Discard any local uncommitted changes before switching branches
-    git(["reset", "--hard", "HEAD"], REPO_DIR);
-    git(["clean", "-fd"], REPO_DIR);
+    // Fetch latest from remote (non-destructive)
+    const fetchResult = gitSafe(["fetch", "origin"], REPO_DIR);
+    if (!fetchResult.success) {
+      console.warn("[repo-sync] fetch failed, continuing anyway:", fetchResult.stderr);
+    }
 
-    // Ensure we're on main branch before syncing
-    // (local repo may be on a workout branch from a previous session)
-    git(["checkout", "main"], REPO_DIR);
+    // Try fast-forward merge if we're on main with a clean working tree
+    // If this fails, the agent can handle it - it has Bash access to git
+    const branchResult = gitSafe(["rev-parse", "--abbrev-ref", "HEAD"], REPO_DIR);
+    const currentBranch = branchResult.stdout.trim();
 
-    // Fetch latest from remote
-    git(["fetch", "origin", "main"], REPO_DIR);
-
-    // Reset to match remote - this handles diverged branches
-    // The remote (GitHub) is the source of truth for fitness-data
-    git(["reset", "--hard", "origin/main"], REPO_DIR);
+    if (currentBranch === "main") {
+      const mergeResult = gitSafe(["merge", "--ff-only", "origin/main"], REPO_DIR);
+      if (!mergeResult.success) {
+        // Not a fatal error - agent can observe and handle via git commands
+        console.warn(
+          "[repo-sync] fast-forward merge failed (agent can resolve):",
+          mergeResult.stderr.trim()
+        );
+      }
+    } else {
+      console.log(
+        `[repo-sync] on branch '${currentBranch}', skipping auto-merge (agent can sync if needed)`
+      );
+    }
   } else {
     // Fresh clone
     mkdirSync(REPO_DIR, { recursive: true });
@@ -75,7 +117,7 @@ export async function syncRepo(config: RepoConfig): Promise<string> {
   }
 
   // Fetch all remote branches so agent can see existing workout branches
-  git(["fetch", "--all"], REPO_DIR);
+  gitSafe(["fetch", "--all"], REPO_DIR);
 
   // Configure git identity (customizable via env vars)
   const gitEmail = process.env.GIT_COMMIT_EMAIL || "coach@fitness-bot.local";

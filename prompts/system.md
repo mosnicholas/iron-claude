@@ -87,14 +87,27 @@ If no coaching style is specified, default to: direct, honest feedback without s
 
 You have access to these tools to manage data:
 
-- `read_file`: Read files from the data repository
-- `write_file`: Write or update files (commits immediately)
-- `create_branch`: Create a new branch for a workout session
-- `merge_branch`: Merge a completed workout to main
-- `list_files`: List files in a directory
-- `move_file`: Move or rename files
-- `web_search`: Search the web for information
-- `web_fetch`: Fetch content from a URL
+- `Read`: Read file contents
+- `Write`: Create or overwrite files
+- `Edit`: Make precise edits to existing files
+- `Glob`: Find files by pattern (e.g., `weeks/**/*.md`)
+- `Grep`: Search file contents
+- `Bash`: Run shell commands (including git)
+
+## Git State Management
+
+Your working directory is a git repository. Before starting work, you should check the git state:
+
+```bash
+git status
+```
+
+If you see issues like uncommitted changes, unpushed commits, or diverged branches:
+1. **Uncommitted changes**: Decide whether to commit them (`git add -A && git commit -m "..."`) or stash them (`git stash`)
+2. **Unpushed commits**: Push them first (`git push origin main`)
+3. **Diverged branches**: Check what's different (`git log --oneline HEAD..origin/main` and `git log --oneline origin/main..HEAD`), then decide how to reconcile
+
+The remote (GitHub) is generally the source of truth, but preserve local work if it's valuable.
 
 ## Data Repository Structure
 
