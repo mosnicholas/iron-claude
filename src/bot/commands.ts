@@ -11,12 +11,11 @@ import { getCurrentWeek, getDateInfoTZAware, formatISOWeek } from "../utils/date
 
 /**
  * Finalize a workout by merging the branch to main and cleaning up.
- * This should be called after the agent has finished processing a /done command
- * or when natural language indicates the workout is complete.
+ * This is called after the /done command to always finalize.
  *
  * Returns true if a workout was finalized, false if no in-progress workout was found.
  */
-export async function finalizeWorkout(): Promise<boolean> {
+async function finalizeWorkout(): Promise<boolean> {
   const storage = createGitHubStorage();
 
   // Find the in-progress workout branch
@@ -51,6 +50,36 @@ export async function finalizeWorkout(): Promise<boolean> {
     console.error(`[finalizeWorkout] Error completing workout:`, error);
     return false;
   }
+}
+
+/**
+ * Check if the agent has marked the workout as complete, and if so, finalize it.
+ * This is called after natural language messages to detect when the agent
+ * has processed a workout completion signal.
+ *
+ * The agent sets "status: completed" in the workout file frontmatter when done.
+ */
+export async function finalizeWorkoutIfComplete(): Promise<boolean> {
+  const storage = createGitHubStorage();
+
+  // Find the in-progress workout branch
+  const branch = await storage.findInProgressWorkout();
+
+  if (!branch) {
+    // No workout in progress, nothing to finalize
+    return false;
+  }
+
+  // Check if the agent has marked this workout as complete
+  const isComplete = await storage.isWorkoutMarkedComplete(branch);
+
+  if (!isComplete) {
+    // Workout still in progress, don't finalize yet
+    return false;
+  }
+
+  console.log(`[finalizeWorkoutIfComplete] Workout marked complete, finalizing...`);
+  return finalizeWorkout();
 }
 
 /**

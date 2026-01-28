@@ -320,6 +320,35 @@ export class GitHubStorage {
   }
 
   /**
+   * Check if a workout on a branch is marked as completed.
+   * Reads the in-progress.md file and checks for "status: completed" in frontmatter.
+   */
+  async isWorkoutMarkedComplete(branch: string): Promise<boolean> {
+    const parts = branch.split("/")[1]?.split("-");
+    if (!parts || parts.length < 3) {
+      return false;
+    }
+
+    const dateStr = `${parts[0]}-${parts[1]}-${parts[2]}`;
+    const week = this.getWeekFromDate(dateStr);
+    const content = await this.readFile(`weeks/${week}/in-progress.md`, branch);
+
+    if (!content) {
+      return false;
+    }
+
+    // Check for status: completed in frontmatter
+    // Frontmatter is between --- markers at the start of the file
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!frontmatterMatch) {
+      return false;
+    }
+
+    const frontmatter = frontmatterMatch[1];
+    return /status:\s*completed/i.test(frontmatter);
+  }
+
+  /**
    * Complete a workout - finalize and merge
    */
   async completeWorkout(branch: string, finalDate: string, week: string): Promise<void> {

@@ -57,31 +57,36 @@ When user sends non-exercise text during a workout:
 - **Skip requests** ("skip triceps today")
   → Note in workout, suggest alternative if appropriate
 
-- **End signals** ("done", "that's it", "/done")
-  → Trigger workout completion
+- **End signals** — Trigger workout completion (see below)
+  Examples: "done", "I'm done", "that's it", "finished", "that's all",
+  "workout complete", "wrapping up", "calling it a day", "/done"
 
-## Completing a Workout (/done)
+## Completing a Workout
 
-1. **Ask for energy level** (1-10) if not mentioned
+**IMPORTANT**: Workout completion can be triggered by `/done` command OR by natural language
+indicating the workout is finished. Both should follow the same completion workflow.
+
+When the user indicates they're done (via command or natural language):
+
+1. **Ask for energy level** (1-10) if not mentioned during the session
 2. **Calculate summary**:
    - Exercises completed vs planned
    - Skipped exercises
    - Added exercises
    - Total duration
 3. **Detect PRs** across all logged exercises
-4. **Update the workout file**:
+4. **Update the workout file** with all completion data:
    - Add `finished`, `duration_minutes`, `energy_level` to frontmatter
-   - Add `prs_hit` array
-   - Add `## Summary` section
-   - Change `status: completed`
+   - Add `prs_hit` array if any PRs
+   - Add `## Summary` section with observations
+   - **CRITICAL**: Change `status: completed` in the frontmatter
 5. **Commit**: "Complete workout"
-6. **Rename file**: `in-progress.md` → `YYYY-MM-DD.md`
-7. **Commit**: "Finalize workout file"
-8. **Update PRs** if any new records
-   - Commit to main: "Update PRs: {achievement}"
-9. **Merge branch to main**
-10. **Delete branch**
-11. **Send summary to user**
+6. **Update PRs** if any new records
+7. **Send summary to user**
+
+**Note**: The system will automatically handle merging the branch to main and
+cleaning up once you set `status: completed` in the frontmatter. You don't need
+to manually merge or rename files - just make sure to update the status.
 
 ## Workout File Structure
 

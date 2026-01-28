@@ -14,29 +14,7 @@ import {
   parseCommand,
   ThrottledMessageEditor,
 } from "../bot/telegram.js";
-import { executeCommand, commandExists, finalizeWorkout } from "../bot/commands.js";
-
-/**
- * Patterns that indicate the user is done with their workout.
- * These are checked after the agent responds to natural language messages.
- */
-const WORKOUT_DONE_PATTERNS = [
-  /\b(i'?m|i am)\s+done\b/i,
-  /\bthat'?s?\s+(it|all)\b/i,
-  /\bfinished\b/i,
-  /\bdone\s+(with\s+)?(my\s+)?(workout|training|session|lifting)\b/i,
-  /\bworkout\s+(complete|finished|done|over)\b/i,
-  /\bend\s+(my\s+)?workout\b/i,
-  /\bwrap(ping)?\s+(it\s+)?up\b/i,
-  /\bcalling\s+it\s+(a\s+day|quits)\b/i,
-];
-
-/**
- * Check if a message indicates the workout is complete
- */
-function isWorkoutDoneSignal(message: string): boolean {
-  return WORKOUT_DONE_PATTERNS.some((pattern) => pattern.test(message));
-}
+import { executeCommand, commandExists, finalizeWorkoutIfComplete } from "../bot/commands.js";
 import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js";
 import { createGitHubStorage } from "../storage/github.js";
 import { generatePlanWithContext } from "../cron/weekly-plan.js";
@@ -157,12 +135,6 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Check if this message indicates the workout is done
-    const isDoneSignal = isWorkoutDoneSignal(messageText);
-    if (isDoneSignal) {
-      console.log("[webhook] Detected workout done signal in message");
-    }
-
     // Handle natural language - send to coach agent with status updates
     const messageId = await bot.sendMessage("✨ _Thinking..._", "MarkdownV2");
 
@@ -183,14 +155,8 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
       await bot.sendMessageSafe(response.message);
     }
 
-    // If the user indicated they're done, finalize the workout (merge branch, cleanup)
-    if (isDoneSignal) {
-      console.log("[webhook] Finalizing workout after done signal");
-      const finalized = await finalizeWorkout();
-      if (finalized) {
-        console.log("[webhook] Workout finalized and merged to main");
-      }
-    }
+    // Check if agent marked workout as complete and finalize if so
+    await finalizeWorkoutIfComplete();
 
     res.status(200).json({ ok: true });
   } catch (error) {
