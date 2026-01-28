@@ -323,16 +323,32 @@ export class GitHubStorage {
    * Complete a workout - finalize and merge
    */
   async completeWorkout(branch: string, finalDate: string, week: string): Promise<void> {
-    // Rename in-progress.md to the final date
-    await this.moveFile(
-      `weeks/${week}/in-progress.md`,
-      `weeks/${week}/${finalDate}.md`,
-      "Finalize workout file",
-      branch
-    );
+    const inProgressPath = `weeks/${week}/in-progress.md`;
+    const finalPath = `weeks/${week}/${finalDate}.md`;
 
-    // Merge to main
+    // Check if in-progress.md exists on the branch
+    const inProgressExists = await this.fileExists(inProgressPath, branch);
+
+    if (inProgressExists) {
+      // Rename in-progress.md to the final date
+      console.log(`[completeWorkout] Renaming ${inProgressPath} to ${finalPath}`);
+      await this.moveFile(inProgressPath, finalPath, "Finalize workout file", branch);
+    } else {
+      // File might already be renamed, or workout was saved differently
+      const finalExists = await this.fileExists(finalPath, branch);
+      if (finalExists) {
+        console.log(`[completeWorkout] Final file already exists at ${finalPath}, skipping rename`);
+      } else {
+        console.log(
+          `[completeWorkout] Warning: Neither ${inProgressPath} nor ${finalPath} found on branch ${branch}`
+        );
+      }
+    }
+
+    // Merge to main and delete the branch
+    console.log(`[completeWorkout] Merging ${branch} to main`);
     await this.mergeBranch(branch, true);
+    console.log(`[completeWorkout] Successfully completed workout`);
   }
 
   // ============================================================================
