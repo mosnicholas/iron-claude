@@ -69,8 +69,13 @@ export async function syncRepo(config: RepoConfig): Promise<string> {
     // Repo exists - check if we need to update
     git(["remote", "set-url", "origin", authUrl], REPO_DIR);
 
+    // Ensure we're on main branch before pulling
+    // (local repo may be on a workout branch from a previous session)
+    git(["checkout", "main"], REPO_DIR);
+
     if (needsUpdate(REPO_DIR)) {
-      git(["pull", "--ff-only"], REPO_DIR);
+      // Explicitly pull from origin main to avoid tracking issues
+      git(["pull", "origin", "main", "--ff-only"], REPO_DIR);
     }
   } else {
     // Fresh clone
