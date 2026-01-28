@@ -42,6 +42,7 @@ export const COMMANDS: Record<string, CommandHandler> = {
   me: handleMe,
   summary: handleSummary,
   funfacts: handleFunFacts,
+  restart: handleRestart,
 };
 
 /**
@@ -282,6 +283,21 @@ async function handleFunFacts(
     callbacks
   );
   return response.message;
+}
+
+/**
+ * /restart - Restart the server
+ */
+async function handleRestart(_agent: CoachAgent, bot: TelegramBot, _args: string): Promise<string> {
+  await bot.sendPlainMessage("Restarting server... Be back in a moment!");
+
+  // Small delay to ensure the message is sent before exit
+  setTimeout(() => {
+    console.log("[Commands] Server restart requested via /restart command");
+    process.exit(0);
+  }, 500);
+
+  return "";
 }
 
 /**
