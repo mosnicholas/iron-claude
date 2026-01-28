@@ -2,7 +2,7 @@
  * Repository Sync
  *
  * Manages local cloning and syncing of the fitness-data repository.
- * Clones to /tmp on each deploy; subsequent syncs use git pull.
+ * Clones to /tmp on each deploy; subsequent syncs reset to origin/main.
  */
 
 import { spawnSync } from "child_process";
@@ -44,21 +44,6 @@ function git(args: string[], cwd?: string): string {
   return result.stdout || "";
 }
 
-function getLocalHead(dir: string): string {
-  return git(["rev-parse", "HEAD"], dir).trim();
-}
-
-function getRemoteHead(dir: string): string {
-  git(["fetch", "origin"], dir);
-  return git(["rev-parse", "origin/main"], dir).trim();
-}
-
-function needsUpdate(dir: string): boolean {
-  const local = getLocalHead(dir);
-  const remote = getRemoteHead(dir);
-  return local !== remote;
-}
-
 export async function syncRepo(config: RepoConfig): Promise<string> {
   const { repoUrl, token } = config;
   const authUrl = repoUrl.replace("https://", `https://${token}@`);
@@ -69,14 +54,20 @@ export async function syncRepo(config: RepoConfig): Promise<string> {
     // Repo exists - check if we need to update
     git(["remote", "set-url", "origin", authUrl], REPO_DIR);
 
-    // Ensure we're on main branch before pulling
+    // Discard any local uncommitted changes before switching branches
+    git(["reset", "--hard", "HEAD"], REPO_DIR);
+    git(["clean", "-fd"], REPO_DIR);
+
+    // Ensure we're on main branch before syncing
     // (local repo may be on a workout branch from a previous session)
     git(["checkout", "main"], REPO_DIR);
 
-    if (needsUpdate(REPO_DIR)) {
-      // Explicitly pull from origin main to avoid tracking issues
-      git(["pull", "origin", "main", "--ff-only"], REPO_DIR);
-    }
+    // Fetch latest from remote
+    git(["fetch", "origin", "main"], REPO_DIR);
+
+    // Reset to match remote - this handles diverged branches
+    // The remote (GitHub) is the source of truth for fitness-data
+    git(["reset", "--hard", "origin/main"], REPO_DIR);
   } else {
     // Fresh clone
     mkdirSync(REPO_DIR, { recursive: true });
