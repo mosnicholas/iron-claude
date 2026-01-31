@@ -149,3 +149,53 @@ export function getDateInfoTZAware(): DateInfo {
     timezone,
   };
 }
+
+/**
+ * Information about a single day in a week
+ */
+export interface WeekDayInfo {
+  dayName: string; // e.g., "Monday"
+  date: string; // YYYY-MM-DD
+  dateHuman: string; // e.g., "Jan 27"
+}
+
+/**
+ * Get all days of a specific ISO week with their names and dates.
+ * Returns Monday through Sunday.
+ */
+export function getWeekDays(weekString: string): WeekDayInfo[] {
+  const { start } = parseISOWeek(weekString);
+  const days: WeekDayInfo[] = [];
+  const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(start);
+    date.setUTCDate(start.getUTCDate() + i);
+
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(date.getUTCDate()).padStart(2, "0");
+
+    days.push({
+      dayName: dayNames[i],
+      date: `${year}-${month}-${day}`,
+      dateHuman: `${months[date.getUTCMonth()]} ${date.getUTCDate()}`,
+    });
+  }
+
+  return days;
+}

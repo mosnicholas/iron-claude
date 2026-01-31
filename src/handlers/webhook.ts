@@ -14,10 +14,11 @@ import {
   parseCommand,
   ThrottledMessageEditor,
 } from "../bot/telegram.js";
-import { executeCommand, commandExists, finalizeWorkoutIfComplete } from "../bot/commands.js";
+import { executeCommand, commandExists } from "../bot/commands.js";
 import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js";
 import { createGitHubStorage } from "../storage/github.js";
 import { generatePlanWithContext } from "../cron/weekly-plan.js";
+import { addMessage } from "../bot/message-history.js";
 import type { TelegramUpdate } from "../storage/types.js";
 
 export async function webhookHandler(req: Request, res: Response): Promise<void> {
@@ -103,6 +104,9 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
       return;
     }
 
+    // Record user message in history
+    addMessage(messageText, true);
+
     // Handle commands
     if (isCommand(messageText)) {
       const { command, args } = parseCommand(messageText);
@@ -112,9 +116,13 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
         // Only send if response is non-empty (status messages handle their own output)
         if (response) {
           await bot.sendMessageSafe(response);
+          // Record bot response in history
+          addMessage(response, false);
         }
       } else {
-        await bot.sendMessage(`Unknown command /${command}. Try /help to see available commands.`);
+        const unknownCmdResponse = `Unknown command /${command}. Try /help to see available commands.`;
+        await bot.sendMessage(unknownCmdResponse);
+        addMessage(unknownCmdResponse, false);
       }
 
       res.status(200).json({ ok: true });
@@ -149,14 +157,15 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
       });
 
       await editor.finalize(response.message);
+      // Record bot response in history
+      addMessage(response.message, false);
     } else {
       // Fallback if we couldn't get a message ID
       const response = await agent.chat(messageText);
       await bot.sendMessageSafe(response.message);
+      // Record bot response in history
+      addMessage(response.message, false);
     }
-
-    // Check if agent marked workout as complete and finalize if so
-    await finalizeWorkoutIfComplete();
 
     res.status(200).json({ ok: true });
   } catch (error) {

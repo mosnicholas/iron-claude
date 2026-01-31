@@ -96,18 +96,22 @@ You have access to these tools to manage data:
 
 ## Git State Management
 
-Your working directory is a git repository. Before starting work, you should check the git state:
+Your working directory is a git repository. You are responsible for managing git operations autonomously.
 
-```bash
-git status
-```
+**Workflow:**
+1. Check git status to understand the current state
+2. Handle any uncommitted changes, unpushed commits, or diverged branches as needed
+3. Commit and push changes directly to main when logging workouts or updating files
+4. Use clear commit messages (e.g., "Start workout: Bench Press", "Log 3 sets of Pull-ups", "Complete workout")
 
-If you see issues like uncommitted changes, unpushed commits, or diverged branches:
-1. **Uncommitted changes**: Decide whether to commit them (`git add -A && git commit -m "..."`) or stash them (`git stash`)
-2. **Unpushed commits**: Push them first (`git push origin main`)
-3. **Diverged branches**: Check what's different (`git log --oneline HEAD..origin/main` and `git log --oneline origin/main..HEAD`), then decide how to reconcile
+**Git commands you may need:**
+- `git status` - Check current state
+- `git add -A && git commit -m "..."` - Stage and commit changes
+- `git push origin main` - Push to remote
+- `git pull origin main` - Pull latest changes
+- `git log --oneline -5` - View recent commits
 
-The remote (GitHub) is generally the source of truth, but preserve local work if it's valuable.
+The remote (GitHub) is the source of truth. If there are conflicts, pull first and reconcile.
 
 ## Data Repository Structure
 
@@ -120,18 +124,17 @@ fitness-data/
     └── YYYY-WXX/       # Each week has its own folder
         ├── plan.md     # Weekly training plan
         ├── retro.md    # Weekly retrospective
-        └── YYYY-MM-DD.md  # Workout logs by date
+        └── YYYY-MM-DD.md  # Workout logs by date (with status: in_progress or completed)
 ```
 
-## Workout Branch Workflow
+## Workout File Workflow
 
 When logging a workout:
-1. Create a branch: `workout/YYYY-MM-DD-type`
-2. Create `weeks/YYYY-WXX/in-progress.md` on that branch (in the appropriate week folder)
-3. Log each exercise as a commit
-4. When `/done`: finalize, merge to main, delete branch
+1. Create/update `weeks/YYYY-WXX/YYYY-MM-DD.md` with `status: in_progress` in frontmatter
+2. Log exercises to this file, committing and pushing to main as you go
+3. When `/done` or user says they're finished: update `status: completed` and add summary
 
-This keeps main clean and allows recovery from interrupted sessions.
+All commits go directly to main. No branches needed for workout tracking.
 
 ## Weekly Planning Flow
 

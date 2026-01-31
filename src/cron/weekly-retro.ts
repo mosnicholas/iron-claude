@@ -19,11 +19,15 @@ export interface WeeklyRetroResult {
 }
 
 /**
- * Run the weekly retrospective job
+ * Run the weekly retrospective job.
+ *
+ * Note: The retrospective is now primarily generated as part of the weekly
+ * planning flow (when generating next week's plan). This cron job serves as
+ * a fallback in case the retro wasn't generated during planning.
  */
 export async function runWeeklyRetro(): Promise<WeeklyRetroResult> {
   const timezone = process.env.TIMEZONE || "America/New_York";
-  console.log("[weekly-retro] Starting weekly retrospective job");
+  console.log("[weekly-retro] Starting weekly retrospective job (fallback)");
 
   try {
     console.log("[weekly-retro] Initializing bot, agent, and storage");
@@ -45,6 +49,19 @@ export async function runWeeklyRetro(): Promise<WeeklyRetroResult> {
 
     // Get the current week (we're generating retro for)
     const currentWeek = getCurrentWeek(timezone);
+    console.log(`[weekly-retro] Checking retro for week: ${currentWeek}`);
+
+    // Check if retro already exists (may have been generated during planning)
+    const existingRetro = await storage.readWeeklyRetro(currentWeek);
+    if (existingRetro) {
+      console.log(`[weekly-retro] Retro already exists for ${currentWeek}, skipping`);
+      return {
+        success: true,
+        week: currentWeek,
+        message: `Retro already exists for ${currentWeek} (generated during planning)`,
+      };
+    }
+
     console.log(`[weekly-retro] Generating retro for week: ${currentWeek}`);
 
     // Check if we have workout data this week
