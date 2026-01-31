@@ -14,7 +14,7 @@ import {
   parseCommand,
   ThrottledMessageEditor,
 } from "../bot/telegram.js";
-import { executeCommand, commandExists } from "../bot/commands.js";
+import { executeCommand, commandExists, finalizeWorkoutIfComplete } from "../bot/commands.js";
 import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js";
 import { createGitHubStorage } from "../storage/github.js";
 import { generatePlanWithContext } from "../cron/weekly-plan.js";
@@ -154,6 +154,9 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
       const response = await agent.chat(messageText);
       await bot.sendMessageSafe(response.message);
     }
+
+    // Check if agent marked workout as complete and finalize if so
+    await finalizeWorkoutIfComplete();
 
     res.status(200).json({ ok: true });
   } catch (error) {

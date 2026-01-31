@@ -7,7 +7,80 @@
 import { CoachAgent, StreamingCallbacks } from "../coach/index.js";
 import { TelegramBot, ThrottledMessageEditor } from "./telegram.js";
 import { createGitHubStorage } from "../storage/github.js";
-import { getCurrentWeek, getDateInfoTZAware } from "../utils/date.js";
+import { getCurrentWeek, getDateInfoTZAware, formatISOWeek } from "../utils/date.js";
+
+/**
+ * Finalize a workout by merging the branch to main and cleaning up.
+ * This is called after the /done command to always finalize.
+ *
+ * Returns true if a workout was finalized, false if no in-progress workout was found.
+ */
+async function finalizeWorkout(): Promise<boolean> {
+  const storage = createGitHubStorage();
+
+  // Find the in-progress workout branch
+  const branch = await storage.findInProgressWorkout();
+
+  if (!branch) {
+    console.log("[finalizeWorkout] No in-progress workout found");
+    return false;
+  }
+
+  console.log(`[finalizeWorkout] Found workout branch: ${branch}`);
+
+  // Extract date from branch name: workout/YYYY-MM-DD-type -> YYYY-MM-DD
+  const branchParts = branch.split("/")[1]?.split("-");
+  if (!branchParts || branchParts.length < 3) {
+    console.error(`[finalizeWorkout] Invalid branch name format: ${branch}`);
+    return false;
+  }
+
+  const dateStr = `${branchParts[0]}-${branchParts[1]}-${branchParts[2]}`;
+  // Create a Date from the dateStr (add T12:00:00 to avoid timezone issues)
+  const workoutDate = new Date(dateStr + "T12:00:00");
+  const week = formatISOWeek(workoutDate);
+
+  console.log(`[finalizeWorkout] Completing workout: date=${dateStr}, week=${week}`);
+
+  try {
+    await storage.completeWorkout(branch, dateStr, week);
+    console.log(`[finalizeWorkout] Successfully merged ${branch} to main and cleaned up`);
+    return true;
+  } catch (error) {
+    console.error(`[finalizeWorkout] Error completing workout:`, error);
+    return false;
+  }
+}
+
+/**
+ * Check if the agent has marked the workout as complete, and if so, finalize it.
+ * This is called after natural language messages to detect when the agent
+ * has processed a workout completion signal.
+ *
+ * The agent sets "status: completed" in the workout file frontmatter when done.
+ */
+export async function finalizeWorkoutIfComplete(): Promise<boolean> {
+  const storage = createGitHubStorage();
+
+  // Find the in-progress workout branch
+  const branch = await storage.findInProgressWorkout();
+
+  if (!branch) {
+    // No workout in progress, nothing to finalize
+    return false;
+  }
+
+  // Check if the agent has marked this workout as complete
+  const isComplete = await storage.isWorkoutMarkedComplete(branch);
+
+  if (!isComplete) {
+    // Workout still in progress, don't finalize yet
+    return false;
+  }
+
+  console.log(`[finalizeWorkoutIfComplete] Workout marked complete, finalizing...`);
+  return finalizeWorkout();
+}
 
 /**
  * Split message on --- markers for multi-message responses
@@ -177,9 +250,16 @@ async function handleDone(
       "2. Summarize what I did\n" +
       "3. Note any PRs\n" +
       "4. Ask for my energy level if I haven't mentioned it\n" +
-      "5. Finalize the workout file and merge the branch",
+      "5. Update the workout file with the summary and mark it complete",
     callbacks
   );
+
+  // After the agent has processed the done command, finalize by merging to main
+  const finalized = await finalizeWorkout();
+  if (finalized) {
+    console.log("[handleDone] Workout finalized and merged to main");
+  }
+
   return response.message;
 }
 
