@@ -8,6 +8,7 @@ import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { getDateInfoTZAware } from "../utils/date.js";
+import { formatRecentMessagesForPrompt } from "../bot/message-history.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROMPTS_DIR = join(__dirname, "../../prompts");
@@ -35,10 +36,12 @@ export function loadPartial(name: string): string {
 export interface SystemPromptContext {
   repoPath?: string;
   gitBinaryPath?: string;
+  weeklyPlan?: string; // Current week's plan content
+  messageHistoryCount?: number; // Number of recent messages to include (default: 10)
 }
 
 export function buildSystemPrompt(context?: SystemPromptContext): string {
-  const { repoPath, gitBinaryPath } = context || {};
+  const { repoPath, gitBinaryPath, weeklyPlan, messageHistoryCount = 10 } = context || {};
 
   const systemPrompt = loadPrompt("system");
 
@@ -61,6 +64,22 @@ IMPORTANT: Your working directory is already set to the fitness-data repo. Use r
 `
       : "";
 
+  // Get recent message history
+  const messageHistory = formatRecentMessagesForPrompt(messageHistoryCount);
+
+  // Format the weekly plan if provided
+  const weeklyPlanSection = weeklyPlan
+    ? `
+## This Week's Plan (${dateInfo.isoWeek})
+
+<current-weekly-plan>
+${weeklyPlan}
+</current-weekly-plan>
+
+Use this plan as context when discussing workouts. Reference the scheduled exercises, weights, and targets.
+`
+    : "";
+
   const contextNote = `
 ## Current Date & Time
 
@@ -72,6 +91,8 @@ IMPORTANT: Your working directory is already set to the fitness-data repo. Use r
 
 Use these values when creating file paths and branch names. When asked about "today's workout", use ${dateInfo.dayOfWeek} to find the correct day in the plan.
 ${envInfo}
+${messageHistory ? `\n${messageHistory}\n` : ""}
+${weeklyPlanSection}
 ## File Access
 
 You have direct access to the fitness-data repository files:
