@@ -5,6 +5,7 @@
  * Based on: https://developer.whoop.com/docs/developing/oauth
  */
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { TokenSet } from "../types.js";
@@ -37,6 +38,7 @@ export const DEFAULT_SCOPES: string[] = [
   "read:sleep",
   "read:workout",
   "read:profile",
+  "offline", // Required to get refresh tokens for long-lived access
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -173,11 +175,19 @@ export function isTokenExpired(tokens: TokenSet): boolean {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Generate a random state parameter for CSRF protection.
+ * Whoop requires at least 8 characters.
+ */
+function generateState(): string {
+  return crypto.randomBytes(16).toString("hex");
+}
+
+/**
  * Generate the OAuth authorization URL for user to visit.
  *
  * @param redirectUri - The callback URL after authorization
  * @param scopes - OAuth scopes to request (defaults to DEFAULT_SCOPES)
- * @param state - Optional state parameter for CSRF protection
+ * @param state - State parameter for CSRF protection (auto-generated if not provided)
  */
 export function getAuthorizationUrl(
   redirectUri: string,
@@ -186,16 +196,16 @@ export function getAuthorizationUrl(
 ): string {
   const config = getWhoopOAuthConfig();
 
+  // Whoop requires state parameter with at least 8 characters
+  const stateParam = state || generateState();
+
   const params = new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: redirectUri,
     response_type: "code",
     scope: scopes.join(" "),
+    state: stateParam,
   });
-
-  if (state) {
-    params.set("state", state);
-  }
 
   return `${WHOOP_AUTH_URL}?${params.toString()}`;
 }

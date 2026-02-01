@@ -151,7 +151,8 @@ describe("Whoop OAuth", () => {
       // URL encoding may vary (%3A vs :, + vs %20), so just check the scope names are present
       for (const scope of DEFAULT_SCOPES) {
         // Check that either the encoded or decoded version is in the URL
-        const scopeName = scope.split(":")[1]; // e.g., "recovery" from "read:recovery"
+        // Handle scopes like "read:recovery" and simple scopes like "offline"
+        const scopeName = scope.includes(":") ? scope.split(":")[1] : scope;
         expect(url).toContain(scopeName);
       }
     });
