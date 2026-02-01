@@ -15,7 +15,7 @@ import {
 } from "date-fns";
 import { toZonedTime, formatInTimeZone } from "date-fns-tz";
 
-const DEFAULT_TIMEZONE = "America/New_York";
+export const DEFAULT_TIMEZONE = "America/New_York";
 
 /**
  * Get the configured timezone from environment

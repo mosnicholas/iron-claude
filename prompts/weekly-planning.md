@@ -107,7 +107,6 @@ Adjust rest based on:
 
 Don't just say "rest":
 - Suggest optional activities (yoga, cardio, mobility)
-- Reference gym class schedule if available
 - Make it clear what's optional vs required
 
 ## Step 4: Generate the Plan
@@ -138,7 +137,6 @@ theme: "Strength focus, deload accessories"
 ## Monday, Jan 20 — Push
 
 **Type:** Chest / Shoulders / Triceps
-**Location:** [Gym name]
 **Target Duration:** 55 min
 
 ### Warm-up (5-10 min)

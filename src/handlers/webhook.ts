@@ -51,13 +51,6 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
 
     // Verify webhook secret if configured
     const secretToken = req.headers["x-telegram-bot-api-secret-token"] as string | null;
-    const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-    console.log("[webhook] Secret check:", {
-      hasSecretHeader: !!secretToken,
-      hasExpectedSecret: !!expectedSecret,
-      secretHeaderLength: secretToken?.length,
-      expectedSecretLength: expectedSecret?.length,
-    });
 
     if (!bot.verifyWebhook(secretToken)) {
       console.log("[webhook] Rejected: webhook secret mismatch");

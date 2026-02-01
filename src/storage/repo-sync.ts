@@ -20,13 +20,6 @@ const REPO_DIR = join(DATA_DIR, "fitness-data");
 
 let cachedDataDir: string | null = null;
 
-export function getLocalRepoPath(): string {
-  if (!cachedDataDir) {
-    throw new Error("Repo not synced yet. Call syncRepo first.");
-  }
-  return cachedDataDir;
-}
-
 interface GitResult {
   success: boolean;
   stdout: string;

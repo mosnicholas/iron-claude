@@ -14,7 +14,7 @@ import { createCoachAgent } from "../coach/index.js";
 import { createTelegramBot } from "../bot/telegram.js";
 import { createGitHubStorage } from "../storage/github.js";
 import { buildWeeklyPlanningPrompt, buildRetrospectivePrompt } from "../coach/prompts.js";
-import { getCurrentWeek, getNextWeek, getWeekDays } from "../utils/date.js";
+import { getCurrentWeek, getNextWeek, getWeekDays, getTimezone } from "../utils/date.js";
 
 /**
  * Format week days info for the planning prompt
@@ -57,7 +57,7 @@ Just reply with whatever's on your mind and I'll build your plan around it.`;
  * Run the weekly planning job - asks questions first
  */
 export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
-  const timezone = process.env.TIMEZONE || "America/New_York";
+  const timezone = getTimezone();
   console.log("[weekly-plan] Starting weekly planning job");
 
   try {
@@ -146,7 +146,7 @@ export async function generatePlanWithContext(
   week: string,
   userContext: string
 ): Promise<WeeklyPlanResult> {
-  const timezone = process.env.TIMEZONE || "America/New_York";
+  const timezone = getTimezone();
   console.log(`[weekly-plan] Generating plan for ${week} with user context`);
 
   try {
@@ -295,19 +295,10 @@ The summary should include:
 }
 
 /**
- * Check if a plan already exists for a week
- */
-export async function planExists(week: string): Promise<boolean> {
-  const storage = createGitHubStorage();
-  const plan = await storage.readWeeklyPlan(week);
-  return plan !== null;
-}
-
-/**
  * Force regenerate a plan (overwrites existing)
  */
 export async function forceRegeneratePlan(week: string): Promise<WeeklyPlanResult> {
-  const timezone = process.env.TIMEZONE || "America/New_York";
+  const timezone = getTimezone();
   console.log(`[weekly-plan] Force regenerating plan for ${week}`);
 
   try {

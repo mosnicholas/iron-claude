@@ -1,5 +1,5 @@
 {
-  "name": "fitness-coach",
+  "name": "iron-claude",
   "version": "1.0.0",
   "description": "A Claude-powered personal fitness coach that lives in Telegram",
   "type": "module",

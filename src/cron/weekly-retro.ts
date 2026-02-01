@@ -9,7 +9,7 @@ import { createCoachAgent } from "../coach/index.js";
 import { createTelegramBot } from "../bot/telegram.js";
 import { createGitHubStorage } from "../storage/github.js";
 import { buildRetrospectivePrompt } from "../coach/prompts.js";
-import { getCurrentWeek } from "../utils/date.js";
+import { getCurrentWeek, getTimezone } from "../utils/date.js";
 
 export interface WeeklyRetroResult {
   success: boolean;
@@ -26,7 +26,7 @@ export interface WeeklyRetroResult {
  * a fallback in case the retro wasn't generated during planning.
  */
 export async function runWeeklyRetro(): Promise<WeeklyRetroResult> {
-  const timezone = process.env.TIMEZONE || "America/New_York";
+  const timezone = getTimezone();
   console.log("[weekly-retro] Starting weekly retrospective job (fallback)");
 
   try {
@@ -126,13 +126,4 @@ Workout files found: ${thisWeekWorkouts.length}`
       error: errorMessage,
     };
   }
-}
-
-/**
- * Check if the retrospective already exists for a week
- */
-export async function retroExists(week: string): Promise<boolean> {
-  const storage = createGitHubStorage();
-  const retro = await storage.readWeeklyRetro(week);
-  return retro !== null;
 }

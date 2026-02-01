@@ -23,7 +23,7 @@ export function loadPrompt(name: string): string {
   return readFileSync(path, "utf-8");
 }
 
-export function loadPartial(name: string): string {
+function loadPartial(name: string): string {
   const path = join(PROMPTS_DIR, "partials", `${name}.md`);
 
   if (!existsSync(path)) {
@@ -37,11 +37,20 @@ export interface SystemPromptContext {
   repoPath?: string;
   gitBinaryPath?: string;
   weeklyPlan?: string; // Current week's plan content
+  prsYaml?: string; // Personal records YAML content
+  todayWorkout?: string; // Today's workout log if it exists
   messageHistoryCount?: number; // Number of recent messages to include (default: 10)
 }
 
 export function buildSystemPrompt(context?: SystemPromptContext): string {
-  const { repoPath, gitBinaryPath, weeklyPlan, messageHistoryCount = 10 } = context || {};
+  const {
+    repoPath,
+    gitBinaryPath,
+    weeklyPlan,
+    prsYaml,
+    todayWorkout,
+    messageHistoryCount = 10,
+  } = context || {};
 
   const systemPrompt = loadPrompt("system");
 
@@ -80,6 +89,32 @@ Use this plan as context when discussing workouts. Reference the scheduled exerc
 `
     : "";
 
+  // Format PRs if provided
+  const prsSection = prsYaml
+    ? `
+## Personal Records
+
+<current-prs>
+${prsYaml}
+</current-prs>
+
+Reference these PRs when discussing progress, setting targets, or detecting new records.
+`
+    : "";
+
+  // Format today's workout if it exists (active or completed)
+  const todayWorkoutSection = todayWorkout
+    ? `
+## Today's Workout Log (${dateInfo.date})
+
+<today-workout>
+${todayWorkout}
+</today-workout>
+
+This is the current state of today's workout. Use this to track what's been logged.
+`
+    : "";
+
   const contextNote = `
 ## Current Date & Time
 
@@ -93,6 +128,8 @@ Use these values when creating file paths and branch names. When asked about "to
 ${envInfo}
 ${messageHistory ? `\n${messageHistory}\n` : ""}
 ${weeklyPlanSection}
+${prsSection}
+${todayWorkoutSection}
 ## File Access
 
 You have direct access to the fitness-data repository files:
@@ -131,8 +168,4 @@ export function buildWeeklyPlanningPrompt(): string {
 
 export function buildRetrospectivePrompt(): string {
   return loadPrompt("retrospective");
-}
-
-export function buildOnboardingPrompt(): string {
-  return loadPrompt("onboarding");
 }

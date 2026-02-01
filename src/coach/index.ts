@@ -11,7 +11,7 @@ import { join } from "path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { syncRepo, pushChanges } from "../storage/repo-sync.js";
 import { buildSystemPrompt } from "./prompts.js";
-import { getCurrentWeek } from "../utils/date.js";
+import { getCurrentWeek, getToday, getTimezone } from "../utils/date.js";
 import {
   extractTextFromMessage,
   extractToolsFromMessage,
@@ -69,7 +69,7 @@ export class CoachAgent {
   constructor(config: CoachConfig = {}) {
     this.config = {
       model: config.model || "claude-sonnet-4-5-20250929",
-      timezone: config.timezone || process.env.TIMEZONE || "America/New_York",
+      timezone: config.timezone || getTimezone(),
       maxTurns: config.maxTurns || 10,
     };
   }
@@ -109,6 +109,42 @@ export class CoachAgent {
     return undefined;
   }
 
+  /**
+   * Try to read the PRs file from the local repo
+   */
+  private getPRs(repoPath: string): string | undefined {
+    const prsPath = join(repoPath, "prs.yaml");
+
+    if (existsSync(prsPath)) {
+      try {
+        return readFileSync(prsPath, "utf-8");
+      } catch {
+        console.log(`[Coach] Could not read PRs from ${prsPath}`);
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Try to read today's workout log from the local repo
+   */
+  private getTodayWorkout(repoPath: string): string | undefined {
+    const currentWeek = getCurrentWeek(this.config.timezone);
+    const today = getToday(this.config.timezone);
+    const workoutPath = join(repoPath, "weeks", currentWeek, `${today}.md`);
+
+    if (existsSync(workoutPath)) {
+      try {
+        return readFileSync(workoutPath, "utf-8");
+      } catch {
+        console.log(`[Coach] Could not read today's workout from ${workoutPath}`);
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
   private async runQuery(
     prompt: string,
     additionalContext?: string,
@@ -118,14 +154,18 @@ export class CoachAgent {
     const repoPath = await this.ensureRepoSynced();
     const gitBinaryPath = getGitBinaryPath();
 
-    // Try to get the current week's plan for context
+    // Pre-load context data for faster responses
     const weeklyPlan = this.getWeeklyPlan(repoPath);
+    const prsYaml = this.getPRs(repoPath);
+    const todayWorkout = this.getTodayWorkout(repoPath);
 
     // Build system prompt with environment paths and context
     const basePrompt = buildSystemPrompt({
       repoPath,
       gitBinaryPath,
       weeklyPlan,
+      prsYaml,
+      todayWorkout,
     });
     const systemPrompt = additionalContext
       ? `${basePrompt}\n\n## Additional Context\n\n${additionalContext}`
@@ -219,21 +259,12 @@ export class CoachAgent {
     return { message: responseText, toolsUsed, turnsUsed };
   }
 
-  async chat(userMessage: string, callbacks?: StreamingCallbacks): Promise<CoachResponse> {
-    return this.runQuery(userMessage, undefined, callbacks);
-  }
-
-  /**
-   * Chat with web search enabled.
-   * Used for finding external resources like exercise demo videos.
-   */
-  async chatWithSearch(
+  async chat(
     userMessage: string,
-    callbacks?: StreamingCallbacks
+    callbacks?: StreamingCallbacks,
+    options?: QueryOptions
   ): Promise<CoachResponse> {
-    return this.runQuery(userMessage, undefined, callbacks, {
-      additionalTools: ["WebSearch"],
-    });
+    return this.runQuery(userMessage, undefined, callbacks, options);
   }
 
   async runTask(
