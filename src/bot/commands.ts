@@ -222,12 +222,13 @@ async function handleDemo(
     return "Which exercise do you want a demo for? Example: /demo face pull";
   }
 
-  const response = await agent.chatWithSearch(
+  const response = await agent.chat(
     `Find a good video demonstration for the exercise: ${args}. ` +
       "Use web search to find quality instructional content from reputable sources " +
       "(like Jeff Nippard, AthleanX, Renaissance Periodization, etc). " +
       "Provide the video link and key technique cues.",
-    callbacks
+    callbacks,
+    { additionalTools: ["WebSearch"] }
   );
   return response.message;
 }

@@ -260,21 +260,12 @@ export class CoachAgent {
     return { message: responseText, toolsUsed, turnsUsed };
   }
 
-  async chat(userMessage: string, callbacks?: StreamingCallbacks): Promise<CoachResponse> {
-    return this.runQuery(userMessage, undefined, callbacks);
-  }
-
-  /**
-   * Chat with web search enabled.
-   * Used for finding external resources like exercise demo videos.
-   */
-  async chatWithSearch(
+  async chat(
     userMessage: string,
-    callbacks?: StreamingCallbacks
+    callbacks?: StreamingCallbacks,
+    options?: QueryOptions
   ): Promise<CoachResponse> {
-    return this.runQuery(userMessage, undefined, callbacks, {
-      additionalTools: ["WebSearch"],
-    });
+    return this.runQuery(userMessage, undefined, callbacks, options);
   }
 
   async runTask(
