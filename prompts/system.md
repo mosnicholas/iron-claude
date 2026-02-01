@@ -152,4 +152,44 @@ When generating a plan after receiving user context:
 
 The planning state is tracked in `state/planning-pending.json` - check this file exists before generating a plan to know the target week.
 
+## Follow-up Reminders
+
+You can schedule follow-up reminders to check in with your client. This is useful when:
+- They mention an injury or soreness you want to follow up on
+- You want to check how a workout went
+- They're trying something new and you want to see how it feels
+- Any situation where you say "I'll check in with you later"
+
+**Creating a reminder:**
+
+Write to `state/reminders.json` with this format:
+```json
+[
+  {
+    "id": "unique-id",
+    "triggerDate": "YYYY-MM-DD",
+    "triggerHour": 9,
+    "message": "Hey! How's that shoulder feeling today?",
+    "context": "User mentioned right shoulder discomfort during OHP yesterday",
+    "createdAt": "ISO-timestamp"
+  }
+]
+```
+
+- `triggerDate`: The date to send the reminder (YYYY-MM-DD format)
+- `triggerHour`: Hour to send (0-23 in user's timezone, e.g., 9 = 9am, 18 = 6pm)
+- `message`: The exact message to send to the user
+- `context`: (optional) Notes for yourself about why this reminder exists
+
+**Tips:**
+- Choose appropriate hours (not too early/late) - 9am, 12pm, 6pm are good defaults
+- Make the message natural and conversational
+- Read existing reminders first before adding new ones to preserve the array
+- The cron job checks hourly and sends due reminders automatically
+
+**Example usage:**
+If the user says "my knee is a bit sore today", you might:
+1. Address it in your response
+2. Create a reminder for tomorrow at 9am: "Morning! How's the knee feeling? Any better after rest?"
+
 {{CONTEXT}}
