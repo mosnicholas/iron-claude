@@ -11,7 +11,7 @@ export interface Profile {
   name: string;
   timezone: string;
   telegramChatId: string;
-  primaryGym: string;
+  equipmentAccess: "full_commercial" | "home_equipped" | "home_minimal" | "travel" | string;
   goals: {
     primary: string[];
     secondary: string[];
@@ -130,20 +130,6 @@ export interface ParsedExercise {
 export interface ParsedSet {
   reps: number;
   weight?: number | string;
-}
-
-// ============================================================================
-// Agent Context
-// ============================================================================
-
-export interface AgentContext {
-  profile: Profile | null;
-  learnings: string[];
-  currentWeekPlan: WeeklyPlan | null;
-  inProgressWorkout: WorkoutLog | null;
-  recentWorkouts: WorkoutLog[];
-  currentPRs: PRsData;
-  todaysPlan: DayPlan | null;
 }
 
 // ============================================================================

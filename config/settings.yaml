@@ -13,10 +13,13 @@ reminders:
     days: [mon, tue, wed, thu, fri] # Weekdays only by default
 
 # Weekly automation schedule
+# Both run on Sunday evening (user's timezone):
+# - Retrospective at 7:30pm: reviews the ending week
+# - Planning at 8:00pm: generates next week's plan with user input
 weekly:
   retrospective:
-    day: saturday
-    time: "18:00"
+    day: sunday
+    time: "19:30"
   planning:
     day: sunday
     time: "20:00"

@@ -6,9 +6,12 @@
  */
 
 import { spawnSync } from "child_process";
+import { readFileSync, existsSync } from "fs";
+import { join } from "path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { syncRepo, pushChanges } from "../storage/repo-sync.js";
 import { buildSystemPrompt } from "./prompts.js";
+import { getCurrentWeek, getToday, getTimezone } from "../utils/date.js";
 import {
   extractTextFromMessage,
   extractToolsFromMessage,
@@ -55,6 +58,10 @@ export interface StreamingCallbacks {
   onStatus?: (status: string) => void;
 }
 
+export interface QueryOptions {
+  additionalTools?: string[];
+}
+
 export class CoachAgent {
   private config: Required<CoachConfig>;
   private repoPath: string | null = null;
@@ -62,7 +69,7 @@ export class CoachAgent {
   constructor(config: CoachConfig = {}) {
     this.config = {
       model: config.model || "claude-sonnet-4-5-20250929",
-      timezone: config.timezone || process.env.TIMEZONE || "America/New_York",
+      timezone: config.timezone || getTimezone(),
       maxTurns: config.maxTurns || 10,
     };
   }
@@ -84,19 +91,81 @@ export class CoachAgent {
     return this.repoPath;
   }
 
+  /**
+   * Try to read the current week's plan from the local repo
+   */
+  private getWeeklyPlan(repoPath: string): string | undefined {
+    const currentWeek = getCurrentWeek(this.config.timezone);
+    const planPath = join(repoPath, "weeks", currentWeek, "plan.md");
+
+    if (existsSync(planPath)) {
+      try {
+        return readFileSync(planPath, "utf-8");
+      } catch {
+        console.log(`[Coach] Could not read weekly plan from ${planPath}`);
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Try to read the PRs file from the local repo
+   */
+  private getPRs(repoPath: string): string | undefined {
+    const prsPath = join(repoPath, "prs.yaml");
+
+    if (existsSync(prsPath)) {
+      try {
+        return readFileSync(prsPath, "utf-8");
+      } catch {
+        console.log(`[Coach] Could not read PRs from ${prsPath}`);
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Try to read today's workout log from the local repo
+   */
+  private getTodayWorkout(repoPath: string): string | undefined {
+    const currentWeek = getCurrentWeek(this.config.timezone);
+    const today = getToday(this.config.timezone);
+    const workoutPath = join(repoPath, "weeks", currentWeek, `${today}.md`);
+
+    if (existsSync(workoutPath)) {
+      try {
+        return readFileSync(workoutPath, "utf-8");
+      } catch {
+        console.log(`[Coach] Could not read today's workout from ${workoutPath}`);
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
   private async runQuery(
     prompt: string,
     additionalContext?: string,
-    callbacks?: StreamingCallbacks
+    callbacks?: StreamingCallbacks,
+    options?: QueryOptions
   ): Promise<CoachResponse> {
     const repoPath = await this.ensureRepoSynced();
     const gitBinaryPath = getGitBinaryPath();
 
-    // Build system prompt with environment paths
+    // Pre-load context data for faster responses
+    const weeklyPlan = this.getWeeklyPlan(repoPath);
+    const prsYaml = this.getPRs(repoPath);
+    const todayWorkout = this.getTodayWorkout(repoPath);
+
+    // Build system prompt with environment paths and context
     const basePrompt = buildSystemPrompt({
-      timezone: this.config.timezone,
       repoPath,
       gitBinaryPath,
+      weeklyPlan,
+      prsYaml,
+      todayWorkout,
     });
     const systemPrompt = additionalContext
       ? `${basePrompt}\n\n## Additional Context\n\n${additionalContext}`
@@ -114,6 +183,12 @@ export class CoachAgent {
       callbacks.onStatus("Thinking...");
     }
 
+    // Build allowed tools list
+    const baseTools = ["Read", "Edit", "Write", "Bash", "Glob", "Grep"];
+    const allowedTools = options?.additionalTools
+      ? [...baseTools, ...options.additionalTools]
+      : baseTools;
+
     const q = query({
       prompt,
       options: {
@@ -121,7 +196,7 @@ export class CoachAgent {
         cwd: repoPath,
         maxTurns: this.config.maxTurns,
         model: this.config.model,
-        allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+        allowedTools,
         permissionMode: "acceptEdits",
         env: {
           ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "",
@@ -184,8 +259,12 @@ export class CoachAgent {
     return { message: responseText, toolsUsed, turnsUsed };
   }
 
-  async chat(userMessage: string, callbacks?: StreamingCallbacks): Promise<CoachResponse> {
-    return this.runQuery(userMessage, undefined, callbacks);
+  async chat(
+    userMessage: string,
+    callbacks?: StreamingCallbacks,
+    options?: QueryOptions
+  ): Promise<CoachResponse> {
+    return this.runQuery(userMessage, undefined, callbacks, options);
   }
 
   async runTask(

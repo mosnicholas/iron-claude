@@ -272,70 +272,6 @@ export class GitHubStorage {
   }
 
   // ============================================================================
-  // Workout Branch Helpers
-  // ============================================================================
-
-  /**
-   * Create a workout branch for today's session
-   */
-  async createWorkoutBranch(date: string, workoutType: string): Promise<string> {
-    const branchName = `workout/${date}-${workoutType.toLowerCase().replace(/\s+/g, "-")}`;
-    await this.createBranch(branchName);
-    return branchName;
-  }
-
-  /**
-   * Find any in-progress workout branch
-   */
-  async findInProgressWorkout(): Promise<string | null> {
-    const workoutBranches = await this.listBranches("workout/");
-
-    // Check each branch for in-progress.md in the week folder
-    for (const branch of workoutBranches) {
-      // Branch name format: workout/2026-01-27-push
-      const parts = branch.split("/")[1]?.split("-");
-      if (parts && parts.length >= 3) {
-        const dateStr = `${parts[0]}-${parts[1]}-${parts[2]}`;
-        const week = this.getWeekFromDate(dateStr);
-        const hasInProgress = await this.fileExists(`weeks/${week}/in-progress.md`, branch);
-        if (hasInProgress) {
-          return branch;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Get week string (YYYY-WXX) from a date string (YYYY-MM-DD)
-   */
-  private getWeekFromDate(dateStr: string): string {
-    const date = new Date(dateStr + "T12:00:00");
-    const year = date.getFullYear();
-    const firstDayOfYear = new Date(year, 0, 1);
-    const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
-    const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
-    return `${year}-W${weekNum.toString().padStart(2, "0")}`;
-  }
-
-  /**
-   * Complete a workout - finalize and merge
-   */
-  async completeWorkout(branch: string, finalDate: string, week: string): Promise<void> {
-    // Rename in-progress.md to the final date
-    await this.moveFile(
-      `weeks/${week}/in-progress.md`,
-      `weeks/${week}/${finalDate}.md`,
-      "Finalize workout file",
-      branch
-    );
-
-    // Merge to main
-    await this.mergeBranch(branch, true);
-  }
-
-  // ============================================================================
   // Convenience Methods for Common Files
   // ============================================================================
 
@@ -420,6 +356,93 @@ export class GitHubStorage {
       // File might not exist, that's fine
     }
   }
+
+  // ============================================================================
+  // Reminder Management
+  // ============================================================================
+
+  /**
+   * Get all reminders
+   */
+  async getReminders(): Promise<Reminder[]> {
+    const content = await this.readFile("state/reminders.json");
+    if (!content) return [];
+    try {
+      return JSON.parse(content);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Add a new reminder
+   */
+  async addReminder(reminder: Omit<Reminder, "id" | "createdAt">): Promise<Reminder> {
+    const reminders = await this.getReminders();
+
+    const newReminder: Reminder = {
+      ...reminder,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+    };
+
+    reminders.push(newReminder);
+
+    await this.writeFile(
+      "state/reminders.json",
+      JSON.stringify(reminders, null, 2),
+      `Add reminder for ${reminder.triggerDate} ${reminder.triggerHour}:00`
+    );
+
+    return newReminder;
+  }
+
+  /**
+   * Delete a reminder by ID
+   */
+  async deleteReminder(id: string): Promise<void> {
+    const reminders = await this.getReminders();
+    const filtered = reminders.filter((r) => r.id !== id);
+
+    if (filtered.length === reminders.length) {
+      return; // Reminder not found, nothing to do
+    }
+
+    if (filtered.length === 0) {
+      // No reminders left, delete the file
+      try {
+        await this.deleteFile("state/reminders.json", "Clear empty reminders");
+      } catch {
+        // File might not exist
+      }
+    } else {
+      await this.writeFile(
+        "state/reminders.json",
+        JSON.stringify(filtered, null, 2),
+        `Remove processed reminder ${id}`
+      );
+    }
+  }
+
+  /**
+   * Get reminders due at a specific date and hour
+   */
+  async getDueReminders(date: string, hour: number): Promise<Reminder[]> {
+    const reminders = await this.getReminders();
+    return reminders.filter((r) => r.triggerDate === date && r.triggerHour === hour);
+  }
+}
+
+/**
+ * Reminder for follow-up messages
+ */
+export interface Reminder {
+  id: string;
+  triggerDate: string; // YYYY-MM-DD
+  triggerHour: number; // 0-23 in configured timezone
+  message: string; // The reminder message to send
+  context?: string; // Additional context about why this reminder exists
+  createdAt: string; // ISO timestamp
 }
 
 /**

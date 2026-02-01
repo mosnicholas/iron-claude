@@ -37,8 +37,8 @@ You'll need:
 ### Morning
 Get an automatic reminder with today's workout plan.
 
-### At the Gym
-Log workouts via Telegram:
+### During Your Workout
+Log exercises via Telegram:
 ```
 OHP 115: 6, 5, 5 @8
 Dips +25: 8, 7, 7
@@ -63,28 +63,27 @@ plan next week
 
 ```
 iron-claude/
-├── CLAUDE.md                    ← Your profile (created during setup)
-├── exercise-variations.md       ← 8-week rotation reference
-├── weeks/                       ← Workout logs and plans
-│   └── 2026-W04/
-│       ├── plan.md              ← Weekly plan
-│       └── monday.md            ← Daily logs
-├── .claude/
-│   └── commands/                ← Claude Code slash commands
-│       ├── plan-week.md         ← Weekly planning
-│       └── analyze.md           ← Progress analysis
 ├── src/
-│   ├── bot/                     ← Telegram bot
+│   ├── bot/                     ← Telegram bot + voice transcription
 │   ├── coach/                   ← AI coaching (Claude Agent SDK)
 │   ├── cron/                    ← Scheduled tasks
 │   ├── handlers/                ← HTTP request handlers
-│   ├── server.ts                ← Express HTTP server
-│   └── storage/                 ← GitHub data storage
+│   ├── storage/                 ← GitHub data persistence
+│   ├── utils/                   ← Date handling, helpers
+│   └── server.ts                ← Express HTTP server
+├── prompts/                     ← System prompts for coaching
+│   ├── system.md                ← Core coaching prompt
+│   ├── onboarding.md            ← New user onboarding
+│   ├── weekly-planning.md       ← Plan generation
+│   └── retrospective.md         ← Weekly analysis
 ├── scripts/                     ← Setup wizard
+├── .claude/commands/            ← Claude Code slash commands
 ├── Dockerfile                   ← Docker build config
 ├── fly.toml                     ← Fly.io deployment config
 └── crontab                      ← Scheduled task definitions
 ```
+
+Your personal data (profile, workout logs, PRs) lives in a separate private GitHub repo created during setup.
 
 ---
 
@@ -115,8 +114,10 @@ Pull-ups: 10, 8, 7
 | Command | Description |
 |---------|-------------|
 | `/today` | Show today's workout |
-| `/week` | Show this week's plan |
-| `/log` | Quick log format help |
+| `/plan` | Show this week's plan |
+| `/fullplan` | Show full plan with all details |
+| `/done` | Complete current workout |
+| `/prs` | Show personal records |
 | `/help` | List all commands |
 
 You can also just chat naturally - the AI understands context.
@@ -125,16 +126,17 @@ You can also just chat naturally - the AI understands context.
 
 ## Customization
 
-### Exercise Rotation
-Edit `exercise-variations.md` to customize the 8-week rotation.
+Your fitness data lives in a separate private GitHub repo (created during setup). You can customize:
 
-### Coaching Style
-Update preferences in `CLAUDE.md`:
-- `Feedback style`: Direct / Balanced / Gentle
-- `Deload approach`: Scheduled / When needed / I'll tell you
+### Profile
+Edit `profile.md` in your fitness-data repo to update:
+- Training goals and preferences
+- Coaching style (Direct / Balanced / Gentle)
+- Schedule and availability
+- Any limitations or injuries
 
 ### Claude Code Commands
-After setup, you can also use Claude Code locally:
+You can also use Claude Code locally in your fitness-data repo:
 ```bash
 claude /plan-week    # Generate weekly plan
 claude /analyze      # Analyze progress

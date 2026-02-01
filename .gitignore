@@ -14,7 +14,7 @@ dist/
 npm-debug.log*
 
 # OS
-.DS_Store
+**/.DS_Store
 Thumbs.db
 
 # IDE
@@ -22,3 +22,6 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Claude Code local settings
+.claude/settings.local.json

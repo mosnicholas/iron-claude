@@ -18,7 +18,30 @@ import { executeCommand, commandExists } from "../bot/commands.js";
 import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js";
 import { createGitHubStorage } from "../storage/github.js";
 import { generatePlanWithContext } from "../cron/weekly-plan.js";
+import { addMessage } from "../bot/message-history.js";
 import type { TelegramUpdate } from "../storage/types.js";
+
+// Simple in-memory cache for deduplication
+// Stores update_ids we've already processed
+const processedUpdates = new Set<number>();
+const MAX_CACHED_UPDATES = 1000;
+
+function isDuplicateUpdate(updateId: number): boolean {
+  if (processedUpdates.has(updateId)) {
+    return true;
+  }
+
+  // Add to cache
+  processedUpdates.add(updateId);
+
+  // Prevent unbounded growth by clearing old entries
+  if (processedUpdates.size > MAX_CACHED_UPDATES) {
+    const toRemove = Array.from(processedUpdates).slice(0, 100);
+    toRemove.forEach((id) => processedUpdates.delete(id));
+  }
+
+  return false;
+}
 
 export async function webhookHandler(req: Request, res: Response): Promise<void> {
   console.log("[webhook] Received request:", req.method);
@@ -28,13 +51,6 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
 
     // Verify webhook secret if configured
     const secretToken = req.headers["x-telegram-bot-api-secret-token"] as string | null;
-    const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-    console.log("[webhook] Secret check:", {
-      hasSecretHeader: !!secretToken,
-      hasExpectedSecret: !!expectedSecret,
-      secretHeaderLength: secretToken?.length,
-      expectedSecretLength: expectedSecret?.length,
-    });
 
     if (!bot.verifyWebhook(secretToken)) {
       console.log("[webhook] Rejected: webhook secret mismatch");
@@ -44,10 +60,18 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
 
     const update: TelegramUpdate = req.body;
     console.log("[webhook] Update received:", {
+      updateId: update.update_id,
       hasMessage: !!update.message,
       chatId: update.message?.chat?.id,
       text: update.message?.text?.slice(0, 50),
     });
+
+    // Check for duplicate updates (Telegram retries on slow responses)
+    if (isDuplicateUpdate(update.update_id)) {
+      console.log(`[webhook] Duplicate update_id ${update.update_id}, skipping`);
+      res.status(200).json({ ok: true });
+      return;
+    }
 
     // Verify this is from the authorized chat
     const chatId = update.message?.chat.id;
@@ -65,6 +89,30 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
       return;
     }
 
+    // Return 200 immediately to prevent Telegram retries
+    // Process the message in the background
+    res.status(200).json({ ok: true });
+
+    // Process message asynchronously
+    processMessage(update, bot).catch((error) => {
+      console.error("[webhook] Background processing error:", error);
+    });
+  } catch (error) {
+    console.error("Webhook error:", error);
+    // Still return 200 to prevent Telegram retries
+    res.status(200).json({ ok: true, error: "Internal error" });
+  }
+}
+
+/**
+ * Process a Telegram message in the background
+ * Called after we've already returned 200 to Telegram
+ */
+async function processMessage(
+  update: TelegramUpdate,
+  bot: ReturnType<typeof createTelegramBot>
+): Promise<void> {
+  try {
     // Send typing indicator
     await bot.sendTypingAction();
 
@@ -80,7 +128,6 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
         await bot.sendMessage(
           "Voice messages aren't configured yet. Please type your message instead."
         );
-        res.status(200).json({ ok: true });
         return;
       }
 
@@ -91,7 +138,6 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
         await bot.sendMessage(
           "Couldn't transcribe that voice message. Please try again or type it out."
         );
-        res.status(200).json({ ok: true });
         return;
       }
     } else {
@@ -99,9 +145,11 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
     }
 
     if (!messageText) {
-      res.status(200).json({ ok: true });
       return;
     }
+
+    // Record user message in history
+    addMessage(messageText, true);
 
     // Handle commands
     if (isCommand(messageText)) {
@@ -112,12 +160,14 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
         // Only send if response is non-empty (status messages handle their own output)
         if (response) {
           await bot.sendMessageSafe(response);
+          // Record bot response in history
+          addMessage(response, false);
         }
       } else {
-        await bot.sendMessage(`Unknown command /${command}. Try /help to see available commands.`);
+        const unknownCmdResponse = `Unknown command /${command}. Try /help to see available commands.`;
+        await bot.sendMessage(unknownCmdResponse);
+        addMessage(unknownCmdResponse, false);
       }
-
-      res.status(200).json({ ok: true });
       return;
     }
 
@@ -131,7 +181,6 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
       generatePlanWithContext(planningState.week, messageText).catch((err) => {
         console.error("[webhook] Plan generation failed:", err);
       });
-      res.status(200).json({ ok: true });
       return;
     }
 
@@ -149,25 +198,23 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
       });
 
       await editor.finalize(response.message);
+      // Record bot response in history
+      addMessage(response.message, false);
     } else {
       // Fallback if we couldn't get a message ID
       const response = await agent.chat(messageText);
       await bot.sendMessageSafe(response.message);
+      // Record bot response in history
+      addMessage(response.message, false);
     }
-
-    res.status(200).json({ ok: true });
   } catch (error) {
-    console.error("Webhook error:", error);
+    console.error("[webhook] Processing error:", error);
 
     // Try to notify user of error
     try {
-      const bot = createTelegramBot();
       await bot.sendMessage("Something went wrong processing your message. Please try again.");
     } catch {
       // Ignore notification failure
     }
-
-    // Still return 200 to prevent Telegram retries
-    res.status(200).json({ ok: true, error: "Internal error" });
   }
 }

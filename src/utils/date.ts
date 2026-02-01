@@ -1,103 +1,162 @@
 /**
  * Date and Week Utilities
- * Simplified to commonly used functions only.
+ * Uses date-fns and date-fns-tz for reliable date handling.
  */
 
-function getISOWeek(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+import {
+  format,
+  getISOWeek,
+  getISOWeekYear,
+  addWeeks,
+  startOfISOWeek,
+  endOfISOWeek,
+  eachDayOfInterval,
+  parse,
+} from "date-fns";
+import { toZonedTime, formatInTimeZone } from "date-fns-tz";
+
+export const DEFAULT_TIMEZONE = "America/New_York";
+
+/**
+ * Get the configured timezone from environment
+ */
+export function getTimezone(): string {
+  return process.env.TIMEZONE || DEFAULT_TIMEZONE;
 }
 
-function getISOWeekYear(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  return d.getUTCFullYear();
-}
-
+/**
+ * Format a date as ISO week string (e.g., "2026-W05")
+ */
 export function formatISOWeek(date: Date): string {
-  return `${getISOWeekYear(date)}-W${getISOWeek(date).toString().padStart(2, "0")}`;
+  const year = getISOWeekYear(date);
+  const week = getISOWeek(date);
+  return `${year}-W${week.toString().padStart(2, "0")}`;
 }
 
+/**
+ * Format a date as YYYY-MM-DD
+ */
 export function formatDate(date: Date): string {
-  return date.toISOString().split("T")[0];
+  return format(date, "yyyy-MM-dd");
 }
 
+/**
+ * Format a date in human-readable form (e.g., "Friday, Jan 24")
+ */
 export function formatDateHuman(date: Date): string {
-  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-  return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}`;
+  return format(date, "EEEE, MMM d");
 }
 
-export function getDayName(date: Date): string {
-  return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][
-    date.getDay()
-  ];
-}
-
-export function isWeekend(date: Date): boolean {
-  const day = date.getDay();
-  return day === 0 || day === 6;
-}
-
-function getDateInTimezone(date: Date, timezone: string): Date {
-  return new Date(date.toLocaleString("en-US", { timeZone: timezone }));
-}
-
+/**
+ * Parse an ISO week string (e.g., "2026-W05") into start and end dates.
+ * Start is Monday, end is Sunday.
+ */
 export function parseISOWeek(weekString: string): { start: Date; end: Date } {
   const match = weekString.match(/^(\d{4})-W(\d{2})$/);
   if (!match) throw new Error(`Invalid ISO week: ${weekString}`);
 
-  const [, yearStr, weekStr] = match;
-  const year = parseInt(yearStr, 10);
-  const week = parseInt(weekStr, 10);
-  const jan4 = new Date(Date.UTC(year, 0, 4));
-  const dayOfWeek = jan4.getUTCDay() || 7;
-  const week1Monday = new Date(jan4);
-  week1Monday.setUTCDate(jan4.getUTCDate() - dayOfWeek + 1);
-
-  const start = new Date(week1Monday);
-  start.setUTCDate(week1Monday.getUTCDate() + (week - 1) * 7);
-  const end = new Date(start);
-  end.setUTCDate(start.getUTCDate() + 6);
+  // Parse using date-fns - "R" is ISO week-numbering year, "I" is ISO week
+  // We parse to get any date in that week, then find the start/end
+  const dateInWeek = parse(weekString, "RRRR-'W'II", new Date());
+  const start = startOfISOWeek(dateInWeek);
+  const end = endOfISOWeek(dateInWeek);
 
   return { start, end };
 }
 
-export function getPreviousWeek(weekString: string): string {
-  const { start } = parseISOWeek(weekString);
-  start.setUTCDate(start.getUTCDate() - 7);
-  return formatISOWeek(start);
-}
-
+/**
+ * Get the next week's ISO string
+ */
 export function getNextWeek(weekString: string): string {
   const { start } = parseISOWeek(weekString);
-  start.setUTCDate(start.getUTCDate() + 7);
-  return formatISOWeek(start);
+  const nextWeekStart = addWeeks(start, 1);
+  return formatISOWeek(nextWeekStart);
 }
 
+/**
+ * Get the current ISO week string for a timezone
+ */
 export function getCurrentWeek(timezone?: string): string {
-  const now = timezone ? getDateInTimezone(new Date(), timezone) : new Date();
+  const tz = timezone || getTimezone();
+  const now = toZonedTime(new Date(), tz);
   return formatISOWeek(now);
 }
 
+/**
+ * Get today's date as YYYY-MM-DD for a timezone
+ */
 export function getToday(timezone?: string): string {
-  const now = timezone ? getDateInTimezone(new Date(), timezone) : new Date();
+  const tz = timezone || getTimezone();
+  const now = toZonedTime(new Date(), tz);
   return formatDate(now);
+}
+
+/**
+ * Get the current hour (0-23) for a timezone
+ */
+export function getCurrentHour(timezone?: string): number {
+  const tz = timezone || getTimezone();
+  const hourStr = formatInTimeZone(new Date(), tz, "H");
+  return parseInt(hourStr, 10);
+}
+
+/**
+ * Comprehensive date info for a specific timezone
+ * Used for system prompts and logging
+ */
+export interface DateInfo {
+  date: string; // YYYY-MM-DD
+  time: string; // HH:MM
+  dayOfWeek: string; // e.g., "Tuesday"
+  isoWeek: string; // e.g., "2026-W05"
+  timezone: string; // The timezone used
+}
+
+/**
+ * Get comprehensive date info using the configured timezone.
+ * Pulls TIMEZONE from environment variable (defaults to America/New_York).
+ */
+export function getDateInfoTZAware(): DateInfo {
+  const timezone = getTimezone();
+  const now = new Date();
+
+  // Format all values in the target timezone
+  const date = formatInTimeZone(now, timezone, "yyyy-MM-dd");
+  const time = formatInTimeZone(now, timezone, "HH:mm");
+  const dayOfWeek = formatInTimeZone(now, timezone, "EEEE");
+
+  // Calculate ISO week using timezone-aware date
+  const zonedNow = toZonedTime(now, timezone);
+  const isoWeek = formatISOWeek(zonedNow);
+
+  return {
+    date,
+    time,
+    dayOfWeek,
+    isoWeek,
+    timezone,
+  };
+}
+
+/**
+ * Information about a single day in a week
+ */
+export interface WeekDayInfo {
+  dayName: string; // e.g., "Monday"
+  date: string; // YYYY-MM-DD
+  dateHuman: string; // e.g., "Jan 27"
+}
+
+/**
+ * Get all days of a specific ISO week with their names and dates.
+ * Returns Monday through Sunday.
+ */
+export function getWeekDays(weekString: string): WeekDayInfo[] {
+  const { start, end } = parseISOWeek(weekString);
+
+  return eachDayOfInterval({ start, end }).map((day) => ({
+    dayName: format(day, "EEEE"),
+    date: format(day, "yyyy-MM-dd"),
+    dateHuman: format(day, "MMM d"),
+  }));
 }

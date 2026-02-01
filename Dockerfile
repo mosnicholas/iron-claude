@@ -42,7 +42,9 @@ RUN npm prune --omit=dev
 # Copy config files
 # Prompts are loaded relative to dist/src/coach, so place them at dist/prompts
 COPY prompts/ ./dist/prompts/
-COPY crontab ./crontab
+
+# Copy crontab generator script (generates timezone-aware schedules at startup)
+COPY scripts/generate-crontab.js ./scripts/generate-crontab.js
 
 # Expose port
 EXPOSE 8080

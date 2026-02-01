@@ -16,8 +16,10 @@ import type { TokenSet } from "../types.js";
 const WHOOP_AUTH_URL = "https://api.prod.whoop.com/oauth/oauth2/auth";
 const WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token";
 
-/** Path to store refreshed tokens (persists across restarts) */
-const TOKEN_STORAGE_PATH = process.env.WHOOP_TOKEN_FILE || "/data/whoop-tokens.json";
+/** Get path to store refreshed tokens (persists across restarts) */
+function getTokenStoragePath(): string {
+  return process.env.WHOOP_TOKEN_FILE || "/data/whoop-tokens.json";
+}
 
 /** Available OAuth scopes for Whoop API */
 export const WHOOP_SCOPES = [
@@ -78,11 +80,12 @@ export function isWhoopOAuthConfigured(): boolean {
  */
 export function persistTokens(tokens: TokenSet): void {
   try {
-    const dir = path.dirname(TOKEN_STORAGE_PATH);
+    const tokenPath = getTokenStoragePath();
+    const dir = path.dirname(tokenPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(TOKEN_STORAGE_PATH, JSON.stringify(tokens, null, 2), "utf-8");
+    fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2), "utf-8");
     console.log("[whoop-oauth] Tokens persisted to file storage");
   } catch (error) {
     console.error("[whoop-oauth] Failed to persist tokens:", error);
@@ -95,8 +98,9 @@ export function persistTokens(tokens: TokenSet): void {
  */
 function loadPersistedTokens(): TokenSet | null {
   try {
-    if (fs.existsSync(TOKEN_STORAGE_PATH)) {
-      const content = fs.readFileSync(TOKEN_STORAGE_PATH, "utf-8");
+    const tokenPath = getTokenStoragePath();
+    if (fs.existsSync(tokenPath)) {
+      const content = fs.readFileSync(tokenPath, "utf-8");
       const tokens = JSON.parse(content) as TokenSet;
       if (tokens.accessToken && tokens.refreshToken) {
         return tokens;
@@ -141,8 +145,9 @@ export function getStoredTokens(): TokenSet | null {
  */
 export function clearPersistedTokens(): void {
   try {
-    if (fs.existsSync(TOKEN_STORAGE_PATH)) {
-      fs.unlinkSync(TOKEN_STORAGE_PATH);
+    const tokenPath = getTokenStoragePath();
+    if (fs.existsSync(tokenPath)) {
+      fs.unlinkSync(tokenPath);
       console.log("[whoop-oauth] Persisted tokens cleared");
     }
   } catch (error) {

@@ -1,5 +1,5 @@
 {
-  "name": "fitness-coach",
+  "name": "iron-claude",
   "version": "1.0.0",
   "description": "A Claude-powered personal fitness coach that lives in Telegram",
   "type": "module",
@@ -22,6 +22,8 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.19",
     "@google/genai": "^1.37.0",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "express": "^4.21.2"
   },
   "devDependencies": {

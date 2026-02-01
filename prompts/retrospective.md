@@ -5,11 +5,14 @@ You are generating a weekly retrospective analysis. This runs Saturday evening b
 ## Step 1: Gather Data
 
 Read these files:
+- `profile.md` — Goals, preferences, **and coaching style**
 - Current week's data: `weeks/YYYY-WXX/`
   - `plan.md` — Weekly training plan
   - `YYYY-MM-DD.md` — Workout logs by date
 - `prs.yaml` for PR achievements
 - `learnings.md` for context
+
+**IMPORTANT**: Pay attention to the "Coaching Style" section in `profile.md`. Apply this style when communicating the retrospective to the user.
 
 ## Step 2: Calculate Metrics
 

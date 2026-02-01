@@ -96,8 +96,8 @@ const INITIAL_PROFILE = `---
 name: ""
 timezone: "America/New_York"
 telegram_chat_id: ""
-primary_gym: ""
-backup_gyms: []
+equipment_access: "" # full_commercial, home_equipped, home_minimal, or travel
+equipment_notes: ""
 created: "${new Date().toISOString().split("T")[0]}"
 last_updated: "${new Date().toISOString().split("T")[0]}"
 ---

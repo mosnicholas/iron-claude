@@ -5,13 +5,15 @@ You are generating a weekly training plan. Follow this process carefully.
 ## Step 1: Gather Context
 
 Read these files:
-- `profile.md` — Goals, constraints, preferences
+- `profile.md` — Goals, constraints, preferences, **and coaching style**
 - `learnings.md` — Discovered patterns
 - `prs.yaml` — Current strength levels
 - Last 2-4 weeks of data in `weeks/YYYY-WXX/` folders:
   - `plan.md` — Weekly training plan
   - `retro.md` — Weekly retrospective
   - `YYYY-MM-DD.md` — Workout logs by date
+
+**IMPORTANT**: Pay special attention to the "Coaching Style" section in `profile.md`. This defines how the user wants to be communicated with. Apply this style when writing the plan summary and any messages to the user.
 
 ## Step 2: Analyze Patterns
 
@@ -105,7 +107,6 @@ Adjust rest based on:
 
 Don't just say "rest":
 - Suggest optional activities (yoga, cardio, mobility)
-- Reference gym class schedule if available
 - Make it clear what's optional vs required
 
 ## Step 4: Generate the Plan
@@ -136,7 +137,6 @@ theme: "Strength focus, deload accessories"
 ## Monday, Jan 20 — Push
 
 **Type:** Chest / Shoulders / Triceps
-**Location:** [Gym name]
 **Target Duration:** 55 min
 
 ### Warm-up (5-10 min)

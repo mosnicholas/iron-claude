@@ -7,7 +7,7 @@
 import { CoachAgent, StreamingCallbacks } from "../coach/index.js";
 import { TelegramBot, ThrottledMessageEditor } from "./telegram.js";
 import { createGitHubStorage } from "../storage/github.js";
-import { getCurrentWeek } from "../utils/date.js";
+import { getCurrentWeek, getDateInfoTZAware } from "../utils/date.js";
 
 /**
  * Split message on --- markers for multi-message responses
@@ -20,7 +20,7 @@ function splitOnMessageBreaks(text: string): string[] {
     .filter((chunk) => chunk.length > 0);
 }
 
-export type CommandHandler = (
+type CommandHandler = (
   agent: CoachAgent,
   bot: TelegramBot,
   args: string,
@@ -41,6 +41,8 @@ export const COMMANDS: Record<string, CommandHandler> = {
   demo: handleDemo,
   me: handleMe,
   summary: handleSummary,
+  funfacts: handleFunFacts,
+  restart: handleRestart,
 };
 
 /**
@@ -66,16 +68,10 @@ Quick commands:
 • /done - Finish your current workout
 • /prs - Check your personal records
 
-Or just text me what you're doing — "bench 175x5" and I'll log it.
-
-Let's get after it! 💪`;
+Or just text me what you're doing — "bench 175x5" and I'll log it. Let's get after it! 💪`;
 }
 
-/**
- * /help - Show available commands
- */
-async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
-  return `**Available Commands**
+const HELP_TEXT = `**Available Commands**
 
 📋 **Planning**
 • /plan - Show this week's plan (summary)
@@ -90,6 +86,7 @@ async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string):
 • /me - Quick facts about your profile
 • /summary - Your fitness journey overview
 • /demo [exercise] - Find video demonstration
+• /funfacts - Get fun fitness facts
 
 💬 **Or just chat naturally:**
 • "bench 175x5" - Log an exercise
@@ -97,10 +94,17 @@ async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string):
 • "what's next?" - Get next exercise
 
 Questions? Just ask!`;
+
+/**
+ * /help - Show available commands
+ */
+async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
+  return HELP_TEXT;
 }
 
 /**
  * /today - Show today's planned workout
+ * Note: The weekly plan is pre-loaded in the system context
  */
 async function handleToday(
   agent: CoachAgent,
@@ -108,8 +112,14 @@ async function handleToday(
   _args: string,
   callbacks?: StreamingCallbacks
 ): Promise<string> {
+  const dateInfo = getDateInfoTZAware();
+
+  console.log(
+    `[/today] Day: ${dateInfo.dayOfWeek}, Date: ${dateInfo.date}, Week: ${dateInfo.isoWeek}`
+  );
+
   const response = await agent.chat(
-    "Show me today's workout plan. Read the current week's plan and tell me what's scheduled for today. " +
+    `Show me today's workout. Use the weekly plan already in your context to find what's scheduled for ${dateInfo.dayOfWeek}. ` +
       "If today is a rest day, let me know. If there's no plan, suggest what I should do.",
     callbacks
   );
@@ -118,6 +128,7 @@ async function handleToday(
 
 /**
  * /plan - Show this week's plan
+ * Note: The weekly plan is pre-loaded in the system context
  */
 async function handlePlan(
   agent: CoachAgent,
@@ -128,7 +139,7 @@ async function handlePlan(
   const week = getCurrentWeek();
 
   const response = await agent.chat(
-    `Show me the full weekly plan for ${week}. Read plans/${week}.md and give me a summary of each day.`,
+    `Give me a summary of the weekly plan for ${week}. The plan is already in your context - summarize each day briefly.`,
     callbacks
   );
   return response.message;
@@ -136,6 +147,7 @@ async function handlePlan(
 
 /**
  * /fullplan - Show this week's plan with all exercise details
+ * Note: The weekly plan is pre-loaded in the system context
  */
 async function handlePlanFull(
   agent: CoachAgent,
@@ -146,7 +158,7 @@ async function handlePlanFull(
   const week = getCurrentWeek();
 
   const response = await agent.chat(
-    `Show me the complete weekly plan for ${week}. Read plans/${week}.md and display the FULL plan with every single exercise, sets, reps, and weights for each day. Do not summarize - show all details exactly as written in the plan file.`,
+    `Show me the complete weekly plan for ${week}. The plan is already in your context - display the FULL plan with every exercise, sets, reps, and weights for each day. Do not summarize - show all details.`,
     callbacks
   );
   return response.message;
@@ -154,6 +166,7 @@ async function handlePlanFull(
 
 /**
  * /done - Complete current workout
+ * Note: Today's workout and PRs are pre-loaded in the system context
  */
 async function handleDone(
   agent: CoachAgent,
@@ -161,20 +174,25 @@ async function handleDone(
   _args: string,
   callbacks?: StreamingCallbacks
 ): Promise<string> {
+  const dateInfo = getDateInfoTZAware();
+
   const response = await agent.chat(
-    "I'm done with my workout. Please:\n" +
-      "1. Check if there's an in-progress workout branch\n" +
-      "2. Summarize what I did\n" +
-      "3. Note any PRs\n" +
-      "4. Ask for my energy level if I haven't mentioned it\n" +
-      "5. Finalize the workout file and merge the branch",
+    `I'm done with my workout. Today is ${dateInfo.date}. ` +
+      "Today's workout log is already in your context. Please:\n" +
+      "1. Summarize what I did\n" +
+      "2. Check for any new PRs against prs.yaml (also in your context) and update if needed\n" +
+      "3. Ask for my energy level if I haven't mentioned it\n" +
+      "4. Update the workout file with the summary and set status: completed\n" +
+      "5. Commit and push the changes to main",
     callbacks
   );
+
   return response.message;
 }
 
 /**
  * /prs - Show personal records
+ * Note: PRs are pre-loaded in the system context
  */
 async function handlePRs(
   agent: CoachAgent,
@@ -183,7 +201,7 @@ async function handlePRs(
   callbacks?: StreamingCallbacks
 ): Promise<string> {
   const response = await agent.chat(
-    "Show me my current personal records. Read prs.yaml and display:\n" +
+    "Show me my current personal records. The PRs are already in your context. Display:\n" +
       "1. Current PRs for main lifts (bench, squat, deadlift, OHP, pull-ups)\n" +
       "2. Recent progress (any PRs in the last few weeks)\n" +
       "3. Estimated 1RMs",
@@ -194,6 +212,7 @@ async function handlePRs(
 
 /**
  * /demo - Find exercise demonstration
+ * Uses web search to find quality video demonstrations
  */
 async function handleDemo(
   agent: CoachAgent,
@@ -207,8 +226,11 @@ async function handleDemo(
 
   const response = await agent.chat(
     `Find a good video demonstration for the exercise: ${args}. ` +
-      "Search for quality instructional content and provide helpful cues.",
-    callbacks
+      "Use web search to find quality instructional content from reputable sources " +
+      "(like Jeff Nippard, AthleanX, Renaissance Periodization, etc). " +
+      "Provide the video link and key technique cues.",
+    callbacks,
+    { additionalTools: ["WebSearch"] }
   );
   return response.message;
 }
@@ -227,7 +249,7 @@ async function handleMe(
       "1. My basic info (name, training schedule, goals)\n" +
       "2. My current PRs for main lifts\n" +
       "3. Any limitations or preferences you know about\n" +
-      "4. My gym/equipment setup",
+      "4. My equipment setup",
     callbacks
   );
   return response.message;
@@ -255,10 +277,46 @@ async function handleSummary(
 }
 
 /**
+ * /funfacts - Share interesting fitness facts personalized to the user
+ */
+async function handleFunFacts(
+  agent: CoachAgent,
+  _bot: TelegramBot,
+  _args: string,
+  callbacks?: StreamingCallbacks
+): Promise<string> {
+  const response = await agent.chat(
+    "Share some fun and interesting fitness facts! First read profile.md and prs.yaml to understand my training, " +
+      "then give me 2-3 fun facts that are relevant to my workout style. Include:\n" +
+      "1. A surprising science fact about strength training or muscle growth\n" +
+      "2. A fun fact related to one of my main lifts or exercises\n" +
+      "3. An interesting historical or cultural fact about fitness\n\n" +
+      "Make it engaging and tie it back to my training when possible. Keep it concise for Telegram.",
+    callbacks
+  );
+  return response.message;
+}
+
+/**
+ * /restart - Restart the server
+ */
+async function handleRestart(_agent: CoachAgent, bot: TelegramBot, _args: string): Promise<string> {
+  await bot.sendPlainMessage("Restarting server... Be back in a moment!");
+
+  // Small delay to ensure the message is sent before exit
+  setTimeout(() => {
+    console.log("[Commands] Server restart requested via /restart command");
+    process.exit(0);
+  }, 500);
+
+  return "";
+}
+
+/**
  * Handle an unknown command
  */
-export function handleUnknownCommand(command: string): string {
-  return `I don't recognize the command /${command}. Try /help to see available commands.`;
+function handleUnknownCommand(command: string): string {
+  return `I don't recognize the command /${command}. Here's what I can do:\n\n${HELP_TEXT}`;
 }
 
 /**
@@ -269,7 +327,17 @@ export function commandExists(command: string): boolean {
 }
 
 // Commands that benefit from loading indicator (they call agent.chat which is slow)
-const SLOW_COMMANDS = ["prs", "plan", "fullplan", "today", "done", "demo", "me", "summary"];
+const SLOW_COMMANDS = [
+  "prs",
+  "plan",
+  "fullplan",
+  "today",
+  "done",
+  "demo",
+  "me",
+  "summary",
+  "funfacts",
+];
 
 const LOADING_MESSAGES: Record<string, string> = {
   prs: "✨ _Looking up your PRs..._",
@@ -280,6 +348,7 @@ const LOADING_MESSAGES: Record<string, string> = {
   demo: "✨ _Finding a demo..._",
   me: "✨ _Pulling up your profile..._",
   summary: "✨ _Reviewing your journey..._",
+  funfacts: "✨ _Finding fun facts..._",
 };
 
 /**
