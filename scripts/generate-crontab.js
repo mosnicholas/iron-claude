@@ -12,8 +12,7 @@
  * - Weekly plan: Sunday 8:00 PM
  */
 
-// Inline implementation to avoid needing to build TypeScript
-// Uses the same logic as src/utils/date.ts
+import { getTimezoneOffset } from "date-fns-tz";
 
 const DEFAULT_TIMEZONE = "America/New_York";
 
@@ -22,69 +21,35 @@ function getTimezone() {
 }
 
 /**
- * Convert local time to UTC cron schedule
+ * Convert local time to UTC cron schedule using date-fns-tz
  * @param {number} localHour - Hour in local time (0-23)
  * @param {number} localMinute - Minute (0-59)
  * @param {string} timezone - IANA timezone string
  * @returns {{ utcHour: number, utcMinute: number, dayOffset: number }}
  */
 function localToUtcSchedule(localHour, localMinute, timezone) {
-  // Create a reference date (use a date without DST ambiguity)
-  // We'll use the current date to get the correct offset
-  const now = new Date();
+  // Get timezone offset in minutes (negative for west of UTC)
+  // Use current date to get the correct offset (handles DST)
+  const offsetMs = getTimezoneOffset(timezone, new Date());
+  const offsetMinutes = offsetMs / (60 * 1000);
 
-  // Create a date string in the target timezone
-  const localDateStr = now.toLocaleDateString("en-CA", { timeZone: timezone }); // YYYY-MM-DD format
-
-  // Parse it back as if it were UTC, then adjust
-  const [year, month, day] = localDateStr.split("-").map(Number);
-
-  // Create a date object for the local time
-  const localDate = new Date(Date.UTC(year, month - 1, day, localHour, localMinute));
-
-  // Get the offset for this timezone at this date
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    timeZoneName: "shortOffset",
-  });
-
-  // Parse offset from formatted string (e.g., "GMT-5" or "GMT+2")
-  const parts = formatter.formatToParts(localDate);
-  const tzPart = parts.find((p) => p.type === "timeZoneName");
-  const offsetMatch = tzPart?.value?.match(/GMT([+-]?\d+)?(?::(\d+))?/);
-
-  let offsetHours = 0;
-  let offsetMinutes = 0;
-
-  if (offsetMatch) {
-    offsetHours = parseInt(offsetMatch[1] || "0", 10);
-    offsetMinutes = parseInt(offsetMatch[2] || "0", 10);
-    if (offsetHours < 0) offsetMinutes = -offsetMinutes;
-  }
-
-  // Convert local time to UTC
-  // If timezone is GMT-5, local 8pm = UTC 8pm + 5 = UTC 1am (next day)
-  let utcHour = localHour - offsetHours;
-  let utcMinute = localMinute - offsetMinutes;
+  // Convert local time to UTC by subtracting the offset
+  // offset is positive for timezones ahead of UTC (e.g., +540 for Asia/Tokyo)
+  // offset is negative for timezones behind UTC (e.g., -300 for America/New_York)
+  let totalMinutes = localHour * 60 + localMinute - offsetMinutes;
   let dayOffset = 0;
 
-  // Handle minute overflow/underflow
-  if (utcMinute < 0) {
-    utcMinute += 60;
-    utcHour -= 1;
-  } else if (utcMinute >= 60) {
-    utcMinute -= 60;
-    utcHour += 1;
+  // Handle day wraparound
+  if (totalMinutes < 0) {
+    totalMinutes += 24 * 60;
+    dayOffset = -1;
+  } else if (totalMinutes >= 24 * 60) {
+    totalMinutes -= 24 * 60;
+    dayOffset = 1;
   }
 
-  // Handle hour overflow/underflow
-  if (utcHour < 0) {
-    utcHour += 24;
-    dayOffset = -1; // Previous day in UTC
-  } else if (utcHour >= 24) {
-    utcHour -= 24;
-    dayOffset = 1; // Next day in UTC
-  }
+  const utcHour = Math.floor(totalMinutes / 60);
+  const utcMinute = totalMinutes % 60;
 
   return { utcHour, utcMinute, dayOffset };
 }
@@ -175,7 +140,9 @@ function generateCrontab() {
 
       const localTime = `${schedule.localHour.toString().padStart(2, "0")}:${schedule.localMinute.toString().padStart(2, "0")}`;
       const utcTime = `${utcHour.toString().padStart(2, "0")}:${utcMinute.toString().padStart(2, "0")}`;
-      lines.push(`# ${schedule.name} - ${localTime} ${timezone} (${utcTime} UTC)`);
+      lines.push(
+        `# ${schedule.name} - ${localTime} ${timezone} (${utcTime} UTC)`
+      );
     }
 
     lines.push(
