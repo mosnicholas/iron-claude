@@ -115,7 +115,10 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
  * Process a Telegram message in the background
  * Called after we've already returned 200 to Telegram
  */
-async function processMessage(update: TelegramUpdate, bot: ReturnType<typeof createTelegramBot>): Promise<void> {
+async function processMessage(
+  update: TelegramUpdate,
+  bot: ReturnType<typeof createTelegramBot>
+): Promise<void> {
   try {
     // Send typing indicator
     await bot.sendTypingAction();
