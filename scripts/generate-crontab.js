@@ -154,5 +154,14 @@ function generateCrontab() {
   return lines.join("\n");
 }
 
-// Output the generated crontab
-console.log(generateCrontab());
+// Export for testing
+export { localToUtcSchedule, adjustDayOfWeek, generateCrontab };
+
+// Run if executed directly (not imported as a module)
+const isMainModule =
+  import.meta.url === `file://${process.argv[1]}` ||
+  import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, "/")}`;
+
+if (isMainModule) {
+  console.log(generateCrontab());
+}

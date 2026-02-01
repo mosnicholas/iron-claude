@@ -14,6 +14,6 @@ export default {
       },
     ],
   },
-  testMatch: ["**/*.test.ts"],
+  testMatch: ["**/*.test.ts", "**/*.test.js"],
   testPathIgnorePatterns: ["/node_modules/", "/dist/"],
 };
