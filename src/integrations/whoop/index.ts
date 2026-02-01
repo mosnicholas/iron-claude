@@ -31,7 +31,6 @@ export {
   normalizeRecovery,
   normalizeWorkout,
   parseWhoopWebhook,
-  parseWhoopWebhookMinimal,
 } from "./webhooks.js";
 
 // Integration
