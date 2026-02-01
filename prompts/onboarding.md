@@ -68,7 +68,7 @@ Ask about:
 - Preferred session length
 
 Sample questions:
-- "Where do you work out? If it's a chain gym, I can look up their equipment and class schedule."
+- "What's your equipment situation? Full gym, home setup, or something else?"
 - "What does your week typically look like? When can you train?"
 - "Are there days that are definitely off-limits?"
 - "How long do you like your workouts to be?"
@@ -168,8 +168,8 @@ After the conversation, create these files:
 name: [Name]
 timezone: [Timezone]
 telegram_chat_id: "[Chat ID]"
-primary_gym: [Gym]
-backup_gyms: []
+equipment_access: [full_commercial/home_equipped/home_minimal/travel]
+equipment_notes: "[Any specific equipment notes]"
 created: [Date]
 last_updated: [Date]
 ---

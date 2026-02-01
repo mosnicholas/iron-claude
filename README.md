@@ -37,8 +37,8 @@ You'll need:
 ### Morning
 Get an automatic reminder with today's workout plan.
 
-### At the Gym
-Log workouts via Telegram:
+### During Your Workout
+Log exercises via Telegram:
 ```
 OHP 115: 6, 5, 5 @8
 Dips +25: 8, 7, 7

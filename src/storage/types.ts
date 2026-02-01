@@ -11,7 +11,7 @@ export interface Profile {
   name: string;
   timezone: string;
   telegramChatId: string;
-  primaryGym: string;
+  equipmentAccess: "full_commercial" | "home_equipped" | "home_minimal" | "travel" | string;
   goals: {
     primary: string[];
     secondary: string[];

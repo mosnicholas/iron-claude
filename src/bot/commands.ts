@@ -242,7 +242,7 @@ async function handleMe(
       "1. My basic info (name, training schedule, goals)\n" +
       "2. My current PRs for main lifts\n" +
       "3. Any limitations or preferences you know about\n" +
-      "4. My gym/equipment setup",
+      "4. My equipment setup",
     callbacks
   );
   return response.message;
