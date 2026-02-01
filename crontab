@@ -7,8 +7,8 @@
 # Daily reminder - 11:00 UTC (6:00 AM EST) on weekdays
 0 11 * * 1-5 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/daily-reminder
 
-# Weekly retrospective - 23:00 UTC (6:00 PM EST) on Saturday
-0 23 * * 6 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/weekly-retro
+# Weekly retrospective - 00:30 UTC Monday (7:30 PM EST Sunday)
+30 0 * * 1 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/weekly-retro
 
 # Weekly plan - 01:00 UTC Monday (8:00 PM EST Sunday)
 0 1 * * 1 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/weekly-plan
