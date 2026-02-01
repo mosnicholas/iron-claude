@@ -7,6 +7,7 @@
 import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { getConfiguredIntegrations, hasConfiguredIntegrations } from "../integrations/registry.js";
 import { getDateInfoTZAware } from "../utils/date.js";
 import { formatRecentMessagesForPrompt } from "../bot/message-history.js";
 
@@ -42,6 +43,65 @@ export interface SystemPromptContext {
   messageHistoryCount?: number; // Number of recent messages to include (default: 10)
 }
 
+/**
+ * Build context about connected device integrations.
+ */
+function buildIntegrationContext(): string {
+  if (!hasConfiguredIntegrations()) {
+    return "";
+  }
+
+  const integrations = getConfiguredIntegrations();
+  const integrationNames = integrations.map((i) => i.name).join(", ");
+
+  return `
+## Device Integrations
+
+You have access to data from connected fitness devices: **${integrationNames}**
+
+Integration data is stored in the workout file frontmatter under the device name:
+
+\`\`\`yaml
+---
+date: "2026-01-27"
+type: upper
+status: in_progress
+whoop:
+  recovery:
+    score: 78
+    hrv: 45.2
+    restingHeartRate: 52
+  sleep:
+    durationMinutes: 420
+    score: 85
+    stages: { rem: 90, deep: 85, light: 200, awake: 45 }
+  workouts:
+    - type: Weightlifting
+      durationMinutes: 45
+      strain: 12.5
+      calories: 320
+---
+\`\`\`
+
+### Using Recovery Data
+
+Recovery scores indicate readiness for training:
+- **80-100%**: High recovery - good day for intense training or attempting PRs
+- **60-79%**: Moderate recovery - standard training intensity recommended
+- **40-59%**: Low recovery - consider lighter intensity or active recovery
+- **0-39%**: Very low recovery - prioritize rest and recovery
+
+### When to Reference Integration Data
+
+1. **Daily reminders**: Check today's recovery score from frontmatter and mention it
+2. **Weekly planning**: Consider the week's recovery trends when setting intensity
+3. **Retrospectives**: Include HRV and recovery trends in analysis
+4. **Workout feedback**: Compare device-recorded strain/HR with planned intensity
+
+Read the day's workout file (e.g., \`weeks/2026-W05/2026-01-27.md\`) to access integration data.
+`;
+}
+
 export function buildSystemPrompt(context?: SystemPromptContext): string {
   const {
     repoPath,
@@ -72,6 +132,9 @@ ${gitBinaryPath ? `- **Git binary**: \`${gitBinaryPath}\` (use this full path fo
 IMPORTANT: Your working directory is already set to the fitness-data repo. Use relative paths like \`profile.md\` or \`weeks/2024-W05/plan.md\`, not absolute paths.
 `
       : "";
+
+  // Build integration context (if any devices are connected)
+  const integrationContext = buildIntegrationContext();
 
   // Get recent message history
   const messageHistory = formatRecentMessagesForPrompt(messageHistoryCount);
@@ -143,7 +206,7 @@ You have direct access to the fitness-data repository files:
 
 Use Read, Glob, and Grep to explore files. Use Edit/Write to update them.
 Current timezone: ${dateInfo.timezone}
-
+${integrationContext}
 ## Reference Guides
 
 <exercise-parsing>
