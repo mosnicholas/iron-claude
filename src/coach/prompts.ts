@@ -23,7 +23,7 @@ export function loadPrompt(name: string): string {
   return readFileSync(path, "utf-8");
 }
 
-export function loadPartial(name: string): string {
+function loadPartial(name: string): string {
   const path = join(PROMPTS_DIR, "partials", `${name}.md`);
 
   if (!existsSync(path)) {
@@ -131,8 +131,4 @@ export function buildWeeklyPlanningPrompt(): string {
 
 export function buildRetrospectivePrompt(): string {
   return loadPrompt("retrospective");
-}
-
-export function buildOnboardingPrompt(): string {
-  return loadPrompt("onboarding");
 }

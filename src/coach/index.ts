@@ -11,7 +11,7 @@ import { join } from "path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { syncRepo, pushChanges } from "../storage/repo-sync.js";
 import { buildSystemPrompt } from "./prompts.js";
-import { getCurrentWeek } from "../utils/date.js";
+import { getCurrentWeek, DEFAULT_TIMEZONE } from "../utils/date.js";
 import {
   extractTextFromMessage,
   extractToolsFromMessage,
@@ -69,7 +69,7 @@ export class CoachAgent {
   constructor(config: CoachConfig = {}) {
     this.config = {
       model: config.model || "claude-sonnet-4-5-20250929",
-      timezone: config.timezone || process.env.TIMEZONE || "America/New_York",
+      timezone: config.timezone || process.env.TIMEZONE || DEFAULT_TIMEZONE,
       maxTurns: config.maxTurns || 10,
     };
   }

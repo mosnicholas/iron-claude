@@ -19,10 +19,7 @@ export function getWeightUnit(): WeightUnit {
   return "lbs"; // default
 }
 
-/**
- * Get the weight unit label for display
- * (Alias for getWeightUnit - useful when the intent is display formatting)
- */
+/** Alias for getWeightUnit (semantic clarity when formatting for display) */
 export const getWeightUnitLabel = getWeightUnit;
 
 /**

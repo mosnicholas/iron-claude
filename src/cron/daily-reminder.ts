@@ -8,7 +8,7 @@
 import { createCoachAgent } from "../coach/index.js";
 import { createTelegramBot } from "../bot/telegram.js";
 import { createGitHubStorage } from "../storage/github.js";
-import { getCurrentWeek, getToday, formatDateHuman } from "../utils/date.js";
+import { getCurrentWeek, getToday, formatDateHuman, DEFAULT_TIMEZONE } from "../utils/date.js";
 
 export interface DailyReminderResult {
   success: boolean;
@@ -20,7 +20,7 @@ export interface DailyReminderResult {
  * Run the daily reminder job
  */
 export async function runDailyReminder(): Promise<DailyReminderResult> {
-  const timezone = process.env.TIMEZONE || "America/New_York";
+  const timezone = process.env.TIMEZONE || DEFAULT_TIMEZONE;
   console.log("[daily-reminder] Starting daily reminder job");
 
   try {
@@ -69,7 +69,7 @@ export async function runDailyReminder(): Promise<DailyReminderResult> {
     const response = await agent.runTask(
       `Generate a morning workout reminder for today (${formatDateHuman(new Date(today))}).
 
-Read the weekly plan (plans/${currentWeek}.md) and create a motivating message that includes:
+Read the weekly plan (weeks/${currentWeek}/plan.md) and create a motivating message that includes:
 
 1. A brief greeting appropriate for the day
 2. Today's workout summary:
@@ -111,19 +111,4 @@ Keep it concise - this is for Telegram. Use emoji sparingly.`
       error: errorMessage,
     };
   }
-}
-
-/**
- * Generate a fallback message when the agent fails
- */
-export function getFallbackMessage(dayName: string, isRestDay: boolean): string {
-  if (isRestDay) {
-    return `Good morning! It's ${dayName} - rest up and recover.`;
-  }
-
-  return `Good morning! Ready to train today?
-
-Check your plan with /today or /plan.
-
-Let's get after it!`;
 }

@@ -5,7 +5,7 @@
  * Messages are stored with timestamps and expire after a configurable duration.
  */
 
-export interface StoredMessage {
+interface StoredMessage {
   text: string;
   timestamp: Date;
   isFromUser: boolean; // true = user message, false = bot response
@@ -38,7 +38,7 @@ export function addMessage(text: string, isFromUser: boolean): void {
  * @param count Number of messages to return (default: 10)
  * @returns Array of recent messages, oldest first
  */
-export function getRecentMessages(count = 10): StoredMessage[] {
+function getRecentMessages(count = 10): StoredMessage[] {
   const now = Date.now();
 
   // Filter out expired messages
@@ -79,11 +79,4 @@ The following are the last ${messages.length} messages from this conversation:
 ${formatted.join("\n")}
 
 Use this context to maintain conversation continuity.`;
-}
-
-/**
- * Clear all message history (for testing or reset)
- */
-export function clearMessageHistory(): void {
-  messageHistory.length = 0;
 }

@@ -20,7 +20,7 @@ function splitOnMessageBreaks(text: string): string[] {
     .filter((chunk) => chunk.length > 0);
 }
 
-export type CommandHandler = (
+type CommandHandler = (
   agent: CoachAgent,
   bot: TelegramBot,
   args: string,
@@ -68,9 +68,7 @@ Quick commands:
 • /done - Finish your current workout
 • /prs - Check your personal records
 
-Or just text me what you're doing — "bench 175x5" and I'll log it.
-
-Let's get after it! 💪`;
+Or just text me what you're doing — "bench 175x5" and I'll log it.`;
 }
 
 /**
@@ -138,7 +136,7 @@ async function handlePlan(
   const week = getCurrentWeek();
 
   const response = await agent.chat(
-    `Show me the full weekly plan for ${week}. Read plans/${week}.md and give me a summary of each day.`,
+    `Show me the full weekly plan for ${week}. Read weeks/${week}/plan.md and give me a summary of each day.`,
     callbacks
   );
   return response.message;
@@ -156,7 +154,7 @@ async function handlePlanFull(
   const week = getCurrentWeek();
 
   const response = await agent.chat(
-    `Show me the complete weekly plan for ${week}. Read plans/${week}.md and display the FULL plan with every single exercise, sets, reps, and weights for each day. Do not summarize - show all details exactly as written in the plan file.`,
+    `Show me the complete weekly plan for ${week}. Read weeks/${week}/plan.md and display the FULL plan with every single exercise, sets, reps, and weights for each day. Do not summarize - show all details exactly as written in the plan file.`,
     callbacks
   );
   return response.message;
@@ -310,7 +308,7 @@ async function handleRestart(_agent: CoachAgent, bot: TelegramBot, _args: string
 /**
  * Handle an unknown command
  */
-export function handleUnknownCommand(command: string): string {
+function handleUnknownCommand(command: string): string {
   return `I don't recognize the command /${command}. Try /help to see available commands.`;
 }
 

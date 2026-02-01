@@ -1,14 +1,19 @@
 # Fitness Coach Scheduled Tasks
-# Times are in UTC - adjust based on your timezone
+#
+# NOTE: This file is not used directly in production.
+# The crontab is generated at container startup by scripts/generate-crontab.js
+# based on the TIMEZONE environment variable.
+#
+# This file documents the default schedule (in user's local timezone):
 
 # Check reminders - every hour
-0 * * * * curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/check-reminders
+# 0 * * * * curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/check-reminders
 
-# Daily reminder - 11:00 UTC (6:00 AM EST) on weekdays
-0 11 * * 1-5 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/daily-reminder
+# Daily reminder - 6:00 AM on weekdays (Mon-Fri)
+# 0 6 * * 1-5 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/daily-reminder
 
-# Weekly retrospective - 00:30 UTC Monday (7:30 PM EST Sunday)
-30 0 * * 1 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/weekly-retro
+# Weekly retrospective - Sunday 7:30 PM
+# 30 19 * * 0 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/weekly-retro
 
-# Weekly plan - 01:00 UTC Monday (8:00 PM EST Sunday)
-0 1 * * 1 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/weekly-plan
+# Weekly plan - Sunday 8:00 PM
+# 0 20 * * 0 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/weekly-plan

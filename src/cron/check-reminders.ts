@@ -7,7 +7,7 @@
 
 import { createTelegramBot } from "../bot/telegram.js";
 import { createGitHubStorage } from "../storage/github.js";
-import { getToday, getCurrentHour } from "../utils/date.js";
+import { getToday, getCurrentHour, DEFAULT_TIMEZONE } from "../utils/date.js";
 
 export interface CheckRemindersResult {
   success: boolean;
@@ -20,7 +20,7 @@ export interface CheckRemindersResult {
  * Run the check-reminders job
  */
 export async function runCheckReminders(): Promise<CheckRemindersResult> {
-  const timezone = process.env.TIMEZONE || "America/New_York";
+  const timezone = process.env.TIMEZONE || DEFAULT_TIMEZONE;
   console.log("[check-reminders] Starting reminder check");
 
   try {

@@ -23,6 +23,20 @@ export class TelegramBot {
   }
 
   /**
+   * Get the bot token (for use by ThrottledMessageEditor)
+   */
+  getBotToken(): string {
+    return this.config.botToken;
+  }
+
+  /**
+   * Get the chat ID (for use by ThrottledMessageEditor)
+   */
+  getChatId(): string {
+    return this.config.chatId;
+  }
+
+  /**
    * Verify that a request is from the authorized chat
    */
   isAuthorizedChat(chatId: number): boolean {
@@ -591,13 +605,13 @@ export class ThrottledMessageEditor {
    * Edit message as plain text (no formatting)
    */
   private async editPlain(text: string): Promise<void> {
-    const url = `https://api.telegram.org/bot${this.getBotToken()}/editMessageText`;
+    const url = `https://api.telegram.org/bot${this.bot.getBotToken()}/editMessageText`;
 
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        chat_id: this.getChatId(),
+        chat_id: this.bot.getChatId(),
         message_id: this.messageId,
         text,
       }),
@@ -613,13 +627,13 @@ export class ThrottledMessageEditor {
    * Edit message with Markdown formatting (for status updates)
    */
   private async editMarkdown(text: string): Promise<void> {
-    const url = `https://api.telegram.org/bot${this.getBotToken()}/editMessageText`;
+    const url = `https://api.telegram.org/bot${this.bot.getBotToken()}/editMessageText`;
 
     await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        chat_id: this.getChatId(),
+        chat_id: this.bot.getChatId(),
         message_id: this.messageId,
         text,
         parse_mode: "MarkdownV2",
@@ -627,14 +641,5 @@ export class ThrottledMessageEditor {
     }).catch(() => {
       // Silently fail - original message still shows
     });
-  }
-
-  // Access private config through bot instance methods
-  private getBotToken(): string {
-    return (this.bot as unknown as { config: { botToken: string } }).config.botToken;
-  }
-
-  private getChatId(): string {
-    return (this.bot as unknown as { config: { chatId: string } }).config.chatId;
   }
 }

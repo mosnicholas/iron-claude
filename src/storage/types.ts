@@ -133,20 +133,6 @@ export interface ParsedSet {
 }
 
 // ============================================================================
-// Agent Context
-// ============================================================================
-
-export interface AgentContext {
-  profile: Profile | null;
-  learnings: string[];
-  currentWeekPlan: WeeklyPlan | null;
-  inProgressWorkout: WorkoutLog | null;
-  recentWorkouts: WorkoutLog[];
-  currentPRs: PRsData;
-  todaysPlan: DayPlan | null;
-}
-
-// ============================================================================
 // Telegram Types
 // ============================================================================
 
