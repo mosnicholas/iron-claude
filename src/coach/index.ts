@@ -109,6 +109,43 @@ export class CoachAgent {
     return undefined;
   }
 
+  /**
+   * Try to read the PRs file from the local repo
+   */
+  private getPRs(repoPath: string): string | undefined {
+    const prsPath = join(repoPath, "prs.yaml");
+
+    if (existsSync(prsPath)) {
+      try {
+        return readFileSync(prsPath, "utf-8");
+      } catch {
+        console.log(`[Coach] Could not read PRs from ${prsPath}`);
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Try to read today's workout log from the local repo
+   */
+  private getTodayWorkout(repoPath: string): string | undefined {
+    const currentWeek = getCurrentWeek(this.config.timezone);
+    // Get today's date in YYYY-MM-DD format
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: this.config.timezone });
+    const workoutPath = join(repoPath, "weeks", currentWeek, `${today}.md`);
+
+    if (existsSync(workoutPath)) {
+      try {
+        return readFileSync(workoutPath, "utf-8");
+      } catch {
+        console.log(`[Coach] Could not read today's workout from ${workoutPath}`);
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
   private async runQuery(
     prompt: string,
     additionalContext?: string,
@@ -118,14 +155,18 @@ export class CoachAgent {
     const repoPath = await this.ensureRepoSynced();
     const gitBinaryPath = getGitBinaryPath();
 
-    // Try to get the current week's plan for context
+    // Pre-load context data for faster responses
     const weeklyPlan = this.getWeeklyPlan(repoPath);
+    const prsYaml = this.getPRs(repoPath);
+    const todayWorkout = this.getTodayWorkout(repoPath);
 
     // Build system prompt with environment paths and context
     const basePrompt = buildSystemPrompt({
       repoPath,
       gitBinaryPath,
       weeklyPlan,
+      prsYaml,
+      todayWorkout,
     });
     const systemPrompt = additionalContext
       ? `${basePrompt}\n\n## Additional Context\n\n${additionalContext}`

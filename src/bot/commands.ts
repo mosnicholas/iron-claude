@@ -68,7 +68,7 @@ Quick commands:
 • /done - Finish your current workout
 • /prs - Check your personal records
 
-Or just text me what you're doing — "bench 175x5" and I'll log it.`;
+Or just text me what you're doing — "bench 175x5" and I'll log it. Let's get after it! 💪`;
 }
 
 /**
@@ -102,6 +102,7 @@ Questions? Just ask!`;
 
 /**
  * /today - Show today's planned workout
+ * Note: The weekly plan is pre-loaded in the system context
  */
 async function handleToday(
   agent: CoachAgent,
@@ -116,8 +117,7 @@ async function handleToday(
   );
 
   const response = await agent.chat(
-    `Show me today's workout plan. Today is ${dateInfo.dayOfWeek}. ` +
-      "Read the current week's plan and tell me what's scheduled for this day. " +
+    `Show me today's workout. Use the weekly plan already in your context to find what's scheduled for ${dateInfo.dayOfWeek}. ` +
       "If today is a rest day, let me know. If there's no plan, suggest what I should do.",
     callbacks
   );
@@ -126,6 +126,7 @@ async function handleToday(
 
 /**
  * /plan - Show this week's plan
+ * Note: The weekly plan is pre-loaded in the system context
  */
 async function handlePlan(
   agent: CoachAgent,
@@ -136,7 +137,7 @@ async function handlePlan(
   const week = getCurrentWeek();
 
   const response = await agent.chat(
-    `Show me the full weekly plan for ${week}. Read weeks/${week}/plan.md and give me a summary of each day.`,
+    `Give me a summary of the weekly plan for ${week}. The plan is already in your context - summarize each day briefly.`,
     callbacks
   );
   return response.message;
@@ -144,6 +145,7 @@ async function handlePlan(
 
 /**
  * /fullplan - Show this week's plan with all exercise details
+ * Note: The weekly plan is pre-loaded in the system context
  */
 async function handlePlanFull(
   agent: CoachAgent,
@@ -154,7 +156,7 @@ async function handlePlanFull(
   const week = getCurrentWeek();
 
   const response = await agent.chat(
-    `Show me the complete weekly plan for ${week}. Read weeks/${week}/plan.md and display the FULL plan with every single exercise, sets, reps, and weights for each day. Do not summarize - show all details exactly as written in the plan file.`,
+    `Show me the complete weekly plan for ${week}. The plan is already in your context - display the FULL plan with every exercise, sets, reps, and weights for each day. Do not summarize - show all details.`,
     callbacks
   );
   return response.message;
@@ -162,6 +164,7 @@ async function handlePlanFull(
 
 /**
  * /done - Complete current workout
+ * Note: Today's workout and PRs are pre-loaded in the system context
  */
 async function handleDone(
   agent: CoachAgent,
@@ -172,13 +175,13 @@ async function handleDone(
   const dateInfo = getDateInfoTZAware();
 
   const response = await agent.chat(
-    `I'm done with my workout. Today is ${dateInfo.date}. Please:\n` +
-      "1. Find today's workout file (check weeks/{current-week}/{today}.md)\n" +
-      "2. Summarize what I did\n" +
-      "3. Note any PRs and update prs.yaml if needed\n" +
-      "4. Ask for my energy level if I haven't mentioned it\n" +
-      "5. Update the workout file with the summary and set status: completed\n" +
-      "6. Commit and push the changes to main",
+    `I'm done with my workout. Today is ${dateInfo.date}. ` +
+      "Today's workout log is already in your context. Please:\n" +
+      "1. Summarize what I did\n" +
+      "2. Check for any new PRs against prs.yaml (also in your context) and update if needed\n" +
+      "3. Ask for my energy level if I haven't mentioned it\n" +
+      "4. Update the workout file with the summary and set status: completed\n" +
+      "5. Commit and push the changes to main",
     callbacks
   );
 
@@ -187,6 +190,7 @@ async function handleDone(
 
 /**
  * /prs - Show personal records
+ * Note: PRs are pre-loaded in the system context
  */
 async function handlePRs(
   agent: CoachAgent,
@@ -195,7 +199,7 @@ async function handlePRs(
   callbacks?: StreamingCallbacks
 ): Promise<string> {
   const response = await agent.chat(
-    "Show me my current personal records. Read prs.yaml and display:\n" +
+    "Show me my current personal records. The PRs are already in your context. Display:\n" +
       "1. Current PRs for main lifts (bench, squat, deadlift, OHP, pull-ups)\n" +
       "2. Recent progress (any PRs in the last few weeks)\n" +
       "3. Estimated 1RMs",
