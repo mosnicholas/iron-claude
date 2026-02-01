@@ -71,11 +71,7 @@ Quick commands:
 Or just text me what you're doing — "bench 175x5" and I'll log it. Let's get after it! 💪`;
 }
 
-/**
- * /help - Show available commands
- */
-async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
-  return `**Available Commands**
+const HELP_TEXT = `**Available Commands**
 
 📋 **Planning**
 • /plan - Show this week's plan (summary)
@@ -98,6 +94,12 @@ async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string):
 • "what's next?" - Get next exercise
 
 Questions? Just ask!`;
+
+/**
+ * /help - Show available commands
+ */
+async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
+  return HELP_TEXT;
 }
 
 /**
@@ -314,7 +316,7 @@ async function handleRestart(_agent: CoachAgent, bot: TelegramBot, _args: string
  * Handle an unknown command
  */
 function handleUnknownCommand(command: string): string {
-  return `I don't recognize the command /${command}. Try /help to see available commands.`;
+  return `I don't recognize the command /${command}. Here's what I can do:\n\n${HELP_TEXT}`;
 }
 
 /**

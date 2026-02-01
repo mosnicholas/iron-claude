@@ -8,7 +8,7 @@
 import { createCoachAgent } from "../coach/index.js";
 import { createTelegramBot } from "../bot/telegram.js";
 import { createGitHubStorage } from "../storage/github.js";
-import { getCurrentWeek, getToday, formatDateHuman, DEFAULT_TIMEZONE } from "../utils/date.js";
+import { getCurrentWeek, getToday, formatDateHuman, getTimezone } from "../utils/date.js";
 
 export interface DailyReminderResult {
   success: boolean;
@@ -20,7 +20,7 @@ export interface DailyReminderResult {
  * Run the daily reminder job
  */
 export async function runDailyReminder(): Promise<DailyReminderResult> {
-  const timezone = process.env.TIMEZONE || DEFAULT_TIMEZONE;
+  const timezone = getTimezone();
   console.log("[daily-reminder] Starting daily reminder job");
 
   try {

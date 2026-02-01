@@ -23,8 +23,5 @@ Thumbs.db
 *.swp
 *.swo
 
-# Fly.io deployment (use fly.toml.example as template)
-fly.toml
-
 # Claude Code local settings
 .claude/settings.local.json

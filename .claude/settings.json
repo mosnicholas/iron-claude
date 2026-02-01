@@ -12,7 +12,7 @@
       "Bash(tree:*)",
       "Bash(pwd)",
       "Bash(echo:*)",
-      "Bash(git -C *)",
+      "Bash(git -C:*)",
       "Bash(git status*)",
       "Bash(git diff*)",
       "Bash(git log*)",

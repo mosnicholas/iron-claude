@@ -11,7 +11,7 @@ import { join } from "path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { syncRepo, pushChanges } from "../storage/repo-sync.js";
 import { buildSystemPrompt } from "./prompts.js";
-import { getCurrentWeek, DEFAULT_TIMEZONE } from "../utils/date.js";
+import { getCurrentWeek, getToday, getTimezone } from "../utils/date.js";
 import {
   extractTextFromMessage,
   extractToolsFromMessage,
@@ -69,7 +69,7 @@ export class CoachAgent {
   constructor(config: CoachConfig = {}) {
     this.config = {
       model: config.model || "claude-sonnet-4-5-20250929",
-      timezone: config.timezone || process.env.TIMEZONE || DEFAULT_TIMEZONE,
+      timezone: config.timezone || getTimezone(),
       maxTurns: config.maxTurns || 10,
     };
   }
@@ -131,8 +131,7 @@ export class CoachAgent {
    */
   private getTodayWorkout(repoPath: string): string | undefined {
     const currentWeek = getCurrentWeek(this.config.timezone);
-    // Get today's date in YYYY-MM-DD format
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: this.config.timezone });
+    const today = getToday(this.config.timezone);
     const workoutPath = join(repoPath, "weeks", currentWeek, `${today}.md`);
 
     if (existsSync(workoutPath)) {
