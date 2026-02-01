@@ -92,6 +92,15 @@ export function getToday(timezone?: string): string {
 }
 
 /**
+ * Get the current hour (0-23) for a timezone
+ */
+export function getCurrentHour(timezone?: string): number {
+  const tz = timezone || getTimezone();
+  const hourStr = formatInTimeZone(new Date(), tz, "H");
+  return parseInt(hourStr, 10);
+}
+
+/**
  * Comprehensive date info for a specific timezone
  * Used for system prompts and logging
  */
