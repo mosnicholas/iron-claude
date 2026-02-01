@@ -343,6 +343,13 @@ export function formatForTelegram(text: string): string {
     .replace(/#/g, "\\#")
     .replace(/\|/g, "\\|");
 
+  // Handle tildes: preserve valid strikethrough (~text~), escape lone tildes
+  // Use placeholder to protect valid pairs, then escape remaining, then restore
+  const STRIKE_PLACEHOLDER = "\x00STRIKE\x00";
+  formatted = formatted.replace(/~([^~\n]+)~/g, `${STRIKE_PLACEHOLDER}$1${STRIKE_PLACEHOLDER}`);
+  formatted = formatted.replace(/~/g, "\\~");
+  formatted = formatted.replace(new RegExp(STRIKE_PLACEHOLDER, "g"), "~");
+
   // Escape all hyphens (bullet markers are already converted to Unicode)
   formatted = formatted.replace(/-/g, "\\-");
 
