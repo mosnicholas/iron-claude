@@ -89,6 +89,16 @@ describe("Whoop OAuth", () => {
   });
 
   describe("isTokenExpired", () => {
+    it("returns true when expiresAt is 0", () => {
+      const unsetTokens = {
+        accessToken: "test",
+        refreshToken: "test",
+        expiresAt: 0,
+      };
+
+      expect(isTokenExpired(unsetTokens)).toBe(true);
+    });
+
     it("returns true when token is expired", () => {
       const expiredTokens = {
         accessToken: "test",

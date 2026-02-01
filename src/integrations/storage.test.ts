@@ -1,5 +1,7 @@
 import {
-  getISOWeek,
+  getISOWeekForDate,
+  parseFrontmatter,
+  serializeFrontmatter,
   formatRecoverySummary,
   formatSleepSummary,
   getRecoveryRecommendation,
@@ -7,42 +9,184 @@ import {
 import type { RecoveryData, SleepData } from "./types.js";
 
 describe("integration storage", () => {
-  describe("getISOWeek", () => {
+  describe("getISOWeekForDate", () => {
     it("returns consistent week format YYYY-WXX", () => {
-      const week = getISOWeek("2026-01-27");
+      const week = getISOWeekForDate("2026-01-27");
       expect(week).toMatch(/^\d{4}-W\d{2}$/);
     });
 
     it("returns same week for dates in the same week", () => {
       // Monday to Sunday should be the same week
-      const mondayWeek = getISOWeek("2026-01-26");
-      const sundayWeek = getISOWeek("2026-02-01");
+      const mondayWeek = getISOWeekForDate("2026-01-26");
+      const sundayWeek = getISOWeekForDate("2026-02-01");
       // These might span a week boundary, so just check they're both valid
       expect(mondayWeek).toMatch(/^\d{4}-W\d{2}$/);
       expect(sundayWeek).toMatch(/^\d{4}-W\d{2}$/);
     });
 
     it("returns different weeks for dates a week apart", () => {
-      const week1 = getISOWeek("2026-01-15");
-      const week2 = getISOWeek("2026-01-22");
+      const week1 = getISOWeekForDate("2026-01-15");
+      const week2 = getISOWeekForDate("2026-01-22");
       expect(week1).not.toBe(week2);
     });
 
     it("handles year start correctly", () => {
-      const week = getISOWeek("2026-01-01");
+      const week = getISOWeekForDate("2026-01-01");
       expect(week).toMatch(/^\d{4}-W\d{2}$/);
     });
 
     it("handles year end correctly", () => {
-      const week = getISOWeek("2026-12-31");
+      const week = getISOWeekForDate("2026-12-31");
       expect(week).toMatch(/^\d{4}-W\d{2}$/);
     });
 
     it("handles mid-year dates", () => {
-      const juneWeek = getISOWeek("2026-06-15");
-      const marchWeek = getISOWeek("2026-03-01");
+      const juneWeek = getISOWeekForDate("2026-06-15");
+      const marchWeek = getISOWeekForDate("2026-03-01");
       expect(juneWeek).toMatch(/^2026-W\d{2}$/);
       expect(marchWeek).toMatch(/^2026-W\d{2}$/);
+    });
+  });
+
+  describe("parseFrontmatter", () => {
+    it("parses simple frontmatter", () => {
+      const content = `---
+date: "2026-01-27"
+type: upper
+status: completed
+---
+
+# Workout content`;
+
+      const result = parseFrontmatter(content);
+
+      expect(result.frontmatter.date).toBe("2026-01-27");
+      expect(result.frontmatter.type).toBe("upper");
+      expect(result.frontmatter.status).toBe("completed");
+      expect(result.content).toBe("# Workout content");
+    });
+
+    it("parses nested objects", () => {
+      const content = `---
+date: "2026-01-27"
+whoop:
+  recovery:
+    score: 78
+    hrv: 45.2
+---
+
+# Content`;
+
+      const result = parseFrontmatter(content);
+
+      expect(result.frontmatter.date).toBe("2026-01-27");
+      const whoop = result.frontmatter.whoop as Record<string, unknown>;
+      expect(whoop).toBeDefined();
+      const recovery = whoop.recovery as Record<string, unknown>;
+      expect(recovery.score).toBe(78);
+      expect(recovery.hrv).toBe(45.2);
+    });
+
+    it("parses boolean and null values", () => {
+      const content = `---
+active: true
+deleted: false
+empty: null
+---
+
+Content`;
+
+      const result = parseFrontmatter(content);
+
+      expect(result.frontmatter.active).toBe(true);
+      expect(result.frontmatter.deleted).toBe(false);
+      expect(result.frontmatter.empty).toBe(null);
+    });
+
+    it("handles content without frontmatter", () => {
+      const content = "# Just a heading\n\nSome content";
+
+      const result = parseFrontmatter(content);
+
+      expect(result.frontmatter).toEqual({});
+      expect(result.content).toBe(content);
+    });
+
+    it("handles inline objects", () => {
+      const content = `---
+stages: { rem: 90, deep: 85, light: 200 }
+---
+
+Content`;
+
+      const result = parseFrontmatter(content);
+
+      const stages = result.frontmatter.stages as Record<string, number>;
+      expect(stages.rem).toBe(90);
+      expect(stages.deep).toBe(85);
+      expect(stages.light).toBe(200);
+    });
+  });
+
+  describe("serializeFrontmatter", () => {
+    it("serializes simple values", () => {
+      const frontmatter = {
+        date: "2026-01-27",
+        type: "upper",
+        score: 85,
+        active: true,
+      };
+
+      const result = serializeFrontmatter(frontmatter);
+
+      expect(result).toContain("---");
+      expect(result).toContain('date: "2026-01-27"');
+      expect(result).toContain("type: upper");
+      expect(result).toContain("score: 85");
+      expect(result).toContain("active: true");
+    });
+
+    it("serializes nested objects", () => {
+      const frontmatter = {
+        date: "2026-01-27",
+        whoop: {
+          recovery: {
+            score: 78,
+            hrv: 45.2,
+          },
+        },
+      };
+
+      const result = serializeFrontmatter(frontmatter);
+
+      expect(result).toContain("whoop:");
+      expect(result).toContain("  recovery:");
+      expect(result).toContain("    score: 78");
+      expect(result).toContain("    hrv: 45.2");
+    });
+
+    it("roundtrips correctly", () => {
+      const original = {
+        date: "2026-01-27",
+        type: "upper",
+        whoop: {
+          recovery: {
+            score: 78,
+          },
+          sleep: {
+            durationMinutes: 420,
+          },
+        },
+      };
+
+      const serialized = serializeFrontmatter(original);
+      const parsed = parseFrontmatter(serialized + "\n\n# Content");
+
+      expect(parsed.frontmatter.date).toBe("2026-01-27");
+      expect(parsed.frontmatter.type).toBe("upper");
+      const whoop = parsed.frontmatter.whoop as Record<string, unknown>;
+      const recovery = whoop.recovery as Record<string, unknown>;
+      expect(recovery.score).toBe(78);
     });
   });
 

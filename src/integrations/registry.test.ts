@@ -146,17 +146,7 @@ describe("integration registry", () => {
       expect(whoop?.available).toBe(true);
     });
 
-    it("contains Garmin metadata (coming soon)", () => {
-      const garmin = INTEGRATION_METADATA.find((m) => m.slug === "garmin");
-      expect(garmin).toBeDefined();
-      expect(garmin?.available).toBe(false);
-    });
-
-    it("contains Oura metadata (coming soon)", () => {
-      const oura = INTEGRATION_METADATA.find((m) => m.slug === "oura");
-      expect(oura).toBeDefined();
-      expect(oura?.available).toBe(false);
-    });
+    // Additional integrations (Garmin, Oura) can be added here when implemented
   });
 
   describe("getAvailableIntegrations", () => {

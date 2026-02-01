@@ -90,12 +90,12 @@ export async function integrationWebhookHandler(req: Request, res: Response): Pr
  *
  * Route: GET /api/integrations/:device/callback
  *
- * Note: In a full implementation, this would:
- * 1. Exchange the code for tokens
- * 2. Store the tokens securely
- * 3. Redirect to a success page
- *
- * For now, it just displays the code for manual setup.
+ * Security note: This endpoint only displays the authorization code for manual
+ * copy/paste into the CLI setup wizard. It does NOT exchange the code for tokens.
+ * CSRF protection (state parameter) is not required because:
+ * 1. No tokens are exchanged or stored
+ * 2. The code is only displayed, not processed
+ * 3. An attacker could only show a victim a code that would fail validation
  */
 export async function integrationOAuthCallbackHandler(req: Request, res: Response): Promise<void> {
   const device = req.params.device as string;

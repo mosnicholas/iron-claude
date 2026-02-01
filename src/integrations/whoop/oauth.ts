@@ -160,6 +160,10 @@ export function clearPersistedTokens(): void {
  * Considers token expired if it expires within 5 minutes.
  */
 export function isTokenExpired(tokens: TokenSet): boolean {
+  // Treat unset/zero expiration as expired (force refresh to get proper expiry)
+  if (!tokens.expiresAt) {
+    return true;
+  }
   const bufferMs = 5 * 60 * 1000; // 5 minutes
   return Date.now() >= tokens.expiresAt - bufferMs;
 }

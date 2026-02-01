@@ -69,7 +69,7 @@ export function hasConfiguredIntegrations(): boolean {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Static metadata for all supported integrations (including "coming soon").
+ * Static metadata for supported integrations.
  * Used by setup scripts to show available options.
  */
 export const INTEGRATION_METADATA: IntegrationMetadata[] = [
@@ -81,22 +81,7 @@ export const INTEGRATION_METADATA: IntegrationMetadata[] = [
     scopes: ["read:recovery", "read:sleep", "read:workout", "read:profile"],
     docsUrl: "https://developer.whoop.com/docs/developing/overview",
   },
-  {
-    name: "Garmin",
-    slug: "garmin",
-    description: "Activity, sleep, and heart rate data",
-    available: false, // Coming soon
-    scopes: [],
-    docsUrl: "https://developer.garmin.com/",
-  },
-  {
-    name: "Oura",
-    slug: "oura",
-    description: "Sleep stages, readiness scores, and activity",
-    available: false, // Coming soon
-    scopes: [],
-    docsUrl: "https://cloud.ouraring.com/docs/",
-  },
+  // Add new integrations here when implemented (Garmin, Oura, etc.)
 ];
 
 /**

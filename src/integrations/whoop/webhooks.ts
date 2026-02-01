@@ -208,14 +208,24 @@ export async function parseWhoopWebhook(
 
   // Skip delete events - we only care about create/update
   if (webhookPayload.action === "delete") {
+    console.log(
+      `[whoop-webhook] Ignoring delete event for ${webhookPayload.type} ${webhookPayload.id}`
+    );
     return null;
   }
 
   switch (webhookPayload.type) {
     case "sleep": {
       const sleep = await client.getSleepById(webhookPayload.id);
-      // Skip unscored or nap records
-      if (sleep.score_state !== "SCORED" || sleep.nap) {
+      // Skip unscored or nap records (with logging so we know what's being ignored)
+      if (sleep.score_state !== "SCORED") {
+        console.log(
+          `[whoop-webhook] Ignoring unscored sleep ${webhookPayload.id} (state: ${sleep.score_state})`
+        );
+        return null;
+      }
+      if (sleep.nap) {
+        console.log(`[whoop-webhook] Ignoring nap ${webhookPayload.id}`);
         return null;
       }
       return {
@@ -243,7 +253,14 @@ export async function parseWhoopWebhook(
       );
       const recovery = recoveries.find((r) => r.cycle_id === webhookPayload.id);
 
-      if (!recovery || recovery.score_state !== "SCORED") {
+      if (!recovery) {
+        console.log(`[whoop-webhook] Recovery cycle ${webhookPayload.id} not found in API results`);
+        return null;
+      }
+      if (recovery.score_state !== "SCORED") {
+        console.log(
+          `[whoop-webhook] Ignoring unscored recovery ${webhookPayload.id} (state: ${recovery.score_state})`
+        );
         return null;
       }
       return {
@@ -255,6 +272,9 @@ export async function parseWhoopWebhook(
     case "workout": {
       const workout = await client.getWorkoutById(webhookPayload.id);
       if (workout.score_state !== "SCORED") {
+        console.log(
+          `[whoop-webhook] Ignoring unscored workout ${webhookPayload.id} (state: ${workout.score_state})`
+        );
         return null;
       }
       return {

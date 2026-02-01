@@ -1,98 +1,260 @@
 /**
  * Integration Data Storage
  *
- * Stores normalized integration data in the fitness-data repository.
- * Data is organized by week (matching the existing structure) with integration
- * data stored alongside workout logs and plans.
+ * Stores normalized integration data in workout log frontmatter.
+ * This keeps all data for a day in one place, making it easy for the
+ * coach agent to read context and provide advice.
  *
- * Structure:
- *   weeks/YYYY-WXX/
- *   ├── plan.md
- *   ├── retro.md
- *   ├── YYYY-MM-DD.md (workout logs)
- *   └── integrations/
- *       ├── YYYY-MM-DD-whoop-sleep.json
- *       ├── YYYY-MM-DD-whoop-recovery.json
- *       └── YYYY-MM-DD-whoop-workout-weightlifting.json
+ * Example workout file with integration data:
+ * ```markdown
+ * ---
+ * date: "2026-01-27"
+ * type: upper
+ * status: in_progress
+ * whoop:
+ *   recovery:
+ *     score: 78
+ *     hrv: 45.2
+ *     restingHeartRate: 52
+ *   sleep:
+ *     durationMinutes: 420
+ *     score: 85
+ * ---
+ * # Workout — Monday, Jan 27
+ * ...
+ * ```
  */
 
 import { createGitHubStorage } from "../storage/github.js";
+import { formatISOWeek, getTimezone } from "../utils/date.js";
+import { toZonedTime } from "date-fns-tz";
 import type { WebhookEvent, SleepData, RecoveryData, WorkoutData } from "./types.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Frontmatter Parsing
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface Frontmatter {
+  [key: string]: unknown;
+}
+
+interface ParsedFile {
+  frontmatter: Frontmatter;
+  content: string;
+}
+
+/**
+ * Parse YAML frontmatter from a markdown file.
+ * Returns empty frontmatter if none exists.
+ */
+function parseFrontmatter(fileContent: string): ParsedFile {
+  const trimmed = fileContent.trim();
+
+  // Check for frontmatter delimiter
+  if (!trimmed.startsWith("---")) {
+    return { frontmatter: {}, content: fileContent };
+  }
+
+  // Find closing delimiter
+  const endIndex = trimmed.indexOf("\n---", 3);
+  if (endIndex === -1) {
+    return { frontmatter: {}, content: fileContent };
+  }
+
+  const yamlContent = trimmed.slice(4, endIndex).trim();
+  const content = trimmed.slice(endIndex + 4).trim();
+
+  // Parse simple YAML (handles nested objects, strings, numbers, arrays)
+  const frontmatter = parseSimpleYaml(yamlContent);
+
+  return { frontmatter, content };
+}
+
+/**
+ * Simple YAML parser for frontmatter.
+ * Handles: strings, numbers, booleans, nested objects, simple arrays.
+ */
+function parseSimpleYaml(yaml: string): Frontmatter {
+  const result: Frontmatter = {};
+  const lines = yaml.split("\n");
+  const stack: Array<{ obj: Frontmatter; indent: number }> = [{ obj: result, indent: -1 }];
+
+  for (const line of lines) {
+    // Skip empty lines and comments
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+
+    // Calculate indent level
+    const indent = line.search(/\S/);
+    const trimmedLine = line.trim();
+
+    // Handle array items
+    if (trimmedLine.startsWith("- ")) {
+      const value = trimmedLine.slice(2).trim();
+      const current = stack[stack.length - 1];
+      const keys = Object.keys(current.obj);
+      const lastKey = keys[keys.length - 1];
+      if (lastKey && Array.isArray(current.obj[lastKey])) {
+        (current.obj[lastKey] as unknown[]).push(parseYamlValue(value));
+      }
+      continue;
+    }
+
+    // Parse key: value
+    const colonIndex = trimmedLine.indexOf(":");
+    if (colonIndex === -1) continue;
+
+    const key = trimmedLine.slice(0, colonIndex).trim();
+    const rawValue = trimmedLine.slice(colonIndex + 1).trim();
+
+    // Pop stack until we're at the right indent level
+    while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
+      stack.pop();
+    }
+
+    const current = stack[stack.length - 1].obj;
+
+    if (rawValue === "") {
+      // Nested object or array starts
+      const nextLine = lines[lines.indexOf(line) + 1];
+      if (nextLine && nextLine.trim().startsWith("- ")) {
+        current[key] = [];
+      } else {
+        current[key] = {};
+      }
+      stack.push({ obj: current[key] as Frontmatter, indent });
+    } else {
+      current[key] = parseYamlValue(rawValue);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Parse a YAML value (string, number, boolean, inline object).
+ */
+function parseYamlValue(value: string): unknown {
+  // Remove quotes
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+
+  // Boolean
+  if (value === "true") return true;
+  if (value === "false") return false;
+
+  // Null
+  if (value === "null" || value === "~") return null;
+
+  // Number
+  const num = Number(value);
+  if (!isNaN(num) && value !== "") return num;
+
+  // Inline object like { rem: 90, deep: 85 }
+  if (value.startsWith("{") && value.endsWith("}")) {
+    const inner = value.slice(1, -1).trim();
+    const obj: Frontmatter = {};
+    // Split by comma, handling potential spaces
+    const pairs = inner.split(/,\s*/);
+    for (const pair of pairs) {
+      const [k, v] = pair.split(/:\s*/);
+      if (k && v !== undefined) {
+        obj[k.trim()] = parseYamlValue(v.trim());
+      }
+    }
+    return obj;
+  }
+
+  return value;
+}
+
+/**
+ * Serialize frontmatter to YAML string.
+ */
+function serializeFrontmatter(frontmatter: Frontmatter): string {
+  const lines: string[] = ["---"];
+  serializeObject(frontmatter, lines, 0);
+  lines.push("---");
+  return lines.join("\n");
+}
+
+function serializeObject(obj: Frontmatter, lines: string[], indent: number): void {
+  const prefix = "  ".repeat(indent);
+
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === null || value === undefined) continue;
+
+    if (typeof value === "object" && !Array.isArray(value)) {
+      lines.push(`${prefix}${key}:`);
+      serializeObject(value as Frontmatter, lines, indent + 1);
+    } else if (Array.isArray(value)) {
+      lines.push(`${prefix}${key}:`);
+      for (const item of value) {
+        if (typeof item === "object") {
+          lines.push(`${prefix}  - ${JSON.stringify(item)}`);
+        } else {
+          lines.push(`${prefix}  - ${serializeValue(item)}`);
+        }
+      }
+    } else {
+      lines.push(`${prefix}${key}: ${serializeValue(value)}`);
+    }
+  }
+}
+
+function serializeValue(value: unknown): string {
+  if (typeof value === "string") {
+    // Quote strings that might be ambiguous
+    if (value.includes(":") || value.includes("#") || value === "" || /^\d/.test(value)) {
+      return `"${value}"`;
+    }
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Date/Week Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Get the ISO week string (YYYY-WXX) for a given date.
+ * Get the ISO week string (YYYY-WXX) for a given date string.
  */
-export function getISOWeek(dateStr: string): string {
-  const date = new Date(dateStr + "T12:00:00Z"); // Noon UTC to avoid timezone issues
-  const year = date.getFullYear();
-
-  // Get the first Thursday of the year (ISO week 1 contains first Thursday)
-  const jan4 = new Date(year, 0, 4);
-  const dayOfWeek = jan4.getDay() || 7; // Sunday = 7
-  const firstThursday = new Date(jan4);
-  firstThursday.setDate(jan4.getDate() - dayOfWeek + 4);
-
-  // Calculate week number
-  const diffMs = date.getTime() - firstThursday.getTime();
-  const diffDays = Math.floor(diffMs / 86400000);
-  const weekNum = Math.ceil((diffDays + 1) / 7);
-
-  // Handle year boundaries (week 52/53 spillover)
-  if (weekNum < 1) {
-    return getISOWeek(`${year - 1}-12-28`);
-  }
-  if (weekNum > 52) {
-    const dec28 = new Date(year, 11, 28);
-    const lastWeekDay = dec28.getDay() || 7;
-    const lastThursday = new Date(dec28);
-    lastThursday.setDate(dec28.getDate() - lastWeekDay + 4);
-    if (date > lastThursday) {
-      return `${year + 1}-W01`;
-    }
-  }
-
-  return `${year}-W${String(weekNum).padStart(2, "0")}`;
+function getISOWeekForDate(dateStr: string): string {
+  // Parse as noon UTC to avoid timezone issues
+  const date = new Date(dateStr + "T12:00:00Z");
+  return formatISOWeek(date);
 }
 
 /**
- * Get today's date in YYYY-MM-DD format.
+ * Get today's date in YYYY-MM-DD format using configured timezone.
  */
 function getToday(): string {
-  return new Date().toISOString().split("T")[0];
+  const timezone = getTimezone();
+  const now = toZonedTime(new Date(), timezone);
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Storage Paths
+// File Paths
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Get the storage path for integration data.
- *
- * Format: weeks/YYYY-WXX/integrations/YYYY-MM-DD-{source}-{type}[-{subtype}].json
+ * Get the workout file path for a given date.
+ * Format: weeks/YYYY-WXX/YYYY-MM-DD.md
  */
-function getStoragePath(
-  source: string,
-  type: "sleep" | "recovery" | "workout",
-  date: string,
-  workoutType?: string
-): string {
-  const week = getISOWeek(date);
-  const basePath = `weeks/${week}/integrations`;
-
-  switch (type) {
-    case "sleep":
-      return `${basePath}/${date}-${source}-sleep.json`;
-    case "recovery":
-      return `${basePath}/${date}-${source}-recovery.json`;
-    case "workout": {
-      const sanitizedType = (workoutType || "activity").toLowerCase().replace(/\s+/g, "-");
-      return `${basePath}/${date}-${source}-workout-${sanitizedType}.json`;
-    }
-  }
+function getWorkoutFilePath(date: string): string {
+  const week = getISOWeekForDate(date);
+  return `weeks/${week}/${date}.md`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -100,36 +262,104 @@ function getStoragePath(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Store normalized integration data in the fitness-data repo.
+ * Store normalized integration data in the workout file's frontmatter.
  */
 export async function storeIntegrationData(event: WebhookEvent): Promise<void> {
   const storage = createGitHubStorage();
+  const date = event.data.date;
+  const source = event.data.source;
+  const filePath = getWorkoutFilePath(date);
 
-  let path: string;
-  let content: string;
-  let message: string;
+  // Read existing file or create new one
+  const existingContent = await storage.readFile(filePath);
+  let parsed: ParsedFile;
 
-  switch (event.type) {
-    case "sleep":
-      path = getStoragePath(event.data.source, "sleep", event.data.date);
-      content = JSON.stringify(event.data, null, 2);
-      message = `Sync ${event.data.source} sleep data for ${event.data.date}`;
-      break;
-
-    case "recovery":
-      path = getStoragePath(event.data.source, "recovery", event.data.date);
-      content = JSON.stringify(event.data, null, 2);
-      message = `Sync ${event.data.source} recovery data for ${event.data.date}`;
-      break;
-
-    case "workout":
-      path = getStoragePath(event.data.source, "workout", event.data.date, event.data.type);
-      content = JSON.stringify(event.data, null, 2);
-      message = `Sync ${event.data.source} ${event.data.type} workout for ${event.data.date}`;
-      break;
+  if (existingContent) {
+    parsed = parseFrontmatter(existingContent);
+  } else {
+    // Create minimal stub file for integration data
+    parsed = {
+      frontmatter: { date },
+      content: `# ${date}\n\n*No workout logged yet.*`,
+    };
   }
 
-  await storage.writeFile(path, content, message);
+  // Ensure source namespace exists (e.g., "whoop")
+  if (!parsed.frontmatter[source]) {
+    parsed.frontmatter[source] = {};
+  }
+  const sourceData = parsed.frontmatter[source] as Frontmatter;
+
+  // Add the integration data under the appropriate key
+  switch (event.type) {
+    case "sleep":
+      sourceData.sleep = formatSleepForFrontmatter(event.data);
+      break;
+    case "recovery":
+      sourceData.recovery = formatRecoveryForFrontmatter(event.data);
+      break;
+    case "workout": {
+      // Store workouts in an array since there can be multiple
+      if (!sourceData.workouts) {
+        sourceData.workouts = [];
+      }
+      const workouts = sourceData.workouts as WorkoutData[];
+      // Replace existing workout of same type or add new
+      const existingIndex = workouts.findIndex((w) => w.type === event.data.type);
+      if (existingIndex >= 0) {
+        workouts[existingIndex] = formatWorkoutForFrontmatter(event.data);
+      } else {
+        workouts.push(formatWorkoutForFrontmatter(event.data));
+      }
+      break;
+    }
+  }
+
+  // Rebuild the file
+  const newFrontmatter = serializeFrontmatter(parsed.frontmatter);
+  const newContent = `${newFrontmatter}\n\n${parsed.content}`;
+
+  // Commit message
+  const message = `Sync ${source} ${event.type} data for ${date}`;
+
+  await storage.writeFile(filePath, newContent, message);
+}
+
+/**
+ * Format sleep data for frontmatter (remove redundant fields).
+ */
+function formatSleepForFrontmatter(data: SleepData): Frontmatter {
+  const result: Frontmatter = {
+    durationMinutes: data.durationMinutes,
+  };
+  if (data.score !== undefined) result.score = data.score;
+  if (data.stages) result.stages = data.stages;
+  if (data.startTime) result.startTime = data.startTime;
+  if (data.endTime) result.endTime = data.endTime;
+  return result;
+}
+
+/**
+ * Format recovery data for frontmatter (remove redundant fields).
+ */
+function formatRecoveryForFrontmatter(data: RecoveryData): Frontmatter {
+  const result: Frontmatter = {
+    score: data.score,
+  };
+  if (data.hrv !== undefined) result.hrv = data.hrv;
+  if (data.restingHeartRate !== undefined) result.restingHeartRate = data.restingHeartRate;
+  if (data.spo2 !== undefined) result.spo2 = data.spo2;
+  if (data.skinTempDeviation !== undefined) result.skinTempDeviation = data.skinTempDeviation;
+  return result;
+}
+
+/**
+ * Format workout data for frontmatter.
+ */
+function formatWorkoutForFrontmatter(data: WorkoutData): WorkoutData {
+  // Return a clean copy without source/date (already in file context)
+  const { source: _source, date: _date, ...rest } = data;
+  return rest as WorkoutData;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,42 +367,65 @@ export async function storeIntegrationData(event: WebhookEvent): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Safely parse JSON with error handling.
- * Returns null if parsing fails.
+ * Read integration data from a workout file's frontmatter.
  */
-function safeJsonParse<T>(content: string, path: string): T | null {
-  try {
-    return JSON.parse(content) as T;
-  } catch (error) {
-    console.error(`[integration-storage] Failed to parse JSON at ${path}:`, error);
-    return null;
+async function readIntegrationData(
+  source: string,
+  date: string
+): Promise<{ sleep?: SleepData; recovery?: RecoveryData; workouts?: WorkoutData[] } | null> {
+  const storage = createGitHubStorage();
+  const filePath = getWorkoutFilePath(date);
+
+  const content = await storage.readFile(filePath);
+  if (!content) return null;
+
+  const parsed = parseFrontmatter(content);
+  const sourceData = parsed.frontmatter[source] as Frontmatter | undefined;
+  if (!sourceData) return null;
+
+  const result: { sleep?: SleepData; recovery?: RecoveryData; workouts?: WorkoutData[] } = {};
+
+  if (sourceData.sleep) {
+    result.sleep = {
+      source,
+      date,
+      ...(sourceData.sleep as object),
+    } as SleepData;
   }
+
+  if (sourceData.recovery) {
+    result.recovery = {
+      source,
+      date,
+      ...(sourceData.recovery as object),
+    } as RecoveryData;
+  }
+
+  if (sourceData.workouts) {
+    result.workouts = (sourceData.workouts as object[]).map((w) => ({
+      source,
+      date,
+      ...w,
+    })) as WorkoutData[];
+  }
+
+  return result;
 }
 
 /**
  * Read sleep data for a specific date and source.
  */
 export async function readSleepData(source: string, date: string): Promise<SleepData | null> {
-  const storage = createGitHubStorage();
-  const path = getStoragePath(source, "sleep", date);
-
-  const content = await storage.readFile(path);
-  if (!content) return null;
-
-  return safeJsonParse<SleepData>(content, path);
+  const data = await readIntegrationData(source, date);
+  return data?.sleep || null;
 }
 
 /**
  * Read recovery data for a specific date and source.
  */
 export async function readRecoveryData(source: string, date: string): Promise<RecoveryData | null> {
-  const storage = createGitHubStorage();
-  const path = getStoragePath(source, "recovery", date);
-
-  const content = await storage.readFile(path);
-  if (!content) return null;
-
-  return safeJsonParse<RecoveryData>(content, path);
+  const data = await readIntegrationData(source, date);
+  return data?.recovery || null;
 }
 
 /**
@@ -183,13 +436,8 @@ export async function readWorkoutData(
   date: string,
   workoutType: string
 ): Promise<WorkoutData | null> {
-  const storage = createGitHubStorage();
-  const path = getStoragePath(source, "workout", date, workoutType);
-
-  const content = await storage.readFile(path);
-  if (!content) return null;
-
-  return safeJsonParse<WorkoutData>(content, path);
+  const data = await readIntegrationData(source, date);
+  return data?.workouts?.find((w) => w.type === workoutType) || null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -202,7 +450,8 @@ export async function readWorkoutData(
  */
 export async function getLatestRecoveryData(source: string): Promise<RecoveryData | null> {
   // Try today
-  let data = await readRecoveryData(source, getToday());
+  const today = getToday();
+  let data = await readRecoveryData(source, today);
   if (data) return data;
 
   // Try yesterday
@@ -219,7 +468,8 @@ export async function getLatestRecoveryData(source: string): Promise<RecoveryDat
  */
 export async function getLatestSleepData(source: string): Promise<SleepData | null> {
   // Try today
-  let data = await readSleepData(source, getToday());
+  const today = getToday();
+  let data = await readSleepData(source, today);
   if (data) return data;
 
   // Try yesterday
@@ -295,3 +545,6 @@ export function getRecoveryRecommendation(score: number): string {
     return "Very low recovery - prioritize rest and recovery today";
   }
 }
+
+// Export for testing
+export { parseFrontmatter, serializeFrontmatter, getISOWeekForDate };

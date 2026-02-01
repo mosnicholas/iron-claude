@@ -26,6 +26,7 @@ import {
 import { WhoopClient, createWhoopClient } from "./client.js";
 import {
   verifyWhoopWebhook,
+  parseWhoopWebhook,
   normalizeSleep,
   normalizeRecovery,
   normalizeWorkout,
@@ -179,7 +180,6 @@ export class WhoopIntegration implements DeviceIntegration {
    */
   async parseWebhook(payload: unknown): Promise<WebhookEvent | null> {
     const client = await this.getClient();
-    const { parseWhoopWebhook } = await import("./webhooks.js");
     return parseWhoopWebhook(payload, client);
   }
 }

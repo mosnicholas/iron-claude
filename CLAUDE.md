@@ -103,11 +103,7 @@ All athlete data changes go to their fitness-data repo:
 - `weeks/` - Week-based organization (YYYY-WXX folders)
   - `weeks/YYYY-WXX/plan.md` - Weekly training plan
   - `weeks/YYYY-WXX/retro.md` - Weekly retrospective
-  - `weeks/YYYY-WXX/YYYY-MM-DD.md` - Workout logs by date
-  - `weeks/YYYY-WXX/integrations/` - Device integration data (Whoop, etc.)
-    - `YYYY-MM-DD-whoop-sleep.json` - Sleep data
-    - `YYYY-MM-DD-whoop-recovery.json` - Recovery scores, HRV, RHR
-    - `YYYY-MM-DD-whoop-workout-{type}.json` - Device-recorded workouts
+  - `weeks/YYYY-WXX/YYYY-MM-DD.md` - Workout logs (with device integration data in frontmatter)
 
 ## Device Integrations
 
@@ -115,13 +111,31 @@ All athlete data changes go to their fitness-data repo:
 - **Whoop** - Sleep, recovery scores, HRV, and workout strain data
 
 ### Using Integration Data
+Integration data is stored in workout file frontmatter:
+
+```yaml
+---
+date: "2026-01-27"
+type: upper
+status: in_progress
+whoop:
+  recovery:
+    score: 78
+    hrv: 45.2
+    restingHeartRate: 52
+  sleep:
+    durationMinutes: 420
+    score: 85
+---
+```
+
 When integrations are configured, check recovery data to inform training recommendations:
 - **80-100% recovery**: Push intensity, good day for PRs
 - **60-79% recovery**: Standard training intensity
 - **40-59% recovery**: Consider lighter work or active recovery
 - **0-39% recovery**: Prioritize rest
 
-Use Glob with `weeks/*/integrations/*-recovery.json` to find available recovery data.
+Read the day's workout file to access integration data (e.g., `frontmatter.whoop.recovery.score`).
 
 ### Adding a New Device Integration
 

@@ -59,10 +59,29 @@ function buildIntegrationContext(): string {
 
 You have access to data from connected fitness devices: **${integrationNames}**
 
-Integration data is stored alongside workout logs in the weekly folders:
-- \`weeks/YYYY-WXX/integrations/YYYY-MM-DD-{device}-sleep.json\` - Sleep data
-- \`weeks/YYYY-WXX/integrations/YYYY-MM-DD-{device}-recovery.json\` - Recovery data
-- \`weeks/YYYY-WXX/integrations/YYYY-MM-DD-{device}-workout-{type}.json\` - Device workouts
+Integration data is stored in the workout file frontmatter under the device name:
+
+\`\`\`yaml
+---
+date: "2026-01-27"
+type: upper
+status: in_progress
+whoop:
+  recovery:
+    score: 78
+    hrv: 45.2
+    restingHeartRate: 52
+  sleep:
+    durationMinutes: 420
+    score: 85
+    stages: { rem: 90, deep: 85, light: 200, awake: 45 }
+  workouts:
+    - type: Weightlifting
+      durationMinutes: 45
+      strain: 12.5
+      calories: 320
+---
+\`\`\`
 
 ### Using Recovery Data
 
@@ -74,36 +93,12 @@ Recovery scores indicate readiness for training:
 
 ### When to Reference Integration Data
 
-1. **Daily reminders**: Check today's recovery score and mention it if available
+1. **Daily reminders**: Check today's recovery score from frontmatter and mention it
 2. **Weekly planning**: Consider the week's recovery trends when setting intensity
 3. **Retrospectives**: Include HRV and recovery trends in analysis
 4. **Workout feedback**: Compare device-recorded strain/HR with planned intensity
 
-### Data Format Examples
-
-**Recovery JSON** (weeks/2026-W05/integrations/2026-01-27-whoop-recovery.json):
-\`\`\`json
-{
-  "source": "whoop",
-  "date": "2026-01-27",
-  "score": 78,
-  "hrv": 45.2,
-  "restingHeartRate": 52
-}
-\`\`\`
-
-**Sleep JSON** (weeks/2026-W05/integrations/2026-01-27-whoop-sleep.json):
-\`\`\`json
-{
-  "source": "whoop",
-  "date": "2026-01-27",
-  "durationMinutes": 420,
-  "score": 85,
-  "stages": { "rem": 90, "deep": 85, "light": 200, "awake": 45 }
-}
-\`\`\`
-
-Use Glob with pattern \`weeks/*/integrations/*-recovery.json\` to find recovery data.
+Read the day's workout file (e.g., \`weeks/2026-W05/2026-01-27.md\`) to access integration data.
 `;
 }
 
