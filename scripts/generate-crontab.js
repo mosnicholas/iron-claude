@@ -99,13 +99,6 @@ function generateCrontab() {
       endpoint: "daily-reminder",
     },
     {
-      name: "Weekly retrospective",
-      localHour: 19,
-      localMinute: 30,
-      dayOfWeek: "0", // Sunday
-      endpoint: "weekly-retro",
-    },
-    {
       name: "Weekly plan",
       localHour: 20,
       localMinute: 0,

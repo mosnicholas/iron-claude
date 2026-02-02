@@ -28,7 +28,6 @@ app.post("/api/webhook", webhookHandler);
 // Cron endpoints (called by external cron service like cron-job.org)
 app.get("/api/cron/daily-reminder", createCronHandler("daily-reminder"));
 app.get("/api/cron/weekly-plan", createCronHandler("weekly-plan"));
-app.get("/api/cron/weekly-retro", createCronHandler("weekly-retro"));
 app.get("/api/cron/check-reminders", createCronHandler("check-reminders"));
 
 // ─────────────────────────────────────────────────────────────────────────────

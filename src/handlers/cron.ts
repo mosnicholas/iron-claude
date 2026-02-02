@@ -7,10 +7,9 @@
 import type { Request, Response } from "express";
 import { runDailyReminder } from "../cron/daily-reminder.js";
 import { runWeeklyPlan } from "../cron/weekly-plan.js";
-import { runWeeklyRetro } from "../cron/weekly-retro.js";
 import { runCheckReminders } from "../cron/check-reminders.js";
 
-type CronTask = "daily-reminder" | "weekly-plan" | "weekly-retro" | "check-reminders";
+type CronTask = "daily-reminder" | "weekly-plan" | "check-reminders";
 
 /**
  * Validates the cron secret from the Authorization header.
@@ -46,9 +45,6 @@ export function createCronHandler(task: CronTask) {
           break;
         case "weekly-plan":
           result = await runWeeklyPlan();
-          break;
-        case "weekly-retro":
-          result = await runWeeklyRetro();
           break;
         case "check-reminders":
           result = await runCheckReminders();

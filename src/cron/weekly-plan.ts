@@ -86,6 +86,7 @@ export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
     const existingPlan = await storage.readWeeklyPlan(nextWeek);
     if (existingPlan) {
       console.log(`[weekly-plan] Plan already exists for ${nextWeek}`);
+      await bot.sendMessageSafe(`📋 Plan for ${nextWeek} already exists — no action needed.`);
       return {
         success: true,
         week: nextWeek,
