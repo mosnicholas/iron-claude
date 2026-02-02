@@ -270,6 +270,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenSet
       refresh_token: refreshToken,
       client_id: config.clientId,
       client_secret: config.clientSecret,
+      scope: "offline", // Required by Whoop to get a new refresh token
     }),
   });
 
