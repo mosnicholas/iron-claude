@@ -383,8 +383,9 @@ export class WhoopClient {
 
   /**
    * Get a single sleep record by ID.
+   * Accepts both number (v1) and string/UUID (v2) IDs.
    */
-  async getSleepById(sleepId: number): Promise<WhoopSleep> {
+  async getSleepById(sleepId: number | string): Promise<WhoopSleep> {
     return this.request<WhoopSleep>(`/activity/sleep/${sleepId}`);
   }
 
@@ -447,8 +448,9 @@ export class WhoopClient {
 
   /**
    * Get a single workout record by ID.
+   * Accepts both number (v1) and string/UUID (v2) IDs.
    */
-  async getWorkoutById(workoutId: number): Promise<WhoopWorkout> {
+  async getWorkoutById(workoutId: number | string): Promise<WhoopWorkout> {
     return this.request<WhoopWorkout>(`/activity/workout/${workoutId}`);
   }
 

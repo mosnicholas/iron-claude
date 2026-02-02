@@ -17,19 +17,53 @@ import type { WhoopSleep, WhoopRecovery, WhoopWorkout } from "./client.js";
 
 /**
  * Whoop webhook payload structure.
- * All events come as "type" with associated IDs.
+ * Events come with type in format "resource.action" (e.g., "workout.updated").
+ * See: https://developer.whoop.com/docs/developing/webhooks
  */
 interface WhoopWebhookPayload {
-  /** Event type: "workout", "sleep", "recovery" */
-  type: "workout" | "sleep" | "recovery";
+  /** Event type: "workout.updated", "sleep.updated", "recovery.updated", etc. */
+  type: string;
   /** User ID the event belongs to */
   user_id: number;
-  /** ID of the resource (workout_id, sleep_id, or cycle_id for recovery) */
-  id: number;
-  /** Timestamp of the event */
-  timestamp: string;
-  /** Action performed: "create", "update", "delete" */
-  action?: "create" | "update" | "delete";
+  /** ID of the resource - number for v1 API, UUID string for v2 API */
+  id: number | string;
+  /** Unique identifier for the triggering event */
+  trace_id?: string;
+}
+
+/**
+ * Parsed webhook event type and action.
+ */
+interface ParsedWebhookType {
+  resource: "workout" | "sleep" | "recovery";
+  action: "updated" | "deleted";
+}
+
+/**
+ * Valid webhook type patterns.
+ */
+const VALID_WEBHOOK_TYPES = [
+  "workout.updated",
+  "workout.deleted",
+  "sleep.updated",
+  "sleep.deleted",
+  "recovery.updated",
+  "recovery.deleted",
+] as const;
+
+/**
+ * Parse webhook type string into resource and action.
+ * Returns null if the type is invalid.
+ */
+function parseWebhookType(type: string): ParsedWebhookType | null {
+  if (!VALID_WEBHOOK_TYPES.includes(type as (typeof VALID_WEBHOOK_TYPES)[number])) {
+    return null;
+  }
+  const [resource, action] = type.split(".") as [
+    "workout" | "sleep" | "recovery",
+    "updated" | "deleted",
+  ];
+  return { resource, action };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,13 +107,26 @@ export function verifyWhoopWebhook(req: Request): boolean {
     return false;
   }
 
-  if (!payload.type || !["workout", "sleep", "recovery"].includes(payload.type)) {
-    console.log("[whoop-webhook] Invalid payload: unknown type");
+  // Validate type is a known webhook event type (e.g., "workout.updated", "sleep.deleted")
+  if (!payload.type || typeof payload.type !== "string") {
+    console.log("[whoop-webhook] Invalid payload: missing type");
     return false;
   }
 
-  if (typeof payload.user_id !== "number" || typeof payload.id !== "number") {
-    console.log("[whoop-webhook] Invalid payload: missing user_id or id");
+  const parsedType = parseWebhookType(payload.type);
+  if (!parsedType) {
+    console.log(`[whoop-webhook] Invalid payload: unknown type "${payload.type}"`);
+    return false;
+  }
+
+  // user_id must be a number, id can be number (v1) or string UUID (v2)
+  if (typeof payload.user_id !== "number") {
+    console.log("[whoop-webhook] Invalid payload: missing or invalid user_id");
+    return false;
+  }
+
+  if (typeof payload.id !== "number" && typeof payload.id !== "string") {
+    console.log("[whoop-webhook] Invalid payload: missing or invalid id");
     return false;
   }
 
@@ -206,15 +253,22 @@ export async function parseWhoopWebhook(
 ): Promise<WebhookEvent | null> {
   const webhookPayload = payload as WhoopWebhookPayload;
 
-  // Skip delete events - we only care about create/update
-  if (webhookPayload.action === "delete") {
+  // Parse the type to extract resource and action
+  const parsedType = parseWebhookType(webhookPayload.type);
+  if (!parsedType) {
+    console.log(`[whoop-webhook] Cannot parse type: ${webhookPayload.type}`);
+    return null;
+  }
+
+  // Skip delete events - we only care about updates
+  if (parsedType.action === "deleted") {
     console.log(
-      `[whoop-webhook] Ignoring delete event for ${webhookPayload.type} ${webhookPayload.id}`
+      `[whoop-webhook] Ignoring delete event for ${parsedType.resource} ${webhookPayload.id}`
     );
     return null;
   }
 
-  switch (webhookPayload.type) {
+  switch (parsedType.resource) {
     case "sleep": {
       const sleep = await client.getSleepById(webhookPayload.id);
       // Skip unscored or nap records (with logging so we know what's being ignored)
@@ -235,26 +289,34 @@ export async function parseWhoopWebhook(
     }
 
     case "recovery": {
-      // Recovery ID is actually the cycle_id, we need to find it via date range
-      // Use the webhook timestamp to determine the date, with fallback to today
-      const webhookDate = webhookPayload.timestamp
-        ? new Date(webhookPayload.timestamp).toISOString().split("T")[0]
-        : new Date().toISOString().split("T")[0];
+      // Per Whoop docs, for recovery events "the ID is the UUID of the sleep
+      // that the recovery is associated with."
+      // We need to search recent recoveries and match by sleep_id.
 
-      // Search a range around the webhook date to handle timezone issues
-      const searchStart = new Date(webhookDate);
-      searchStart.setDate(searchStart.getDate() - 1);
-      const searchEnd = new Date(webhookDate);
+      // Search a range around today to handle timezone issues
+      const today = new Date();
+      const searchStart = new Date(today);
+      searchStart.setDate(searchStart.getDate() - 2);
+      const searchEnd = new Date(today);
       searchEnd.setDate(searchEnd.getDate() + 1);
 
       const recoveries = await client.getRecovery(
         searchStart.toISOString().split("T")[0],
         searchEnd.toISOString().split("T")[0]
       );
-      const recovery = recoveries.find((r) => r.cycle_id === webhookPayload.id);
+
+      // Match by sleep_id (the ID in the webhook is the sleep ID)
+      // Handle both numeric and string IDs
+      const webhookIdNum =
+        typeof webhookPayload.id === "string" ? parseInt(webhookPayload.id, 10) : webhookPayload.id;
+      const recovery = recoveries.find(
+        (r) => r.sleep_id === webhookIdNum || r.sleep_id.toString() === String(webhookPayload.id)
+      );
 
       if (!recovery) {
-        console.log(`[whoop-webhook] Recovery cycle ${webhookPayload.id} not found in API results`);
+        console.log(
+          `[whoop-webhook] Recovery for sleep ${webhookPayload.id} not found in API results`
+        );
         return null;
       }
       if (recovery.score_state !== "SCORED") {
