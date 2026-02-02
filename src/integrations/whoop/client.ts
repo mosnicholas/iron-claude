@@ -493,7 +493,8 @@ export class WhoopClient {
 export async function createWhoopClient(): Promise<WhoopClient | null> {
   try {
     return await WhoopClient.fromEnvironment();
-  } catch {
+  } catch (error) {
+    console.error("[whoop] Failed to create client:", error);
     return null;
   }
 }
