@@ -85,7 +85,6 @@ describe("generate-crontab", () => {
       expect(crontab).toContain("# Generated for timezone: America/New_York");
       expect(crontab).toContain("check-reminders");
       expect(crontab).toContain("daily-reminder");
-      expect(crontab).toContain("weekly-retro");
       expect(crontab).toContain("weekly-plan");
     });
 

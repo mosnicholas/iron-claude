@@ -22,7 +22,6 @@ export { transcribeVoice, isVoiceTranscriptionAvailable } from "./bot/voice.js";
 
 // Cron
 export { runDailyReminder } from "./cron/daily-reminder.js";
-export { runWeeklyRetro } from "./cron/weekly-retro.js";
 export { runWeeklyPlan, forceRegeneratePlan } from "./cron/weekly-plan.js";
 
 // Utilities

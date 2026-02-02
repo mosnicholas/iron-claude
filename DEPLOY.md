@@ -37,8 +37,7 @@ Deploy IronClaude to Fly.io for Telegram notifications, morning reminders, and a
 **Endpoints:**
 - `POST /api/webhook` - Telegram message handler
 - `GET /api/cron/daily-reminder` - Morning workout reminder
-- `GET /api/cron/weekly-plan` - Sunday planning automation
-- `GET /api/cron/weekly-retro` - Saturday retrospective
+- `GET /api/cron/weekly-plan` - Sunday planning (generates retro + plan)
 - `GET /health` - Health check
 
 ---
