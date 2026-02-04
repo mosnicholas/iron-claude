@@ -260,6 +260,10 @@ export async function exchangeCodeForTokens(code: string, redirectUri: string): 
 export async function refreshAccessToken(refreshToken: string): Promise<TokenSet> {
   const config = getWhoopOAuthConfig();
 
+  // Whoop requires ALL originally requested scopes during refresh, not just "offline"
+  // See: https://developer.whoop.com/docs/developing/oauth/
+  const scopeString = DEFAULT_SCOPES.join(" ");
+
   const response = await fetch(WHOOP_TOKEN_URL, {
     method: "POST",
     headers: {
@@ -270,7 +274,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenSet
       refresh_token: refreshToken,
       client_id: config.clientId,
       client_secret: config.clientSecret,
-      scope: "offline", // Required by Whoop to get a new refresh token
+      scope: scopeString,
     }),
   });
 
