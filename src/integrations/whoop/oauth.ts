@@ -219,12 +219,14 @@ export function getAuthorizationUrl(
 export async function exchangeCodeForTokens(code: string, redirectUri: string): Promise<TokenSet> {
   const config = getWhoopOAuthConfig();
 
+  // Whoop requires JSON body format for token requests
+  // See: https://developer.whoop.com/docs/developing/oauth/
   const response = await fetch(WHOOP_TOKEN_URL, {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+      "Content-Type": "application/json",
     },
-    body: new URLSearchParams({
+    body: JSON.stringify({
       grant_type: "authorization_code",
       code,
       redirect_uri: redirectUri,
@@ -260,21 +262,19 @@ export async function exchangeCodeForTokens(code: string, redirectUri: string): 
 export async function refreshAccessToken(refreshToken: string): Promise<TokenSet> {
   const config = getWhoopOAuthConfig();
 
-  // Whoop requires ALL originally requested scopes during refresh, not just "offline"
+  // Whoop requires JSON body format for token refresh (not form-urlencoded)
   // See: https://developer.whoop.com/docs/developing/oauth/
-  const scopeString = DEFAULT_SCOPES.join(" ");
-
   const response = await fetch(WHOOP_TOKEN_URL, {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+      "Content-Type": "application/json",
     },
-    body: new URLSearchParams({
+    body: JSON.stringify({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
       client_id: config.clientId,
       client_secret: config.clientSecret,
-      scope: scopeString,
+      scope: "offline",
     }),
   });
 
@@ -305,12 +305,13 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenSet
 export async function revokeToken(token: string): Promise<void> {
   const config = getWhoopOAuthConfig();
 
+  // Whoop requires JSON body format for token requests
   const response = await fetch("https://api.prod.whoop.com/oauth/oauth2/revoke", {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+      "Content-Type": "application/json",
     },
-    body: new URLSearchParams({
+    body: JSON.stringify({
       token,
       client_id: config.clientId,
       client_secret: config.clientSecret,
