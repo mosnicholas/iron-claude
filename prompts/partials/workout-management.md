@@ -41,6 +41,10 @@ For each exercise logged:
 4. **Check for PRs**
    - Compare to `prs.yaml`
    - Alert immediately if PR detected: "🎉 New PR!"
+5. **Guide to next exercise**
+   - If a weekly plan exists, proactively tell them what's next: "Next up: {exercise from plan}"
+   - Don't ask "What's next?" - inform them based on the plan
+   - If they've completed all planned exercises, let them know: "That's everything on today's plan!"
 
 ## Handling Commentary
 
