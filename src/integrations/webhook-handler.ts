@@ -8,6 +8,8 @@
 import type { Request, Response } from "express";
 import { getIntegration, getConfiguredIntegrations } from "./registry.js";
 import { storeIntegrationData } from "./storage.js";
+import type { WebhookEvent } from "./types.js";
+import { createTelegramBot } from "../bot/telegram.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Security Helpers
@@ -23,6 +25,50 @@ function escapeHtml(unsafe: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notification Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function formatWebhookNotification(event: WebhookEvent): string {
+  switch (event.type) {
+    case "recovery": {
+      const d = event.data;
+      const parts = [`Recovery: ${d.score}%`];
+      if (d.hrv !== undefined) parts.push(`HRV ${Math.round(d.hrv)}ms`);
+      if (d.restingHeartRate !== undefined) parts.push(`RHR ${d.restingHeartRate}bpm`);
+      return parts.join(" | ");
+    }
+    case "sleep": {
+      const d = event.data;
+      const hours = Math.floor(d.durationMinutes / 60);
+      const mins = d.durationMinutes % 60;
+      const parts = [`Sleep: ${hours}h${mins > 0 ? ` ${mins}m` : ""}`];
+      if (d.score !== undefined) parts.push(`score ${d.score}`);
+      return parts.join(" | ");
+    }
+    case "workout": {
+      const d = event.data;
+      const hours = Math.floor(d.durationMinutes / 60);
+      const mins = d.durationMinutes % 60;
+      const duration = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+      const parts = [`Workout: ${d.type} (${duration})`];
+      if (d.strain !== undefined) parts.push(`strain ${d.strain.toFixed(1)}`);
+      if (d.calories !== undefined) parts.push(`${d.calories} cal`);
+      return parts.join(" | ");
+    }
+  }
+}
+
+async function notifyUser(event: WebhookEvent): Promise<void> {
+  try {
+    const bot = createTelegramBot();
+    const message = formatWebhookNotification(event);
+    await bot.sendPlainMessage(message);
+  } catch (error) {
+    console.error(`[integration-webhook] Failed to send notification:`, error);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +101,9 @@ async function processWebhookAsync(
     await storeIntegrationData(event);
 
     console.log(`[integration-webhook] Stored ${event.type} data for ${event.data.date}`);
+
+    // Notify user via Telegram
+    await notifyUser(event);
   } catch (error) {
     console.error(`[integration-webhook] Error processing webhook:`, error);
   }
