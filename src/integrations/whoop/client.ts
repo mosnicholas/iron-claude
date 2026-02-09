@@ -1,7 +1,7 @@
 /**
  * Whoop API Client
  *
- * Wraps the Whoop Developer API v1 for fetching user data.
+ * Wraps the Whoop Developer API v2 for fetching user data.
  * Based on: https://developer.whoop.com/api
  */
 
@@ -18,8 +18,7 @@ import {
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-const WHOOP_API_V1 = "https://api.prod.whoop.com/developer/v1";
-const WHOOP_API_V2 = "https://api.prod.whoop.com/developer/v2";
+const WHOOP_API = "https://api.prod.whoop.com/developer/v2";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API Response Types (from Whoop API)
@@ -303,13 +302,8 @@ export class WhoopClient {
    * Make an authenticated request to the Whoop API with retry logic.
    * Implements exponential backoff for rate limiting (429) and transient errors.
    */
-  private async request<T>(
-    endpoint: string,
-    params?: Record<string, string>,
-    apiVersion: "v1" | "v2" = "v1"
-  ): Promise<T> {
-    const baseUrl = apiVersion === "v2" ? WHOOP_API_V2 : WHOOP_API_V1;
-    const url = new URL(`${baseUrl}${endpoint}`);
+  private async request<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
+    const url = new URL(`${WHOOP_API}${endpoint}`);
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         url.searchParams.set(key, value);
@@ -406,12 +400,9 @@ export class WhoopClient {
 
   /**
    * Get a single sleep record by ID.
-   * Accepts both number (v1) and string/UUID (v2) IDs.
-   * Uses v2 API for UUIDs, v1 for numeric IDs.
    */
   async getSleepById(sleepId: number | string): Promise<WhoopSleep> {
-    const isUUID = typeof sleepId === "string" && sleepId.includes("-");
-    return this.request<WhoopSleep>(`/activity/sleep/${sleepId}`, undefined, isUUID ? "v2" : "v1");
+    return this.request<WhoopSleep>(`/activity/sleep/${sleepId}`);
   }
 
   /**
@@ -473,16 +464,9 @@ export class WhoopClient {
 
   /**
    * Get a single workout record by ID.
-   * Accepts both number (v1) and string/UUID (v2) IDs.
-   * Uses v2 API for UUIDs, v1 for numeric IDs.
    */
   async getWorkoutById(workoutId: number | string): Promise<WhoopWorkout> {
-    const isUUID = typeof workoutId === "string" && workoutId.includes("-");
-    return this.request<WhoopWorkout>(
-      `/activity/workout/${workoutId}`,
-      undefined,
-      isUUID ? "v2" : "v1"
-    );
+    return this.request<WhoopWorkout>(`/activity/workout/${workoutId}`);
   }
 
   /**

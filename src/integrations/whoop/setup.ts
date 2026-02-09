@@ -145,7 +145,7 @@ async function exchangeCodeForTokens(
 }
 
 async function verifyTokens(accessToken: string): Promise<string> {
-  const response = await fetch("https://api.prod.whoop.com/developer/v1/user/profile/basic", {
+  const response = await fetch("https://api.prod.whoop.com/developer/v2/user/profile/basic", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
