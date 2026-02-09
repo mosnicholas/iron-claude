@@ -6,11 +6,12 @@
  */
 
 import { spawnSync } from "child_process";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { syncRepo, pushChanges } from "../storage/repo-sync.js";
-import { buildSystemPrompt } from "./prompts.js";
+import { buildSystemPrompt, type WorkoutLogSummary } from "./prompts.js";
+import { parseFrontmatter } from "../integrations/storage.js";
 import { getCurrentWeek, getToday, getTimezone } from "../utils/date.js";
 import {
   extractTextFromMessage,
@@ -145,6 +146,36 @@ export class CoachAgent {
     return undefined;
   }
 
+  /**
+   * Get summaries of all workout logs in the current week's folder
+   */
+  private getWeekProgress(repoPath: string): WorkoutLogSummary[] {
+    const currentWeek = getCurrentWeek(this.config.timezone);
+    const weekDir = join(repoPath, "weeks", currentWeek);
+
+    if (!existsSync(weekDir)) return [];
+
+    const files = readdirSync(weekDir).filter((f) => /^\d{4}-\d{2}-\d{2}\.md$/.test(f));
+
+    return files.map((f) => {
+      try {
+        const content = readFileSync(join(weekDir, f), "utf-8");
+        const { frontmatter } = parseFrontmatter(content);
+        return {
+          date: f.replace(".md", ""),
+          type: (frontmatter.type as string) || "unknown",
+          status: (frontmatter.status as string) || "unknown",
+        };
+      } catch {
+        return {
+          date: f.replace(".md", ""),
+          type: "unknown",
+          status: "unknown",
+        };
+      }
+    });
+  }
+
   private async runQuery(
     prompt: string,
     additionalContext?: string,
@@ -158,6 +189,7 @@ export class CoachAgent {
     const weeklyPlan = this.getWeeklyPlan(repoPath);
     const prsYaml = this.getPRs(repoPath);
     const todayWorkout = this.getTodayWorkout(repoPath);
+    const weekProgress = this.getWeekProgress(repoPath);
 
     // Build system prompt with environment paths and context
     const basePrompt = buildSystemPrompt({
@@ -166,6 +198,7 @@ export class CoachAgent {
       weeklyPlan,
       prsYaml,
       todayWorkout,
+      weekProgress,
     });
     const systemPrompt = additionalContext
       ? `${basePrompt}\n\n## Additional Context\n\n${additionalContext}`
