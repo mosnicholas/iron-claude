@@ -2,13 +2,13 @@
  * Whoop OAuth 2.0 Helpers
  *
  * Handles OAuth authorization flow and token management for Whoop API.
+ * Tokens are stored in the fitness-data GitHub repo for multi-instance coordination.
  * Based on: https://developer.whoop.com/docs/developing/oauth
  */
 
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import type { TokenSet } from "../types.js";
+import { createGitHubStorage } from "../../storage/github.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -16,11 +16,7 @@ import type { TokenSet } from "../types.js";
 
 const WHOOP_AUTH_URL = "https://api.prod.whoop.com/oauth/oauth2/auth";
 const WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token";
-
-/** Get path to store refreshed tokens (persists across restarts) */
-function getTokenStoragePath(): string {
-  return process.env.WHOOP_TOKEN_FILE || "/data/whoop-tokens.json";
-}
+const TOKENS_PATH = "state/whoop/tokens.json";
 
 /** Available OAuth scopes for Whoop API */
 export const WHOOP_SCOPES = [
@@ -73,133 +69,113 @@ export function isWhoopOAuthConfigured(): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Token Storage
+// Token Storage (GitHub-backed with in-memory cache)
 // ─────────────────────────────────────────────────────────────────────────────
 
+interface GitHubTokenData {
+  refreshToken: string;
+  accessToken: string;
+  expiresAt: number;
+  updatedAt: string;
+}
+
+/** In-memory cache to avoid hitting GitHub API on every Whoop call */
+let cachedTokens: TokenSet | null = null;
+
+/** Reset the in-memory token cache (for testing only) */
+export function _resetTokenCache(): void {
+  cachedTokens = null;
+}
+
 /**
- * Update Fly.io secrets with new tokens.
- * This persists tokens across restarts without needing a mounted volume.
+ * Read tokens from GitHub, returning the content and SHA for optimistic locking.
  */
-async function updateFlySecrets(tokens: TokenSet): Promise<void> {
-  const flyToken = process.env.FLY_API_TOKEN;
-  const appName = process.env.FLY_APP_NAME || "workout-coach";
-
-  if (!flyToken) {
-    console.log("[whoop-oauth] FLY_API_TOKEN not set, skipping Fly secrets update");
-    return;
-  }
-
+export async function getTokensFromGitHub(): Promise<{
+  tokens: TokenSet;
+  sha: string;
+} | null> {
   try {
-    const response = await fetch(`https://api.machines.dev/v1/apps/${appName}/secrets`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${flyToken}`,
-        "Content-Type": "application/json",
+    const storage = createGitHubStorage();
+    const result = await storage.readFileWithSha(TOKENS_PATH);
+    if (!result) return null;
+
+    const data = JSON.parse(result.content) as GitHubTokenData;
+    if (!data.refreshToken || !data.accessToken) return null;
+
+    return {
+      tokens: {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        expiresAt: data.expiresAt,
       },
-      body: JSON.stringify({
-        WHOOP_ACCESS_TOKEN: tokens.accessToken,
-        WHOOP_REFRESH_TOKEN: tokens.refreshToken,
-        WHOOP_TOKEN_EXPIRES: String(tokens.expiresAt),
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      console.error(`[whoop-oauth] Failed to update Fly secrets: ${response.status} - ${error}`);
-      return;
-    }
-
-    console.log("[whoop-oauth] Tokens persisted to Fly secrets");
+      sha: result.sha,
+    };
   } catch (error) {
-    console.error("[whoop-oauth] Error updating Fly secrets:", error);
+    console.error("[whoop-oauth] Failed to read tokens from GitHub:", error);
+    return null;
   }
 }
 
 /**
- * Persist tokens to file storage and Fly secrets.
- * File storage is a local cache, Fly secrets persist across restarts.
+ * Save tokens to GitHub with optimistic locking.
+ * Pass sha from a prior read to prevent overwriting concurrent changes.
+ * Throws on SHA mismatch (another instance wrote first).
  */
-export function persistTokens(tokens: TokenSet): void {
-  // Try file storage (local cache)
-  try {
-    const tokenPath = getTokenStoragePath();
-    const dir = path.dirname(tokenPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2), "utf-8");
-    console.log("[whoop-oauth] Tokens persisted to file storage");
-  } catch {
-    // Non-fatal - Fly secrets are the primary persistence
-    console.log("[whoop-oauth] File storage unavailable, using Fly secrets only");
-  }
+export async function saveTokensToGitHub(tokens: TokenSet, sha?: string): Promise<void> {
+  const storage = createGitHubStorage();
+  const data: GitHubTokenData = {
+    refreshToken: tokens.refreshToken,
+    accessToken: tokens.accessToken,
+    expiresAt: tokens.expiresAt,
+    updatedAt: new Date().toISOString(),
+  };
 
-  // Also update Fly secrets (primary persistence)
-  updateFlySecrets(tokens).catch((err) => {
-    console.error("[whoop-oauth] Failed to update Fly secrets:", err);
-  });
+  await storage.writeFileWithSha(
+    TOKENS_PATH,
+    JSON.stringify(data, null, 2),
+    "Update Whoop tokens",
+    sha
+  );
+
+  console.log("[whoop-oauth] Tokens persisted to GitHub");
 }
 
 /**
- * Load tokens from file storage.
+ * Persist tokens to GitHub and update in-memory cache.
  */
-function loadPersistedTokens(): TokenSet | null {
+export async function persistTokens(tokens: TokenSet): Promise<void> {
+  // Update in-memory cache immediately
+  cachedTokens = tokens;
+
   try {
-    const tokenPath = getTokenStoragePath();
-    if (fs.existsSync(tokenPath)) {
-      const content = fs.readFileSync(tokenPath, "utf-8");
-      const tokens = JSON.parse(content) as TokenSet;
-      if (tokens.accessToken && tokens.refreshToken) {
-        return tokens;
-      }
-    }
+    // Read current SHA for optimistic locking
+    const storage = createGitHubStorage();
+    const existing = await storage.readFileWithSha(TOKENS_PATH);
+    await saveTokensToGitHub(tokens, existing?.sha);
   } catch (error) {
-    console.error("[whoop-oauth] Failed to load persisted tokens:", error);
+    // If SHA mismatch, another instance already wrote newer tokens.
+    // Our in-memory cache is still valid for this instance's current request.
+    console.warn("[whoop-oauth] Failed to persist tokens to GitHub (possible race):", error);
   }
-  return null;
 }
 
 /**
  * Get stored Whoop tokens.
- * Checks file storage first, then falls back to environment variables.
- * Returns null if not configured.
+ * Uses in-memory cache if the access token is still valid, otherwise reads from GitHub.
  */
-export function getStoredTokens(): TokenSet | null {
-  // First, check file storage (for refreshed tokens)
-  const persistedTokens = loadPersistedTokens();
-  if (persistedTokens) {
-    return persistedTokens;
+export async function getStoredTokens(): Promise<TokenSet | null> {
+  // Use cached tokens if access token is still valid
+  if (cachedTokens && !isTokenExpired(cachedTokens)) {
+    return cachedTokens;
   }
 
-  // Fall back to environment variables (initial setup)
-  const accessToken = process.env.WHOOP_ACCESS_TOKEN;
-  const refreshToken = process.env.WHOOP_REFRESH_TOKEN;
-  const expiresAt = process.env.WHOOP_TOKEN_EXPIRES;
+  // Read fresh tokens from GitHub
+  const result = await getTokensFromGitHub();
+  if (!result) return null;
 
-  if (!accessToken || !refreshToken) {
-    return null;
-  }
-
-  return {
-    accessToken,
-    refreshToken,
-    expiresAt: expiresAt ? parseInt(expiresAt, 10) : 0,
-  };
-}
-
-/**
- * Clear persisted tokens (for logout/revoke).
- */
-export function clearPersistedTokens(): void {
-  try {
-    const tokenPath = getTokenStoragePath();
-    if (fs.existsSync(tokenPath)) {
-      fs.unlinkSync(tokenPath);
-      console.log("[whoop-oauth] Persisted tokens cleared");
-    }
-  } catch (error) {
-    console.error("[whoop-oauth] Failed to clear persisted tokens:", error);
-  }
+  // Update cache
+  cachedTokens = result.tokens;
+  return result.tokens;
 }
 
 /**

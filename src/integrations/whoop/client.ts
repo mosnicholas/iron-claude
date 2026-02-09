@@ -6,7 +6,13 @@
  */
 
 import type { TokenSet } from "../types.js";
-import { getStoredTokens, isTokenExpired, refreshAccessToken, persistTokens } from "./oauth.js";
+import {
+  getStoredTokens,
+  getTokensFromGitHub,
+  isTokenExpired,
+  refreshAccessToken,
+  persistTokens,
+} from "./oauth.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -261,11 +267,12 @@ export class WhoopClient {
   }
 
   /**
-   * Create a client from stored environment tokens.
+   * Create a client from stored tokens (GitHub-backed).
    * Automatically refreshes if expired and persists the new tokens.
+   * If refresh fails (e.g. another instance used the refresh token), re-reads from GitHub.
    */
   static async fromEnvironment(): Promise<WhoopClient> {
-    const tokens = getStoredTokens();
+    const tokens = await getStoredTokens();
     if (!tokens) {
       throw new Error("Whoop tokens not configured");
     }
@@ -273,10 +280,20 @@ export class WhoopClient {
     // Refresh if expired
     if (isTokenExpired(tokens)) {
       console.log("[whoop] Access token expired, refreshing...");
-      const newTokens = await refreshAccessToken(tokens.refreshToken);
-      // Persist the refreshed tokens
-      persistTokens(newTokens);
-      return new WhoopClient(newTokens);
+      try {
+        const newTokens = await refreshAccessToken(tokens.refreshToken);
+        await persistTokens(newTokens);
+        return new WhoopClient(newTokens);
+      } catch (error) {
+        // Refresh failed - another instance may have already rotated the refresh token.
+        // Re-read from GitHub to get the tokens that instance persisted.
+        console.warn("[whoop] Token refresh failed, re-reading from GitHub:", error);
+        const freshResult = await getTokensFromGitHub();
+        if (freshResult && !isTokenExpired(freshResult.tokens)) {
+          return new WhoopClient(freshResult.tokens);
+        }
+        throw new Error("Whoop token refresh failed and no valid tokens found in GitHub");
+      }
     }
 
     return new WhoopClient(tokens);

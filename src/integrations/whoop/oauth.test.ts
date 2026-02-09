@@ -2,34 +2,50 @@
  * Tests for Whoop OAuth helpers
  */
 
-import fs from "node:fs";
-import {
+import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
+
+// Mock GitHub storage before importing oauth module
+jest.unstable_mockModule("../../storage/github.js", () => ({
+  createGitHubStorage: jest.fn(),
+}));
+
+// Dynamic imports after mock setup (required for ESM mocking)
+const { createGitHubStorage } = await import("../../storage/github.js");
+const {
   getAuthorizationUrl,
   isWhoopOAuthConfigured,
   getStoredTokens,
   isTokenExpired,
   persistTokens,
-  clearPersistedTokens,
+  getTokensFromGitHub,
+  saveTokensToGitHub,
+  _resetTokenCache,
   DEFAULT_SCOPES,
-} from "./oauth.js";
+} = await import("./oauth.js");
+
+const mockCreateGitHubStorage = createGitHubStorage as jest.MockedFunction<
+  typeof createGitHubStorage
+>;
+
+function createMockStorage(fileData: { content: string; sha: string } | null = null) {
+  return {
+    readFileWithSha: jest.fn().mockResolvedValue(fileData as never),
+    writeFileWithSha: jest
+      .fn()
+      .mockResolvedValue({ commit: { sha: "new" }, content: { sha: "new" } } as never),
+  } as unknown as ReturnType<typeof createGitHubStorage>;
+}
 
 describe("Whoop OAuth", () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
+    _resetTokenCache();
   });
 
   afterEach(() => {
     process.env = originalEnv;
-    // Clean up any test token files
-    try {
-      if (fs.existsSync("/tmp/test-whoop-tokens.json")) {
-        fs.unlinkSync("/tmp/test-whoop-tokens.json");
-      }
-    } catch {
-      // Ignore cleanup errors
-    }
   });
 
   describe("isWhoopOAuthConfigured", () => {
@@ -56,35 +72,234 @@ describe("Whoop OAuth", () => {
   });
 
   describe("getStoredTokens", () => {
-    it("returns null when no tokens are configured", () => {
-      delete process.env.WHOOP_ACCESS_TOKEN;
-      delete process.env.WHOOP_REFRESH_TOKEN;
+    it("returns null when no tokens exist in GitHub", async () => {
+      const mockStorage = createMockStorage(null);
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
 
-      expect(getStoredTokens()).toBe(null);
+      const tokens = await getStoredTokens();
+      expect(tokens).toBe(null);
     });
 
-    it("returns tokens from environment variables", () => {
-      process.env.WHOOP_ACCESS_TOKEN = "test-access";
-      process.env.WHOOP_REFRESH_TOKEN = "test-refresh";
-      process.env.WHOOP_TOKEN_EXPIRES = "1234567890000";
+    it("returns tokens from GitHub", async () => {
+      const tokenData = {
+        content: JSON.stringify({
+          accessToken: "test-access",
+          refreshToken: "test-refresh",
+          expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour from now
+          updatedAt: "2026-02-09T12:00:00Z",
+        }),
+        sha: "abc123",
+      };
+      const mockStorage = createMockStorage(tokenData);
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
 
-      const tokens = getStoredTokens();
+      const tokens = await getStoredTokens();
 
       expect(tokens).toEqual({
         accessToken: "test-access",
         refreshToken: "test-refresh",
-        expiresAt: 1234567890000,
+        expiresAt: expect.any(Number),
+      });
+    });
+  });
+
+  describe("getTokensFromGitHub", () => {
+    it("returns tokens and SHA for optimistic locking", async () => {
+      const tokenData = {
+        content: JSON.stringify({
+          accessToken: "gh-access",
+          refreshToken: "gh-refresh",
+          expiresAt: 9999999999999,
+          updatedAt: "2026-02-09T12:00:00Z",
+        }),
+        sha: "sha-123",
+      };
+      const mockStorage = createMockStorage(tokenData);
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
+
+      const result = await getTokensFromGitHub();
+
+      expect(result).toEqual({
+        tokens: {
+          accessToken: "gh-access",
+          refreshToken: "gh-refresh",
+          expiresAt: 9999999999999,
+        },
+        sha: "sha-123",
       });
     });
 
-    it("defaults expiresAt to 0 when not set", () => {
-      process.env.WHOOP_ACCESS_TOKEN = "test-access";
-      process.env.WHOOP_REFRESH_TOKEN = "test-refresh";
-      delete process.env.WHOOP_TOKEN_EXPIRES;
+    it("returns null when file does not exist", async () => {
+      const mockStorage = createMockStorage(null);
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
 
-      const tokens = getStoredTokens();
+      const result = await getTokensFromGitHub();
+      expect(result).toBe(null);
+    });
+  });
 
-      expect(tokens?.expiresAt).toBe(0);
+  describe("saveTokensToGitHub", () => {
+    it("writes tokens with SHA for optimistic locking", async () => {
+      const mockStorage = createMockStorage();
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
+
+      const tokens = {
+        accessToken: "new-access",
+        refreshToken: "new-refresh",
+        expiresAt: 9999999999999,
+      };
+
+      await saveTokensToGitHub(tokens, "old-sha");
+
+      expect(mockStorage.writeFileWithSha).toHaveBeenCalledWith(
+        "state/whoop/tokens.json",
+        expect.stringContaining("new-access"),
+        "Update Whoop tokens",
+        "old-sha"
+      );
+    });
+  });
+
+  describe("persistTokens", () => {
+    it("writes tokens to GitHub", async () => {
+      const mockStorage = createMockStorage({
+        content: JSON.stringify({
+          accessToken: "old",
+          refreshToken: "old",
+          expiresAt: 0,
+          updatedAt: "",
+        }),
+        sha: "existing-sha",
+      });
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
+
+      const tokens = {
+        accessToken: "persist-access",
+        refreshToken: "persist-refresh",
+        expiresAt: 9999999999999,
+      };
+
+      await persistTokens(tokens);
+
+      expect(mockStorage.writeFileWithSha).toHaveBeenCalled();
+    });
+  });
+
+  describe("in-memory caching", () => {
+    it("uses cached tokens on second call when still valid", async () => {
+      const tokenData = {
+        content: JSON.stringify({
+          accessToken: "cached-access",
+          refreshToken: "cached-refresh",
+          expiresAt: Date.now() + 60 * 60 * 1000,
+          updatedAt: "2026-02-09T12:00:00Z",
+        }),
+        sha: "sha-1",
+      };
+      const mockStorage = createMockStorage(tokenData);
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
+
+      // First call reads from GitHub
+      const first = await getStoredTokens();
+      expect(first?.accessToken).toBe("cached-access");
+      expect(mockStorage.readFileWithSha).toHaveBeenCalledTimes(1);
+
+      // Second call should use cache - reset mock to verify no new calls
+      (mockStorage.readFileWithSha as jest.Mock).mockClear();
+      const second = await getStoredTokens();
+      expect(second?.accessToken).toBe("cached-access");
+      expect(mockStorage.readFileWithSha).not.toHaveBeenCalled();
+    });
+
+    it("re-reads from GitHub when cached token is expired", async () => {
+      // First: seed the cache with an expired token via persistTokens
+      const expiredTokens = {
+        accessToken: "expired-access",
+        refreshToken: "expired-refresh",
+        expiresAt: Date.now() - 1000, // already expired
+      };
+      const mockStorage1 = createMockStorage({
+        content: JSON.stringify({ ...expiredTokens, updatedAt: "" }),
+        sha: "sha-old",
+      });
+      mockCreateGitHubStorage.mockReturnValue(mockStorage1);
+      await persistTokens(expiredTokens); // sets cache to expired tokens
+
+      // Now set up GitHub to return fresh tokens
+      const freshData = {
+        content: JSON.stringify({
+          accessToken: "fresh-access",
+          refreshToken: "fresh-refresh",
+          expiresAt: Date.now() + 60 * 60 * 1000,
+          updatedAt: "2026-02-09T13:00:00Z",
+        }),
+        sha: "sha-new",
+      };
+      const mockStorage2 = createMockStorage(freshData);
+      mockCreateGitHubStorage.mockReturnValue(mockStorage2);
+
+      // getStoredTokens should skip cache (expired) and read from GitHub
+      const result = await getStoredTokens();
+      expect(result?.accessToken).toBe("fresh-access");
+      expect(mockStorage2.readFileWithSha).toHaveBeenCalled();
+    });
+  });
+
+  describe("persistTokens resilience", () => {
+    it("does not throw on GitHub write failure (SHA mismatch)", async () => {
+      const mockStorage = {
+        readFileWithSha: jest.fn().mockResolvedValue({
+          content: JSON.stringify({
+            accessToken: "old",
+            refreshToken: "old",
+            expiresAt: 0,
+            updatedAt: "",
+          }),
+          sha: "stale-sha",
+        } as never),
+        writeFileWithSha: jest.fn().mockRejectedValue(new Error("409 Conflict") as never),
+      } as unknown as ReturnType<typeof createGitHubStorage>;
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
+
+      const tokens = {
+        accessToken: "race-winner",
+        refreshToken: "race-refresh",
+        expiresAt: Date.now() + 60 * 60 * 1000,
+      };
+
+      // Should not throw despite GitHub write failure
+      await expect(persistTokens(tokens)).resolves.toBeUndefined();
+    });
+
+    it("updates in-memory cache even when GitHub write fails", async () => {
+      const mockStorage = {
+        readFileWithSha: jest.fn().mockResolvedValue({
+          content: JSON.stringify({
+            accessToken: "old",
+            refreshToken: "old",
+            expiresAt: 0,
+            updatedAt: "",
+          }),
+          sha: "stale-sha",
+        } as never),
+        writeFileWithSha: jest.fn().mockRejectedValue(new Error("409 Conflict") as never),
+      } as unknown as ReturnType<typeof createGitHubStorage>;
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
+
+      const tokens = {
+        accessToken: "cached-despite-failure",
+        refreshToken: "cached-refresh",
+        expiresAt: Date.now() + 60 * 60 * 1000,
+      };
+
+      await persistTokens(tokens);
+
+      // Cache should have the new tokens, so getStoredTokens() returns them
+      // without hitting GitHub (cache hit)
+      (mockStorage.readFileWithSha as jest.Mock).mockClear();
+      const cached = await getStoredTokens();
+      expect(cached?.accessToken).toBe("cached-despite-failure");
+      expect(mockStorage.readFileWithSha).not.toHaveBeenCalled();
     });
   });
 
@@ -167,51 +382,6 @@ describe("Whoop OAuth", () => {
       const url = getAuthorizationUrl("https://example.com/callback", DEFAULT_SCOPES, "test-state");
 
       expect(url).toContain("state=test-state");
-    });
-  });
-
-  describe("token persistence", () => {
-    beforeEach(() => {
-      process.env.WHOOP_TOKEN_FILE = "/tmp/test-whoop-tokens.json";
-    });
-
-    it("persists and loads tokens from file", () => {
-      const tokens = {
-        accessToken: "persisted-access",
-        refreshToken: "persisted-refresh",
-        expiresAt: 9999999999999,
-      };
-
-      persistTokens(tokens);
-
-      // Clear env vars to ensure we're loading from file
-      delete process.env.WHOOP_ACCESS_TOKEN;
-      delete process.env.WHOOP_REFRESH_TOKEN;
-      delete process.env.WHOOP_TOKEN_EXPIRES;
-
-      // Need to re-import to pick up the new file
-      const loaded = getStoredTokens();
-
-      expect(loaded).toEqual(tokens);
-    });
-
-    it("clears persisted tokens", () => {
-      const tokens = {
-        accessToken: "to-clear",
-        refreshToken: "to-clear",
-        expiresAt: 9999999999999,
-      };
-
-      persistTokens(tokens);
-      clearPersistedTokens();
-
-      // Clear env vars
-      delete process.env.WHOOP_ACCESS_TOKEN;
-      delete process.env.WHOOP_REFRESH_TOKEN;
-      delete process.env.WHOOP_TOKEN_EXPIRES;
-
-      const loaded = getStoredTokens();
-      expect(loaded).toBe(null);
     });
   });
 });
