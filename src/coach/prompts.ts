@@ -8,8 +8,14 @@ import { readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { getConfiguredIntegrations, hasConfiguredIntegrations } from "../integrations/registry.js";
-import { getDateInfoTZAware } from "../utils/date.js";
+import { getDateInfoTZAware, getWeekDays } from "../utils/date.js";
 import { formatRecentMessagesForPrompt } from "../bot/message-history.js";
+
+export interface WorkoutLogSummary {
+  date: string; // "2026-02-03"
+  type: string; // "upper", "lower", etc.
+  status: string; // "completed", "in_progress", "abandoned"
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROMPTS_DIR = join(__dirname, "../../prompts");
@@ -40,6 +46,7 @@ export interface SystemPromptContext {
   weeklyPlan?: string; // Current week's plan content
   prsYaml?: string; // Personal records YAML content
   todayWorkout?: string; // Today's workout log if it exists
+  weekProgress?: WorkoutLogSummary[]; // Workout logs found for this week
   messageHistoryCount?: number; // Number of recent messages to include (default: 10)
 }
 
@@ -102,6 +109,53 @@ Read the day's workout file (e.g., \`weeks/2026-W05/2026-01-27.md\`) to access i
 `;
 }
 
+/**
+ * Build a summary of this week's actual workout logs vs the week's days.
+ */
+function buildWeekProgressSection(workouts: WorkoutLogSummary[], isoWeek: string): string {
+  if (workouts.length === 0 && !isoWeek) return "";
+
+  const weekDays = getWeekDays(isoWeek);
+  const workoutsByDate = new Map(workouts.map((w) => [w.date, w]));
+
+  // List actual workouts found
+  const loggedLines = weekDays
+    .filter((day) => workoutsByDate.has(day.date))
+    .map((day) => {
+      const w = workoutsByDate.get(day.date)!;
+      return `- **${day.dayName}, ${day.dateHuman}**: ${w.type} (${w.status})`;
+    });
+
+  // List days with no workout
+  const missingDays = weekDays
+    .filter((day) => !workoutsByDate.has(day.date))
+    .map((day) => `${day.dayName} (${day.dateHuman})`);
+
+  const completed = workouts.filter((w) => w.status === "completed").length;
+  const inProgress = workouts.filter((w) => w.status === "in_progress").length;
+
+  let section = `
+## This Week's Workout Logs (${isoWeek})
+
+**These are the ACTUAL workouts recorded this week** (source of truth for what was done):
+
+`;
+
+  if (loggedLines.length > 0) {
+    section += loggedLines.join("\n") + "\n\n";
+  } else {
+    section += "No workouts logged yet this week.\n\n";
+  }
+
+  if (missingDays.length > 0) {
+    section += `Days with NO workout logged: ${missingDays.join(", ")}\n\n`;
+  }
+
+  section += `Completed: ${completed} | In Progress: ${inProgress} | Total logged: ${workouts.length}\n`;
+
+  return section;
+}
+
 export function buildSystemPrompt(context?: SystemPromptContext): string {
   const {
     repoPath,
@@ -109,6 +163,7 @@ export function buildSystemPrompt(context?: SystemPromptContext): string {
     weeklyPlan,
     prsYaml,
     todayWorkout,
+    weekProgress = [],
     messageHistoryCount = 10,
   } = context || {};
 
@@ -178,6 +233,9 @@ This is the current state of today's workout. Use this to track what's been logg
 `
     : "";
 
+  // Build week progress section from actual workout log files
+  const weekProgressSection = buildWeekProgressSection(weekProgress, dateInfo.isoWeek);
+
   const contextNote = `
 ## Current Date & Time
 
@@ -193,6 +251,13 @@ ${messageHistory ? `\n${messageHistory}\n` : ""}
 ${weeklyPlanSection}
 ${prsSection}
 ${todayWorkoutSection}
+${weekProgressSection}
+## Scheduling Notes
+
+- **Weekly retrospective + next week's plan**: Generated Sunday at 8pm (after user answers planning questions)
+- **Daily workout reminder**: Sent at 6am on weekdays
+- **Reminders**: Checked hourly, see state/reminders.json
+
 ## File Access
 
 You have direct access to the fitness-data repository files:
