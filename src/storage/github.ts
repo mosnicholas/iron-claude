@@ -78,6 +78,31 @@ export class GitHubStorage {
   }
 
   /**
+   * Read a file and return both content and SHA (for optimistic locking)
+   */
+  async readFileWithSha(
+    path: string,
+    branch = "main"
+  ): Promise<{ content: string; sha: string } | null> {
+    try {
+      const endpoint = `/repos/${this.owner}/${this.repo}/contents/${path}?ref=${branch}`;
+      const data = await this.request<GitHubFileContent>(endpoint);
+
+      const content =
+        data.encoding === "base64"
+          ? Buffer.from(data.content, "base64").toString("utf-8")
+          : data.content;
+
+      return { content, sha: data.sha };
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("404")) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Write or update a file
    */
   async writeFile(
@@ -96,6 +121,21 @@ export class GitHubStorage {
       // File doesn't exist, that's fine
     }
 
+    return this.writeFileWithSha(path, content, message, sha, branch);
+  }
+
+  /**
+   * Write a file with an explicit SHA for optimistic locking.
+   * Pass sha=undefined for new files, or a known SHA to prevent concurrent overwrites.
+   * Throws on SHA mismatch (409 conflict).
+   */
+  async writeFileWithSha(
+    path: string,
+    content: string,
+    message: string,
+    sha?: string,
+    branch = "main"
+  ): Promise<GitHubCommitResponse> {
     const endpoint = `/repos/${this.owner}/${this.repo}/contents/${path}`;
     const body: Record<string, unknown> = {
       message,

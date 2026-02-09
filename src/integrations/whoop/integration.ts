@@ -47,16 +47,11 @@ export class WhoopIntegration implements DeviceIntegration {
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Check if Whoop is configured with valid tokens.
+   * Check if Whoop OAuth credentials are configured.
+   * Token existence is validated lazily when the client is created.
    */
   isConfigured(): boolean {
-    // Must have OAuth credentials AND user tokens
-    if (!isWhoopOAuthConfigured()) {
-      return false;
-    }
-
-    const tokens = getStoredTokens();
-    return tokens !== null;
+    return isWhoopOAuthConfigured();
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -81,14 +76,14 @@ export class WhoopIntegration implements DeviceIntegration {
    * Refresh the access token and persist the new tokens.
    */
   async refreshToken(): Promise<TokenSet> {
-    const tokens = getStoredTokens();
+    const tokens = await getStoredTokens();
     if (!tokens) {
       throw new Error("No tokens to refresh");
     }
     const newTokens = await refreshAccessToken(tokens.refreshToken);
 
-    // Persist the new tokens
-    persistTokens(newTokens);
+    // Persist the new tokens to GitHub
+    await persistTokens(newTokens);
 
     // Invalidate cached client so it uses new tokens
     this.invalidateClient();
