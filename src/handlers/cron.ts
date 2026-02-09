@@ -8,8 +8,9 @@ import type { Request, Response } from "express";
 import { runDailyReminder } from "../cron/daily-reminder.js";
 import { runWeeklyPlan } from "../cron/weekly-plan.js";
 import { runCheckReminders } from "../cron/check-reminders.js";
+import { runRefreshTokens } from "../cron/refresh-tokens.js";
 
-type CronTask = "daily-reminder" | "weekly-plan" | "check-reminders";
+type CronTask = "daily-reminder" | "weekly-plan" | "check-reminders" | "refresh-tokens";
 
 /**
  * Validates the cron secret from the Authorization header.
@@ -48,6 +49,9 @@ export function createCronHandler(task: CronTask) {
           break;
         case "check-reminders":
           result = await runCheckReminders();
+          break;
+        case "refresh-tokens":
+          result = await runRefreshTokens();
           break;
         default:
           res.status(400).json({ error: `Unknown task: ${task}` });

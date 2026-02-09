@@ -29,6 +29,7 @@ app.post("/api/webhook", webhookHandler);
 app.get("/api/cron/daily-reminder", createCronHandler("daily-reminder"));
 app.get("/api/cron/weekly-plan", createCronHandler("weekly-plan"));
 app.get("/api/cron/check-reminders", createCronHandler("check-reminders"));
+app.get("/api/cron/refresh-tokens", createCronHandler("refresh-tokens"));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Device Integrations (Whoop, Garmin, etc.)

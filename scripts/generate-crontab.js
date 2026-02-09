@@ -105,6 +105,13 @@ function generateCrontab() {
       dayOfWeek: "0", // Sunday
       endpoint: "weekly-plan",
     },
+    {
+      name: "Refresh tokens",
+      localHour: 3,
+      localMinute: 0,
+      dayOfWeek: "3", // Wednesday
+      endpoint: "refresh-tokens",
+    },
   ];
 
   const lines = [
