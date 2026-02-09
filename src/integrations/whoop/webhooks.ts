@@ -25,7 +25,7 @@ interface WhoopWebhookPayload {
   type: string;
   /** User ID the event belongs to */
   user_id: number;
-  /** ID of the resource - number for v1 API, UUID string for v2 API */
+  /** ID of the resource (numeric or UUID string) */
   id: number | string;
   /** Unique identifier for the triggering event */
   trace_id?: string;
@@ -119,7 +119,7 @@ export function verifyWhoopWebhook(req: Request): boolean {
     return false;
   }
 
-  // user_id must be a number, id can be number (v1) or string UUID (v2)
+  // user_id must be a number, id can be number or string UUID
   if (typeof payload.user_id !== "number") {
     console.log("[whoop-webhook] Invalid payload: missing or invalid user_id");
     return false;
