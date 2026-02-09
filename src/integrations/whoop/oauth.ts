@@ -262,20 +262,18 @@ export async function exchangeCodeForTokens(code: string, redirectUri: string): 
 export async function refreshAccessToken(refreshToken: string): Promise<TokenSet> {
   const config = getWhoopOAuthConfig();
 
-  // Whoop requires JSON body format for token refresh (not form-urlencoded)
-  // See: https://developer.whoop.com/docs/developing/oauth/
   const response = await fetch(WHOOP_TOKEN_URL, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: JSON.stringify({
+    body: new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
       client_id: config.clientId,
       client_secret: config.clientSecret,
       scope: "offline",
-    }),
+    }).toString(),
   });
 
   if (!response.ok) {
