@@ -30,9 +30,43 @@ function escapeHtml(unsafe: string): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Process a webhook in the background.
+ * This is called after we've already returned 200 to the sender.
+ */
+async function processWebhookAsync(
+  integration: ReturnType<typeof getIntegration>,
+  payload: unknown,
+  device: string
+): Promise<void> {
+  if (!integration) return;
+
+  try {
+    // Parse the webhook payload (this may make API calls)
+    const event = await integration.parseWebhook(payload);
+
+    if (!event) {
+      console.log(`[integration-webhook] No actionable event from: ${device}`);
+      return;
+    }
+
+    console.log(`[integration-webhook] Parsed ${event.type} event from ${device}`);
+
+    // Store the data in the fitness-data repo
+    await storeIntegrationData(event);
+
+    console.log(`[integration-webhook] Stored ${event.type} data for ${event.data.date}`);
+  } catch (error) {
+    console.error(`[integration-webhook] Error processing webhook:`, error);
+  }
+}
+
+/**
  * Handle incoming webhooks from device integrations.
  *
  * Route: POST /api/integrations/:device/webhook
+ *
+ * Returns 200 immediately after validation, then processes asynchronously.
+ * This prevents webhook senders from timing out and retrying.
  */
 export async function integrationWebhookHandler(req: Request, res: Response): Promise<void> {
   const device = req.params.device as string;
@@ -47,38 +81,20 @@ export async function integrationWebhookHandler(req: Request, res: Response): Pr
     return;
   }
 
-  // Verify the webhook is authentic
+  // Verify the webhook is authentic (must be sync - reject invalid webhooks)
   if (!integration.verifyWebhook(req)) {
     console.log(`[integration-webhook] Invalid webhook signature for: ${device}`);
     res.status(401).json({ error: "Invalid webhook signature" });
     return;
   }
 
-  try {
-    // Parse the webhook payload
-    const event = await integration.parseWebhook(req.body);
+  // Return 200 immediately to prevent retries
+  // Clone the payload since req.body may not be available after response
+  const payload = JSON.parse(JSON.stringify(req.body));
+  res.status(200).json({ ok: true, message: "Webhook received" });
 
-    if (!event) {
-      // Valid webhook but nothing to process (e.g., delete event, unscored data)
-      console.log(`[integration-webhook] No actionable event from: ${device}`);
-      res.status(200).json({ ok: true, message: "No action needed" });
-      return;
-    }
-
-    console.log(`[integration-webhook] Parsed ${event.type} event from ${device}`);
-
-    // Store the data in the fitness-data repo
-    await storeIntegrationData(event);
-
-    console.log(`[integration-webhook] Stored ${event.type} data for ${event.data.date}`);
-
-    res.status(200).json({ ok: true, type: event.type, date: event.data.date });
-  } catch (error) {
-    console.error(`[integration-webhook] Error processing webhook:`, error);
-    res.status(500).json({
-      error: error instanceof Error ? error.message : "Internal error",
-    });
-  }
+  // Process asynchronously in the background
+  processWebhookAsync(integration, payload, device);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
