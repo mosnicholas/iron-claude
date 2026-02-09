@@ -77,10 +77,50 @@ export function isWhoopOAuthConfigured(): boolean {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Persist tokens to file storage.
- * This allows refreshed tokens to survive restarts.
+ * Update Fly.io secrets with new tokens.
+ * This persists tokens across restarts without needing a mounted volume.
+ */
+async function updateFlySecrets(tokens: TokenSet): Promise<void> {
+  const flyToken = process.env.FLY_API_TOKEN;
+  const appName = process.env.FLY_APP_NAME || "workout-coach";
+
+  if (!flyToken) {
+    console.log("[whoop-oauth] FLY_API_TOKEN not set, skipping Fly secrets update");
+    return;
+  }
+
+  try {
+    const response = await fetch(`https://api.machines.dev/v1/apps/${appName}/secrets`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${flyToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        WHOOP_ACCESS_TOKEN: tokens.accessToken,
+        WHOOP_REFRESH_TOKEN: tokens.refreshToken,
+        WHOOP_TOKEN_EXPIRES: String(tokens.expiresAt),
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error(`[whoop-oauth] Failed to update Fly secrets: ${response.status} - ${error}`);
+      return;
+    }
+
+    console.log("[whoop-oauth] Tokens persisted to Fly secrets");
+  } catch (error) {
+    console.error("[whoop-oauth] Error updating Fly secrets:", error);
+  }
+}
+
+/**
+ * Persist tokens to file storage and Fly secrets.
+ * File storage is a local cache, Fly secrets persist across restarts.
  */
 export function persistTokens(tokens: TokenSet): void {
+  // Try file storage (local cache)
   try {
     const tokenPath = getTokenStoragePath();
     const dir = path.dirname(tokenPath);
@@ -89,10 +129,15 @@ export function persistTokens(tokens: TokenSet): void {
     }
     fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2), "utf-8");
     console.log("[whoop-oauth] Tokens persisted to file storage");
-  } catch (error) {
-    console.error("[whoop-oauth] Failed to persist tokens:", error);
-    // Non-fatal - tokens will still work from memory
+  } catch {
+    // Non-fatal - Fly secrets are the primary persistence
+    console.log("[whoop-oauth] File storage unavailable, using Fly secrets only");
   }
+
+  // Also update Fly secrets (primary persistence)
+  updateFlySecrets(tokens).catch((err) => {
+    console.error("[whoop-oauth] Failed to update Fly secrets:", err);
+  });
 }
 
 /**

@@ -271,7 +271,7 @@ export async function parseWhoopWebhook(
   switch (parsedType.resource) {
     case "sleep": {
       const sleep = await client.getSleepById(webhookPayload.id);
-      // Skip unscored or nap records (with logging so we know what's being ignored)
+      // Skip unscored or nap records
       if (sleep.score_state !== "SCORED") {
         console.log(
           `[whoop-webhook] Ignoring unscored sleep ${webhookPayload.id} (state: ${sleep.score_state})`
