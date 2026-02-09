@@ -5,8 +5,11 @@ import {
   formatRecoverySummary,
   formatSleepSummary,
   getRecoveryRecommendation,
+  formatIntegrationTable,
+  insertOrUpdateSection,
+  parseIntegrationTable,
 } from "./storage.js";
-import type { RecoveryData, SleepData } from "./types.js";
+import type { RecoveryData, SleepData, WorkoutData } from "./types.js";
 
 describe("integration storage", () => {
   describe("getISOWeekForDate", () => {
@@ -308,6 +311,229 @@ Content`;
       expect(getRecoveryRecommendation(0)).toContain("Very low");
       expect(getRecoveryRecommendation(20)).toContain("rest");
       expect(getRecoveryRecommendation(39)).toContain("recovery today");
+    });
+  });
+
+  describe("formatIntegrationTable", () => {
+    it("formats recovery data as a table", () => {
+      const data = {
+        recovery: {
+          source: "whoop",
+          date: "2026-01-27",
+          score: 78,
+          hrv: 45.2,
+          restingHeartRate: 52,
+          raw: {},
+        } as RecoveryData,
+      };
+
+      const table = formatIntegrationTable(data);
+
+      expect(table).toContain("| Metric | Value |");
+      expect(table).toContain("| Recovery Score | 78% |");
+      expect(table).toContain("| HRV | 45.2 ms |");
+      expect(table).toContain("| Resting HR | 52 bpm |");
+    });
+
+    it("formats sleep data as a table", () => {
+      const data = {
+        sleep: {
+          source: "whoop",
+          date: "2026-01-27",
+          startTime: "2026-01-26T23:00:00Z",
+          endTime: "2026-01-27T07:00:00Z",
+          durationMinutes: 420,
+          score: 85,
+          stages: { deep: 90, rem: 85, light: 180, awake: 15 },
+          raw: {},
+        } as SleepData,
+      };
+
+      const table = formatIntegrationTable(data);
+
+      expect(table).toContain("| Sleep Duration | 7h 0m |");
+      expect(table).toContain("| Sleep Score | 85% |");
+      expect(table).toContain("| Deep Sleep | 90 min |");
+      expect(table).toContain("| REM Sleep | 85 min |");
+      expect(table).toContain("| Light Sleep | 180 min |");
+    });
+
+    it("formats combined recovery and sleep data", () => {
+      const data = {
+        recovery: {
+          source: "whoop",
+          date: "2026-01-27",
+          score: 78,
+          raw: {},
+        } as RecoveryData,
+        sleep: {
+          source: "whoop",
+          date: "2026-01-27",
+          startTime: "2026-01-26T23:00:00Z",
+          endTime: "2026-01-27T07:00:00Z",
+          durationMinutes: 420,
+          raw: {},
+        } as SleepData,
+      };
+
+      const table = formatIntegrationTable(data);
+
+      expect(table).toContain("| Recovery Score | 78% |");
+      expect(table).toContain("| Sleep Duration | 7h 0m |");
+    });
+
+    it("formats workout data", () => {
+      const data = {
+        workouts: [
+          {
+            source: "whoop",
+            date: "2026-01-27",
+            type: "strength",
+            durationMinutes: 65,
+            strain: 12.5,
+            calories: 450,
+            raw: {},
+          } as WorkoutData,
+        ],
+      };
+
+      const table = formatIntegrationTable(data);
+
+      expect(table).toContain("| Workout (strength) | 1h 5m |");
+      expect(table).toContain("| Strain | 12.5 |");
+      expect(table).toContain("| Calories | 450 kcal |");
+    });
+
+    it("returns empty string for no data", () => {
+      const table = formatIntegrationTable({});
+      expect(table).toBe("");
+    });
+  });
+
+  describe("insertOrUpdateSection", () => {
+    it("inserts a new section after the heading", () => {
+      const content = `# 2026-01-27
+
+*No workout logged yet.*`;
+
+      const result = insertOrUpdateSection(content, "Whoop Data", "Table here");
+
+      expect(result).toContain("## Whoop Data");
+      expect(result).toContain("Table here");
+      expect(result.indexOf("## Whoop Data")).toBeGreaterThan(content.indexOf("# 2026-01-27"));
+    });
+
+    it("updates an existing section", () => {
+      const content = `# 2026-01-27
+
+## Whoop Data
+
+Old table
+
+*No workout logged yet.*`;
+
+      const result = insertOrUpdateSection(content, "Whoop Data", "New table");
+
+      expect(result).toContain("## Whoop Data");
+      expect(result).toContain("New table");
+      expect(result).not.toContain("Old table");
+    });
+
+    it("preserves other sections", () => {
+      const content = `# 2026-01-27
+
+## Whoop Data
+
+Old table
+
+## Notes
+
+Some notes`;
+
+      const result = insertOrUpdateSection(content, "Whoop Data", "New table");
+
+      expect(result).toContain("## Notes");
+      expect(result).toContain("Some notes");
+    });
+  });
+
+  describe("parseIntegrationTable", () => {
+    it("parses recovery data from table", () => {
+      const content = `# 2026-01-27
+
+## Whoop Data
+
+| Metric | Value |
+|--------|-------|
+| Recovery Score | 78% |
+| HRV | 45.2 ms |
+| Resting HR | 52 bpm |
+
+*No workout logged yet.*`;
+
+      const data = parseIntegrationTable(content, "whoop", "2026-01-27");
+
+      expect(data.recovery?.score).toBe(78);
+      expect(data.recovery?.hrv).toBe(45.2);
+      expect(data.recovery?.restingHeartRate).toBe(52);
+    });
+
+    it("parses sleep data from table", () => {
+      const content = `# 2026-01-27
+
+## Whoop Data
+
+| Metric | Value |
+|--------|-------|
+| Sleep Duration | 7h 30m |
+| Sleep Score | 85% |
+| Deep Sleep | 90 min |
+| REM Sleep | 85 min |
+| Light Sleep | 180 min |
+
+*No workout logged yet.*`;
+
+      const data = parseIntegrationTable(content, "whoop", "2026-01-27");
+
+      expect(data.sleep?.durationMinutes).toBe(450);
+      expect(data.sleep?.score).toBe(85);
+      expect(data.sleep?.stages?.deep).toBe(90);
+      expect(data.sleep?.stages?.rem).toBe(85);
+      expect(data.sleep?.stages?.light).toBe(180);
+    });
+
+    it("parses workout data from table", () => {
+      const content = `# 2026-01-27
+
+## Whoop Data
+
+| Metric | Value |
+|--------|-------|
+| Workout (strength) | 1h 5m |
+| Strain | 12.5 |
+| Calories | 450 kcal |
+
+*No workout logged yet.*`;
+
+      const data = parseIntegrationTable(content, "whoop", "2026-01-27");
+
+      expect(data.workouts?.length).toBe(1);
+      expect(data.workouts?.[0].type).toBe("strength");
+      expect(data.workouts?.[0].durationMinutes).toBe(65);
+      expect(data.workouts?.[0].strain).toBe(12.5);
+      expect(data.workouts?.[0].calories).toBe(450);
+    });
+
+    it("returns empty result when section not found", () => {
+      const content = `# 2026-01-27
+
+*No workout logged yet.*`;
+
+      const data = parseIntegrationTable(content, "whoop", "2026-01-27");
+
+      expect(data.recovery).toBeUndefined();
+      expect(data.sleep).toBeUndefined();
+      expect(data.workouts).toBeUndefined();
     });
   });
 });

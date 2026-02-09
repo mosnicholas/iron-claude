@@ -103,7 +103,7 @@ All athlete data changes go to their fitness-data repo:
 - `weeks/` - Week-based organization (YYYY-WXX folders)
   - `weeks/YYYY-WXX/plan.md` - Weekly training plan
   - `weeks/YYYY-WXX/retro.md` - Weekly retrospective
-  - `weeks/YYYY-WXX/YYYY-MM-DD.md` - Workout logs (with device integration data in frontmatter)
+  - `weeks/YYYY-WXX/YYYY-MM-DD.md` - Workout logs (with device integration data)
 
 ## Device Integrations
 
@@ -111,22 +111,32 @@ All athlete data changes go to their fitness-data repo:
 - **Whoop** - Sleep, recovery scores, HRV, and workout strain data
 
 ### Using Integration Data
-Integration data is stored in workout file frontmatter:
+Integration data is stored with key metrics in frontmatter for programmatic access, and full details in a readable markdown table:
 
-```yaml
+```markdown
 ---
 date: "2026-01-27"
 type: upper
 status: in_progress
-whoop:
-  recovery:
-    score: 78
-    hrv: 45.2
-    restingHeartRate: 52
-  sleep:
-    durationMinutes: 420
-    score: 85
+recovery_score: 78
+sleep_hours: 7.0
 ---
+# 2026-01-27
+
+## Whoop Data
+
+| Metric | Value |
+|--------|-------|
+| Recovery Score | 78% |
+| HRV | 45.2 ms |
+| Resting HR | 52 bpm |
+| Sleep Duration | 7h 0m |
+| Sleep Score | 85% |
+| Deep Sleep | 90 min |
+| REM Sleep | 85 min |
+| Light Sleep | 180 min |
+
+*No workout logged yet.*
 ```
 
 When integrations are configured, check recovery data to inform training recommendations:
@@ -135,7 +145,7 @@ When integrations are configured, check recovery data to inform training recomme
 - **40-59% recovery**: Consider lighter work or active recovery
 - **0-39% recovery**: Prioritize rest
 
-Read the day's workout file to access integration data (e.g., `frontmatter.whoop.recovery.score`).
+Access key metrics from frontmatter (`frontmatter.recovery_score`, `frontmatter.sleep_hours`) or read the full table for detailed data.
 
 ### Adding a New Device Integration
 

@@ -1,9 +1,8 @@
 /**
  * Integration Data Storage
  *
- * Stores normalized integration data in workout log frontmatter.
- * This keeps all data for a day in one place, making it easy for the
- * coach agent to read context and provide advice.
+ * Stores normalized integration data with key metrics in frontmatter
+ * and detailed data in a readable markdown table in the document body.
  *
  * Example workout file with integration data:
  * ```markdown
@@ -11,17 +10,22 @@
  * date: "2026-01-27"
  * type: upper
  * status: in_progress
- * whoop:
- *   recovery:
- *     score: 78
- *     hrv: 45.2
- *     restingHeartRate: 52
- *   sleep:
- *     durationMinutes: 420
- *     score: 85
+ * recovery_score: 78
+ * sleep_hours: 7.0
  * ---
- * # Workout — Monday, Jan 27
- * ...
+ * # 2026-01-27
+ *
+ * ## Whoop Data
+ *
+ * | Metric | Value |
+ * |--------|-------|
+ * | Recovery Score | 78% |
+ * | HRV | 45.2 ms |
+ * | Resting HR | 52 bpm |
+ * | Sleep Duration | 7h 0m |
+ * | Sleep Score | 85% |
+ *
+ * *No workout logged yet.*
  * ```
  */
 
@@ -258,11 +262,184 @@ function getWorkoutFilePath(date: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Markdown Table Formatting
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface TableRow {
+  metric: string;
+  value: string;
+}
+
+/**
+ * Format integration data as a markdown table.
+ * Combines sleep, recovery, and workout data into a readable format.
+ */
+function formatIntegrationTable(data: {
+  sleep?: SleepData;
+  recovery?: RecoveryData;
+  workouts?: WorkoutData[];
+}): string {
+  const rows: TableRow[] = [];
+
+  // Recovery data first (most important for training decisions)
+  if (data.recovery) {
+    rows.push({ metric: "Recovery Score", value: `${data.recovery.score}%` });
+    if (data.recovery.hrv !== undefined) {
+      rows.push({ metric: "HRV", value: `${data.recovery.hrv.toFixed(1)} ms` });
+    }
+    if (data.recovery.restingHeartRate !== undefined) {
+      rows.push({ metric: "Resting HR", value: `${data.recovery.restingHeartRate} bpm` });
+    }
+    if (data.recovery.spo2 !== undefined) {
+      rows.push({ metric: "SpO2", value: `${data.recovery.spo2}%` });
+    }
+    if (data.recovery.skinTempDeviation !== undefined) {
+      rows.push({
+        metric: "Skin Temp Deviation",
+        value: `${data.recovery.skinTempDeviation > 0 ? "+" : ""}${data.recovery.skinTempDeviation.toFixed(1)}°C`,
+      });
+    }
+  }
+
+  // Sleep data
+  if (data.sleep) {
+    const hours = Math.floor(data.sleep.durationMinutes / 60);
+    const mins = data.sleep.durationMinutes % 60;
+    rows.push({ metric: "Sleep Duration", value: `${hours}h ${mins}m` });
+    if (data.sleep.score !== undefined) {
+      rows.push({ metric: "Sleep Score", value: `${data.sleep.score}%` });
+    }
+    if (data.sleep.stages) {
+      rows.push({ metric: "Deep Sleep", value: `${data.sleep.stages.deep} min` });
+      rows.push({ metric: "REM Sleep", value: `${data.sleep.stages.rem} min` });
+      rows.push({ metric: "Light Sleep", value: `${data.sleep.stages.light} min` });
+      if (data.sleep.stages.awake) {
+        rows.push({ metric: "Awake", value: `${data.sleep.stages.awake} min` });
+      }
+    }
+  }
+
+  // Workout data
+  if (data.workouts && data.workouts.length > 0) {
+    for (const workout of data.workouts) {
+      const hours = Math.floor(workout.durationMinutes / 60);
+      const mins = workout.durationMinutes % 60;
+      const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+      rows.push({ metric: `Workout (${workout.type})`, value: durationStr });
+      if (workout.strain !== undefined) {
+        rows.push({ metric: "Strain", value: workout.strain.toFixed(1) });
+      }
+      if (workout.calories !== undefined) {
+        rows.push({ metric: "Calories", value: `${workout.calories} kcal` });
+      }
+      if (workout.heartRateAvg !== undefined) {
+        rows.push({ metric: "Avg HR", value: `${workout.heartRateAvg} bpm` });
+      }
+      if (workout.heartRateMax !== undefined) {
+        rows.push({ metric: "Max HR", value: `${workout.heartRateMax} bpm` });
+      }
+    }
+  }
+
+  if (rows.length === 0) {
+    return "";
+  }
+
+  // Build the table
+  const lines: string[] = ["| Metric | Value |", "|--------|-------|"];
+  for (const row of rows) {
+    lines.push(`| ${row.metric} | ${row.value} |`);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Insert or update a section in markdown content.
+ * Sections are identified by "## Section Name" headers.
+ * Returns the updated content.
+ */
+function insertOrUpdateSection(
+  content: string,
+  sectionName: string,
+  sectionContent: string
+): string {
+  const sectionHeader = `## ${sectionName}`;
+  const lines = content.split("\n");
+
+  // Find if section already exists
+  let sectionStartIndex = -1;
+  let sectionEndIndex = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === sectionHeader) {
+      sectionStartIndex = i;
+      // Find the end of this section (next ## or end of file)
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j].startsWith("## ")) {
+          sectionEndIndex = j;
+          break;
+        }
+      }
+      if (sectionEndIndex === -1) {
+        sectionEndIndex = lines.length;
+      }
+      break;
+    }
+  }
+
+  const newSection = `${sectionHeader}\n\n${sectionContent}`;
+
+  if (sectionStartIndex !== -1) {
+    // Replace existing section
+    const before = lines.slice(0, sectionStartIndex);
+    const after = lines.slice(sectionEndIndex);
+    return [...before, newSection, "", ...after].join("\n");
+  } else {
+    // Insert new section after the first heading (# Date)
+    let insertIndex = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith("# ")) {
+        insertIndex = i + 1;
+        // Skip any blank lines after the heading
+        while (insertIndex < lines.length && lines[insertIndex].trim() === "") {
+          insertIndex++;
+        }
+        break;
+      }
+    }
+
+    const before = lines.slice(0, insertIndex);
+    const after = lines.slice(insertIndex);
+    return [...before, "", newSection, "", ...after].join("\n");
+  }
+}
+
+/**
+ * Capitalize first letter of a string.
+ */
+function capitalize(str: string): string {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Store Data
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Store normalized integration data in the workout file's frontmatter.
+ * Internal storage for accumulating integration data during a session.
+ * Used to combine multiple events (sleep + recovery) into one table.
+ */
+interface IntegrationDataAccumulator {
+  sleep?: SleepData;
+  recovery?: RecoveryData;
+  workouts?: WorkoutData[];
+}
+
+/**
+ * Store normalized integration data with flat frontmatter and readable table.
+ * Key metrics go in frontmatter for programmatic access.
+ * Full details go in a markdown table in the document body.
  */
 export async function storeIntegrationData(event: WebhookEvent): Promise<void> {
   const storage = createGitHubStorage();
@@ -284,36 +461,74 @@ export async function storeIntegrationData(event: WebhookEvent): Promise<void> {
     };
   }
 
-  // Ensure source namespace exists (e.g., "whoop")
-  if (!parsed.frontmatter[source]) {
-    parsed.frontmatter[source] = {};
-  }
-  const sourceData = parsed.frontmatter[source] as Frontmatter;
+  // Read any existing integration data from frontmatter (for backwards compat)
+  // and from the current event to accumulate all data for the table
+  const accumulator: IntegrationDataAccumulator = {};
 
-  // Add the integration data under the appropriate key
+  // Check for old nested format and migrate
+  const oldSourceData = parsed.frontmatter[source] as Frontmatter | undefined;
+  if (oldSourceData) {
+    if (oldSourceData.sleep) {
+      accumulator.sleep = {
+        source,
+        date,
+        ...(oldSourceData.sleep as object),
+      } as SleepData;
+    }
+    if (oldSourceData.recovery) {
+      accumulator.recovery = {
+        source,
+        date,
+        ...(oldSourceData.recovery as object),
+      } as RecoveryData;
+    }
+    if (oldSourceData.workouts) {
+      accumulator.workouts = (oldSourceData.workouts as object[]).map((w) => ({
+        source,
+        date,
+        ...w,
+      })) as WorkoutData[];
+    }
+    // Remove the old nested format
+    delete parsed.frontmatter[source];
+  }
+
+  // Add the new event data to the accumulator
   switch (event.type) {
     case "sleep":
-      sourceData.sleep = formatSleepForFrontmatter(event.data);
+      accumulator.sleep = event.data;
+      // Add flat metric to frontmatter
+      parsed.frontmatter.sleep_hours = Number((event.data.durationMinutes / 60).toFixed(1));
       break;
     case "recovery":
-      sourceData.recovery = formatRecoveryForFrontmatter(event.data);
+      accumulator.recovery = event.data;
+      // Add flat metric to frontmatter
+      parsed.frontmatter.recovery_score = event.data.score;
       break;
     case "workout": {
-      // Store workouts in an array since there can be multiple
-      if (!sourceData.workouts) {
-        sourceData.workouts = [];
+      if (!accumulator.workouts) {
+        accumulator.workouts = [];
       }
-      const workouts = sourceData.workouts as WorkoutData[];
       // Replace existing workout of same type or add new
-      const existingIndex = workouts.findIndex((w) => w.type === event.data.type);
+      const existingIndex = accumulator.workouts.findIndex((w) => w.type === event.data.type);
       if (existingIndex >= 0) {
-        workouts[existingIndex] = formatWorkoutForFrontmatter(event.data);
+        accumulator.workouts[existingIndex] = event.data;
       } else {
-        workouts.push(formatWorkoutForFrontmatter(event.data));
+        accumulator.workouts.push(event.data);
       }
       break;
     }
   }
+
+  // Generate the table and update the body
+  const tableContent = formatIntegrationTable(accumulator);
+  if (tableContent) {
+    const sectionName = `${capitalize(source)} Data`;
+    parsed.content = insertOrUpdateSection(parsed.content, sectionName, tableContent);
+  }
+
+  // Clean up any double blank lines that may have been introduced
+  parsed.content = parsed.content.replace(/\n{3,}/g, "\n\n").trim();
 
   // Rebuild the file
   const newFrontmatter = serializeFrontmatter(parsed.frontmatter);
@@ -325,49 +540,142 @@ export async function storeIntegrationData(event: WebhookEvent): Promise<void> {
   await storage.writeFile(filePath, newContent, message);
 }
 
-/**
- * Format sleep data for frontmatter (remove redundant fields).
- */
-function formatSleepForFrontmatter(data: SleepData): Frontmatter {
-  const result: Frontmatter = {
-    durationMinutes: data.durationMinutes,
-  };
-  if (data.score !== undefined) result.score = data.score;
-  if (data.stages) result.stages = data.stages;
-  if (data.startTime) result.startTime = data.startTime;
-  if (data.endTime) result.endTime = data.endTime;
-  return result;
-}
-
-/**
- * Format recovery data for frontmatter (remove redundant fields).
- */
-function formatRecoveryForFrontmatter(data: RecoveryData): Frontmatter {
-  const result: Frontmatter = {
-    score: data.score,
-  };
-  if (data.hrv !== undefined) result.hrv = data.hrv;
-  if (data.restingHeartRate !== undefined) result.restingHeartRate = data.restingHeartRate;
-  if (data.spo2 !== undefined) result.spo2 = data.spo2;
-  if (data.skinTempDeviation !== undefined) result.skinTempDeviation = data.skinTempDeviation;
-  return result;
-}
-
-/**
- * Format workout data for frontmatter.
- */
-function formatWorkoutForFrontmatter(data: WorkoutData): WorkoutData {
-  // Return a clean copy without source/date (already in file context)
-  const { source: _source, date: _date, ...rest } = data;
-  return rest as WorkoutData;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Read Data
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Read integration data from a workout file's frontmatter.
+ * Parse integration data from a markdown table in the document body.
+ * Returns partial data extracted from the table.
+ */
+function parseIntegrationTable(
+  content: string,
+  source: string,
+  date: string
+): {
+  sleep?: Partial<SleepData>;
+  recovery?: Partial<RecoveryData>;
+  workouts?: Partial<WorkoutData>[];
+} {
+  const result: {
+    sleep?: Partial<SleepData>;
+    recovery?: Partial<RecoveryData>;
+    workouts?: Partial<WorkoutData>[];
+  } = {};
+
+  const sectionHeader = `## ${capitalize(source)} Data`;
+  const sectionIndex = content.indexOf(sectionHeader);
+  if (sectionIndex === -1) return result;
+
+  // Find the table within the section
+  const sectionContent = content.slice(sectionIndex);
+  const nextSectionIndex = sectionContent.indexOf("\n## ", 1);
+  const tableSection =
+    nextSectionIndex === -1 ? sectionContent : sectionContent.slice(0, nextSectionIndex);
+
+  // Parse table rows
+  const tableRegex = /\|\s*(.+?)\s*\|\s*(.+?)\s*\|/g;
+  let match;
+  const rows: { metric: string; value: string }[] = [];
+
+  while ((match = tableRegex.exec(tableSection)) !== null) {
+    const metric = match[1].trim();
+    const value = match[2].trim();
+    // Skip header row
+    if (metric !== "Metric" && metric !== "--------") {
+      rows.push({ metric, value });
+    }
+  }
+
+  // Parse values from rows
+  for (const row of rows) {
+    const { metric, value } = row;
+
+    // Recovery metrics
+    if (metric === "Recovery Score") {
+      if (!result.recovery) result.recovery = { source, date };
+      result.recovery.score = parseInt(value.replace("%", ""));
+    } else if (metric === "HRV") {
+      if (!result.recovery) result.recovery = { source, date };
+      result.recovery.hrv = parseFloat(value.replace(" ms", ""));
+    } else if (metric === "Resting HR") {
+      if (!result.recovery) result.recovery = { source, date };
+      result.recovery.restingHeartRate = parseInt(value.replace(" bpm", ""));
+    } else if (metric === "SpO2") {
+      if (!result.recovery) result.recovery = { source, date };
+      result.recovery.spo2 = parseInt(value.replace("%", ""));
+    } else if (metric === "Skin Temp Deviation") {
+      if (!result.recovery) result.recovery = { source, date };
+      result.recovery.skinTempDeviation = parseFloat(value.replace("°C", ""));
+    }
+
+    // Sleep metrics
+    else if (metric === "Sleep Duration") {
+      if (!result.sleep) result.sleep = { source, date };
+      const durationMatch = value.match(/(\d+)h\s*(\d+)m/);
+      if (durationMatch) {
+        result.sleep.durationMinutes = parseInt(durationMatch[1]) * 60 + parseInt(durationMatch[2]);
+      }
+    } else if (metric === "Sleep Score") {
+      if (!result.sleep) result.sleep = { source, date };
+      result.sleep.score = parseInt(value.replace("%", ""));
+    } else if (metric === "Deep Sleep") {
+      if (!result.sleep) result.sleep = { source, date };
+      if (!result.sleep.stages) result.sleep.stages = { deep: 0, rem: 0, light: 0, awake: 0 };
+      result.sleep.stages.deep = parseInt(value.replace(" min", ""));
+    } else if (metric === "REM Sleep") {
+      if (!result.sleep) result.sleep = { source, date };
+      if (!result.sleep.stages) result.sleep.stages = { deep: 0, rem: 0, light: 0, awake: 0 };
+      result.sleep.stages.rem = parseInt(value.replace(" min", ""));
+    } else if (metric === "Light Sleep") {
+      if (!result.sleep) result.sleep = { source, date };
+      if (!result.sleep.stages) result.sleep.stages = { deep: 0, rem: 0, light: 0, awake: 0 };
+      result.sleep.stages.light = parseInt(value.replace(" min", ""));
+    } else if (metric === "Awake") {
+      if (!result.sleep) result.sleep = { source, date };
+      if (!result.sleep.stages) result.sleep.stages = { deep: 0, rem: 0, light: 0, awake: 0 };
+      result.sleep.stages.awake = parseInt(value.replace(" min", ""));
+    }
+
+    // Workout metrics - format is "Workout (type)"
+    else if (metric.startsWith("Workout (")) {
+      const typeMatch = metric.match(/Workout \((.+)\)/);
+      if (typeMatch) {
+        if (!result.workouts) result.workouts = [];
+        const workoutType = typeMatch[1];
+        let workout = result.workouts.find((w) => w.type === workoutType);
+        if (!workout) {
+          workout = { source, date, type: workoutType };
+          result.workouts.push(workout);
+        }
+        const durationMatch = value.match(/(?:(\d+)h\s*)?(\d+)m/);
+        if (durationMatch) {
+          const hours = durationMatch[1] ? parseInt(durationMatch[1]) : 0;
+          const mins = parseInt(durationMatch[2]);
+          workout.durationMinutes = hours * 60 + mins;
+        }
+      }
+    } else if (metric === "Strain" && result.workouts && result.workouts.length > 0) {
+      result.workouts[result.workouts.length - 1].strain = parseFloat(value);
+    } else if (metric === "Calories" && result.workouts && result.workouts.length > 0) {
+      result.workouts[result.workouts.length - 1].calories = parseInt(value.replace(" kcal", ""));
+    } else if (metric === "Avg HR" && result.workouts && result.workouts.length > 0) {
+      result.workouts[result.workouts.length - 1].heartRateAvg = parseInt(
+        value.replace(" bpm", "")
+      );
+    } else if (metric === "Max HR" && result.workouts && result.workouts.length > 0) {
+      result.workouts[result.workouts.length - 1].heartRateMax = parseInt(
+        value.replace(" bpm", "")
+      );
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Read integration data from a workout file.
+ * Supports both old nested frontmatter format and new flat format with table.
  */
 async function readIntegrationData(
   source: string,
@@ -380,36 +688,65 @@ async function readIntegrationData(
   if (!content) return null;
 
   const parsed = parseFrontmatter(content);
-  const sourceData = parsed.frontmatter[source] as Frontmatter | undefined;
-  if (!sourceData) return null;
-
   const result: { sleep?: SleepData; recovery?: RecoveryData; workouts?: WorkoutData[] } = {};
 
-  if (sourceData.sleep) {
-    result.sleep = {
-      source,
-      date,
-      ...(sourceData.sleep as object),
-    } as SleepData;
+  // First, try the old nested format for backwards compatibility
+  const sourceData = parsed.frontmatter[source] as Frontmatter | undefined;
+  if (sourceData) {
+    if (sourceData.sleep) {
+      result.sleep = {
+        source,
+        date,
+        ...(sourceData.sleep as object),
+      } as SleepData;
+    }
+
+    if (sourceData.recovery) {
+      result.recovery = {
+        source,
+        date,
+        ...(sourceData.recovery as object),
+      } as RecoveryData;
+    }
+
+    if (sourceData.workouts) {
+      result.workouts = (sourceData.workouts as object[]).map((w) => ({
+        source,
+        date,
+        ...w,
+      })) as WorkoutData[];
+    }
+
+    // If we found data in old format, return it
+    if (result.sleep || result.recovery || result.workouts) {
+      return result;
+    }
   }
 
-  if (sourceData.recovery) {
-    result.recovery = {
-      source,
-      date,
-      ...(sourceData.recovery as object),
-    } as RecoveryData;
+  // Try new format: flat frontmatter + table in body
+  const hasFlatMetrics =
+    parsed.frontmatter.recovery_score !== undefined || parsed.frontmatter.sleep_hours !== undefined;
+
+  if (hasFlatMetrics) {
+    // Parse the table from the body
+    const tableData = parseIntegrationTable(parsed.content, source, date);
+
+    if (tableData.sleep) {
+      result.sleep = tableData.sleep as SleepData;
+    }
+    if (tableData.recovery) {
+      result.recovery = tableData.recovery as RecoveryData;
+    }
+    if (tableData.workouts) {
+      result.workouts = tableData.workouts as WorkoutData[];
+    }
+
+    if (result.sleep || result.recovery || result.workouts) {
+      return result;
+    }
   }
 
-  if (sourceData.workouts) {
-    result.workouts = (sourceData.workouts as object[]).map((w) => ({
-      source,
-      date,
-      ...w,
-    })) as WorkoutData[];
-  }
-
-  return result;
+  return null;
 }
 
 /**
@@ -547,4 +884,11 @@ export function getRecoveryRecommendation(score: number): string {
 }
 
 // Export for testing
-export { parseFrontmatter, serializeFrontmatter, getISOWeekForDate };
+export {
+  parseFrontmatter,
+  serializeFrontmatter,
+  getISOWeekForDate,
+  formatIntegrationTable,
+  insertOrUpdateSection,
+  parseIntegrationTable,
+};
