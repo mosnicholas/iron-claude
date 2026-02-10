@@ -99,6 +99,16 @@ Keep the tone concise and motivating — this is for Telegram. Use emoji sparing
     await bot.sendMessageSafe(response.message);
     console.log("[daily-reminder] Message sent successfully");
 
+    // Ask what time they're heading to the gym and save pending state
+    // (only on workout days — the agent's response will mention the workout)
+    console.log("[daily-reminder] Asking about gym time");
+    await bot.sendMessage(
+      "What time are you heading to the gym today? " +
+        "I'll send you a reminder with your warm-up when it's time."
+    );
+    await storage.saveGymTimePendingState(today);
+    console.log("[daily-reminder] Gym time pending state saved");
+
     return {
       success: true,
       message: `Sent morning reminder for ${today}`,

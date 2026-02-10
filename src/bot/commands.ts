@@ -197,7 +197,12 @@ async function handleDone(
       "2. Check for any new PRs against prs.yaml (also in your context) and update if needed\n" +
       "3. Ask for my energy level if I haven't mentioned it\n" +
       "4. Update the workout file with the summary and set status: completed\n" +
-      "5. Commit and push the changes to main",
+      "5. Commit and push the changes to main\n" +
+      "6. Check the weekly plan for today's cool-down section. If there is a cool-down, " +
+      "add it at the END of your response after a line containing only `---`. " +
+      "Format it as a clear cool-down routine the athlete can follow (exercises, duration, etc). " +
+      "Start that section with a header like 'Cool-Down'. " +
+      "If there is no cool-down in the plan, don't add the --- or any cool-down section.",
     callbacks
   );
 
