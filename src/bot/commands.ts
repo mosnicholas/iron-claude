@@ -119,7 +119,21 @@ async function handleToday(
   );
 
   const response = await agent.chat(
-    `Show me today's workout. Use the weekly plan already in your context to find what's scheduled for ${dateInfo.dayOfWeek}. ` +
+    `Show me today's workout. Use the weekly plan already in your context to find what's scheduled for ${dateInfo.dayOfWeek}.\n\n` +
+      "Give me TWO sections:\n\n" +
+      "**PART 1 — High-Level Overview:**\n" +
+      "- Workout type, focus, and estimated duration\n" +
+      "- Main lifts with sets/reps/weights highlighted\n" +
+      "- Any skill work or special focus areas\n" +
+      "- Key coaching notes from the plan\n\n" +
+      "**PART 2 — Full Exercise-by-Exercise Breakdown:**\n" +
+      "List EVERY exercise in order, including:\n" +
+      "- **Warm-up**: Specify what to do (e.g. cardio, band work, ramp-up sets). If the plan doesn't specify a warm-up, include a sensible default warm-up for the day's main lifts.\n" +
+      "- **Main lifts**: Exercise name, sets x reps @ weight, rest periods\n" +
+      "- **Accessories**: Exercise name, sets x reps @ weight, any superset notes\n" +
+      "- **Skill work**: Exercise name, sets x reps/duration\n" +
+      "- **Cool-down**: If specified in the plan\n\n" +
+      "This should be my step-by-step guide — I should be able to walk into the gym and follow it exercise by exercise.\n\n" +
       "If today is a rest day, let me know. If there's no plan, suggest what I should do.",
     callbacks
   );

@@ -69,17 +69,29 @@ export async function runDailyReminder(): Promise<DailyReminderResult> {
     const response = await agent.runTask(
       `Generate a morning workout reminder for today (${formatDateHuman(new Date(today))}).
 
-Read the weekly plan (weeks/${currentWeek}/plan.md) and create a motivating message that includes:
+Read the weekly plan (weeks/${currentWeek}/plan.md) and create a motivating message with TWO sections:
 
+**PART 1 — High-Level Overview:**
 1. A brief greeting appropriate for the day
-2. Today's workout summary:
-   - If it's a workout day: list the exercises with sets/reps/weights
-   - If it's a rest day: acknowledge it and suggest optional activities
-   - If it's an optional day: present the options
-3. Any relevant notes from the plan
-4. A brief motivating sign-off
+2. Today's workout type, focus, and estimated duration
+3. Main lifts with sets/reps/weights highlighted
+4. Any skill work or special focus areas
+5. Key coaching notes from the plan (e.g. "this is a test weight", "road to X")
 
-Keep it concise - this is for Telegram. Use emoji sparingly.`
+**PART 2 — Full Exercise-by-Exercise Breakdown:**
+List EVERY exercise in order, including:
+- **Warm-up**: Specify what to do (e.g. "5 min cardio, band pull-aparts 2x15, ramp-up sets with bar/light weight"). If the plan doesn't specify a warm-up, include a sensible default warm-up for the day's main lifts.
+- **Main lifts**: Exercise name, sets x reps @ weight, rest periods
+- **Accessories**: Exercise name, sets x reps @ weight, any superset notes
+- **Skill work**: Exercise name, sets x reps/duration
+- **Cool-down**: If specified in the plan
+
+This is the athlete's step-by-step guide for the session — they should be able to walk into the gym and follow it exercise by exercise without needing to check anything else.
+
+If it's a rest day: acknowledge it and suggest optional activities.
+If it's an optional day: present the options with the same two-section format.
+
+Keep the tone concise and motivating — this is for Telegram. Use emoji sparingly.`
     );
     console.log("[daily-reminder] Agent completed task");
 
