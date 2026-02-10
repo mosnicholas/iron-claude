@@ -592,6 +592,12 @@ export class ThrottledMessageEditor {
     }
     this.pendingText = null;
 
+    // Guard against empty or whitespace-only messages (Telegram rejects these)
+    if (!text || !text.trim()) {
+      console.warn(`[ThrottledEditor] Empty message text, skipping edit`);
+      return;
+    }
+
     // If message is too long for edit, send as new message
     if (text.length > 4000) {
       console.log(`[ThrottledEditor] Message too long (${text.length}), sending as new message`);
