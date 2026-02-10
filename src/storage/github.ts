@@ -398,6 +398,49 @@ export class GitHubStorage {
   }
 
   // ============================================================================
+  // Gym Time State Management
+  // ============================================================================
+
+  /**
+   * Save gym-time-pending state (morning message asked what time user is going to the gym)
+   */
+  async saveGymTimePendingState(date: string): Promise<void> {
+    const state = {
+      date,
+      askedAt: new Date().toISOString(),
+    };
+    await this.writeFile(
+      "state/gym-time-pending.json",
+      JSON.stringify(state, null, 2),
+      `Ask gym time for ${date}`
+    );
+  }
+
+  /**
+   * Get pending gym time state (if any)
+   */
+  async getGymTimePendingState(): Promise<{ date: string; askedAt: string } | null> {
+    const content = await this.readFile("state/gym-time-pending.json");
+    if (!content) return null;
+    try {
+      return JSON.parse(content);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Clear gym time pending state
+   */
+  async clearGymTimePendingState(): Promise<void> {
+    try {
+      await this.deleteFile("state/gym-time-pending.json", "Gym time set");
+    } catch {
+      // File might not exist, that's fine
+    }
+  }
+
+  // ============================================================================
   // Reminder Management
   // ============================================================================
 
