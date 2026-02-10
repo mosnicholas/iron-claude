@@ -594,8 +594,8 @@ export class ThrottledMessageEditor {
 
     // Guard against empty or whitespace-only messages (Telegram rejects these)
     if (!text || !text.trim()) {
-      console.warn(`[ThrottledEditor] Empty message text, skipping edit`);
-      return;
+      console.warn(`[ThrottledEditor] Empty message text, sending fallback`);
+      text = "Done! Nothing to report.";
     }
 
     // If message is too long for edit, send as new message
