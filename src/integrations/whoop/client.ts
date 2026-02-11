@@ -299,8 +299,39 @@ export class WhoopClient {
   }
 
   /**
+   * Attempt to refresh the access token and update this client's tokens.
+   * Returns true if refresh succeeded, false otherwise.
+   */
+  private async tryRefreshToken(): Promise<boolean> {
+    try {
+      console.log("[whoop] Attempting token refresh after 401...");
+      const newTokens = await refreshAccessToken(this.tokens.refreshToken);
+      await persistTokens(newTokens);
+      this.tokens = newTokens;
+      console.log("[whoop] Token refresh succeeded");
+      return true;
+    } catch (refreshError) {
+      // Our refresh token may have been rotated by another instance.
+      // Try reading the latest tokens from GitHub.
+      console.warn("[whoop] Token refresh failed, re-reading from GitHub:", refreshError);
+      try {
+        const freshResult = await getTokensFromGitHub();
+        if (freshResult && !isTokenExpired(freshResult.tokens)) {
+          this.tokens = freshResult.tokens;
+          console.log("[whoop] Using refreshed tokens from GitHub");
+          return true;
+        }
+      } catch (githubError) {
+        console.error("[whoop] Failed to read tokens from GitHub:", githubError);
+      }
+      return false;
+    }
+  }
+
+  /**
    * Make an authenticated request to the Whoop API with retry logic.
    * Implements exponential backoff for rate limiting (429) and transient errors.
+   * Automatically refreshes the access token on 401 and retries once.
    */
   private async request<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
     const url = new URL(`${WHOOP_API}${endpoint}`);
@@ -311,6 +342,7 @@ export class WhoopClient {
     }
 
     let lastError: Error | null = null;
+    let hasAttemptedRefresh = false;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (attempt > 0) {
@@ -325,6 +357,19 @@ export class WhoopClient {
             Authorization: `Bearer ${this.tokens.accessToken}`,
           },
         });
+
+        // Handle 401 by refreshing the token and retrying (once)
+        if (response.status === 401 && !hasAttemptedRefresh) {
+          hasAttemptedRefresh = true;
+          const refreshed = await this.tryRefreshToken();
+          if (refreshed) {
+            // Don't count this as a retry attempt - redo the current attempt with new token
+            attempt--;
+            continue;
+          }
+          const error = await response.text();
+          throw new Error(`Whoop API error: ${response.status} - ${error}`);
+        }
 
         // Handle rate limiting
         if (response.status === 429) {
