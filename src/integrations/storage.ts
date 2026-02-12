@@ -32,6 +32,7 @@
 import { createGitHubStorage } from "../storage/github.js";
 import { formatISOWeek, getTimezone } from "../utils/date.js";
 import { toZonedTime } from "date-fns-tz";
+import { subDays, format } from "date-fns";
 import type { WebhookEvent, SleepData, RecoveryData, WorkoutData } from "./types.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -791,10 +792,10 @@ export async function getLatestRecoveryData(source: string): Promise<RecoveryDat
   let data = await readRecoveryData(source, today);
   if (data) return data;
 
-  // Try yesterday
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  // Try yesterday (timezone-aware)
+  const timezone = getTimezone();
+  const zonedNow = toZonedTime(new Date(), timezone);
+  const yesterdayStr = format(subDays(zonedNow, 1), "yyyy-MM-dd");
 
   data = await readRecoveryData(source, yesterdayStr);
   return data;
@@ -809,10 +810,10 @@ export async function getLatestSleepData(source: string): Promise<SleepData | nu
   let data = await readSleepData(source, today);
   if (data) return data;
 
-  // Try yesterday
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  // Try yesterday (timezone-aware)
+  const timezone = getTimezone();
+  const zonedNow = toZonedTime(new Date(), timezone);
+  const yesterdayStr = format(subDays(zonedNow, 1), "yyyy-MM-dd");
 
   data = await readSleepData(source, yesterdayStr);
   return data;

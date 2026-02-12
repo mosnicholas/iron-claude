@@ -7,7 +7,10 @@
 
 import crypto from "node:crypto";
 import type { Request } from "express";
+import { toZonedTime } from "date-fns-tz";
+import { format } from "date-fns";
 import type { WebhookEvent, SleepData, RecoveryData, WorkoutData } from "../types.js";
+import { getTimezone } from "../../utils/date.js";
 import { WhoopClient, getSportName } from "./client.js";
 import type { WhoopSleep, WhoopRecovery, WhoopWorkout } from "./client.js";
 
@@ -168,6 +171,21 @@ export function verifyWhoopWebhook(req: Request): boolean {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Convert a UTC ISO timestamp to a local date string (YYYY-MM-DD)
+ * using the configured timezone.
+ *
+ * Whoop API returns timestamps in UTC. Splitting on "T" to extract the date
+ * gives the wrong day when the local time crosses midnight relative to UTC.
+ * For example, 10pm EST on Jan 26 is stored as 2026-01-27T03:00:00.000Z —
+ * a naive split would yield Jan 27 instead of Jan 26.
+ */
+function toLocalDate(isoTimestamp: string): string {
+  const timezone = getTimezone();
+  const zonedDate = toZonedTime(new Date(isoTimestamp), timezone);
+  return format(zonedDate, "yyyy-MM-dd");
+}
+
+/**
  * Convert Whoop sleep data to normalized format.
  */
 export function normalizeSleep(whoopSleep: WhoopSleep): SleepData {
@@ -177,7 +195,7 @@ export function normalizeSleep(whoopSleep: WhoopSleep): SleepData {
 
   return {
     source: "whoop",
-    date: whoopSleep.start.split("T")[0],
+    date: toLocalDate(whoopSleep.start),
     startTime: whoopSleep.start,
     endTime: whoopSleep.end,
     durationMinutes: Math.round(durationMs / 60000),
@@ -199,7 +217,7 @@ export function normalizeSleep(whoopSleep: WhoopSleep): SleepData {
  */
 export function normalizeRecovery(whoopRecovery: WhoopRecovery): RecoveryData {
   // Recovery is tied to sleep, so we use the sleep's date via created_at
-  const date = whoopRecovery.created_at.split("T")[0];
+  const date = toLocalDate(whoopRecovery.created_at);
 
   return {
     source: "whoop",
@@ -223,7 +241,7 @@ export function normalizeWorkout(whoopWorkout: WhoopWorkout): WorkoutData {
 
   return {
     source: "whoop",
-    date: whoopWorkout.start.split("T")[0],
+    date: toLocalDate(whoopWorkout.start),
     type: getSportName(whoopWorkout.sport_id),
     durationMinutes: Math.round(durationMs / 60000),
     strain: whoopWorkout.score?.strain,
