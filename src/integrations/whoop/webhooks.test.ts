@@ -9,6 +9,16 @@ import type { WhoopSleep, WhoopRecovery, WhoopWorkout } from "./client.js";
 import type { Request } from "express";
 
 describe("Whoop webhook normalization", () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv, TIMEZONE: "America/New_York" };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
   describe("normalizeSleep", () => {
     const mockWhoopSleep: WhoopSleep = {
       id: 12345,
@@ -83,6 +93,20 @@ describe("Whoop webhook normalization", () => {
       expect(normalized.stages).toBeUndefined();
       expect(normalized.score).toBeUndefined();
     });
+
+    it("uses local timezone date when UTC date differs from local date", () => {
+      // 3am UTC on Jan 27 = 10pm EST on Jan 26
+      const crossMidnightSleep: WhoopSleep = {
+        ...mockWhoopSleep,
+        start: "2026-01-27T03:00:00.000Z",
+        end: "2026-01-27T11:00:00.000Z",
+      };
+
+      const normalized = normalizeSleep(crossMidnightSleep);
+
+      // Should use the EST date (Jan 26), not the UTC date (Jan 27)
+      expect(normalized.date).toBe("2026-01-26");
+    });
   });
 
   describe("normalizeRecovery", () => {
@@ -132,6 +156,19 @@ describe("Whoop webhook normalization", () => {
 
       expect(normalized.score).toBe(0);
       expect(normalized.hrv).toBeUndefined();
+    });
+
+    it("uses local timezone date when UTC date differs from local date", () => {
+      // 4am UTC on Jan 28 = 11pm EST on Jan 27
+      const crossMidnightRecovery: WhoopRecovery = {
+        ...mockWhoopRecovery,
+        created_at: "2026-01-28T04:00:00.000Z",
+      };
+
+      const normalized = normalizeRecovery(crossMidnightRecovery);
+
+      // Should use the EST date (Jan 27), not the UTC date (Jan 28)
+      expect(normalized.date).toBe("2026-01-27");
     });
   });
 
@@ -214,6 +251,20 @@ describe("Whoop webhook normalization", () => {
       const normalized = normalizeWorkout(unknownSportWorkout);
 
       expect(normalized.type).toBe("Activity");
+    });
+
+    it("uses local timezone date when UTC date differs from local date", () => {
+      // 2am UTC on Jan 28 = 9pm EST on Jan 27
+      const crossMidnightWorkout: WhoopWorkout = {
+        ...mockWhoopWorkout,
+        start: "2026-01-28T02:00:00.000Z",
+        end: "2026-01-28T03:30:00.000Z",
+      };
+
+      const normalized = normalizeWorkout(crossMidnightWorkout);
+
+      // Should use the EST date (Jan 27), not the UTC date (Jan 28)
+      expect(normalized.date).toBe("2026-01-27");
     });
   });
 });
