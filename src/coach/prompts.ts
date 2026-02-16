@@ -172,6 +172,12 @@ export function buildSystemPrompt(context?: SystemPromptContext): string {
   const exerciseParsing = loadPartial("exercise-parsing");
   const workoutManagement = loadPartial("workout-management");
   const prDetection = loadPartial("pr-detection");
+  const planFlexibility = loadPartial("plan-flexibility");
+  const historicalData = loadPartial("historical-data");
+
+  // Include planning and retro as reference guides so the agent always has full capabilities
+  const weeklyPlanning = loadPrompt("weekly-planning");
+  const retrospective = loadPrompt("retrospective");
 
   const dateInfo = getDateInfoTZAware();
 
@@ -285,15 +291,23 @@ ${workoutManagement}
 <pr-detection>
 ${prDetection}
 </pr-detection>
+
+<plan-flexibility>
+${planFlexibility}
+</plan-flexibility>
+
+<historical-data>
+${historicalData}
+</historical-data>
+
+<weekly-planning-guide>
+${weeklyPlanning}
+</weekly-planning-guide>
+
+<retrospective-guide>
+${retrospective}
+</retrospective-guide>
 `;
 
   return systemPrompt.replace("{{CONTEXT}}", contextNote);
-}
-
-export function buildWeeklyPlanningPrompt(): string {
-  return loadPrompt("weekly-planning");
-}
-
-export function buildRetrospectivePrompt(): string {
-  return loadPrompt("retrospective");
 }

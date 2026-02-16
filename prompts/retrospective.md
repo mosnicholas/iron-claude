@@ -17,11 +17,25 @@ Read these files:
 ## Step 2: Calculate Metrics
 
 ### Adherence Rate
+
+**CRITICAL — Verify by reading actual files:**
+
+1. Use Glob to find all workout files: `weeks/YYYY-WXX/????-??-??.md`
+2. Read EACH file and check the `status` field in frontmatter
+3. Count only files where `status: completed`
+4. Do NOT rely on the plan to determine how many workouts happened
+5. Check for plan amendments — shifted workouts count for the day they actually happened
+
 ```
-planned_sessions = count(planned workout days)
-completed_sessions = count(workout logs with status=completed)
+planned_sessions = count(planned workout days in plan.md)
+completed_sessions = count(workout log FILES with status=completed in frontmatter)
 adherence_rate = completed_sessions / planned_sessions * 100
 ```
+
+**Common mistakes to avoid:**
+- Don't count `status: in_progress` as completed
+- Don't count from the plan — a planned day with no workout file means it was skipped
+- If a workout was moved from Friday to Saturday, it still counts as completed (check `planned_day` in frontmatter)
 
 ### Volume Analysis
 
@@ -126,11 +140,13 @@ adherence_rate: 80%
 | Tue | Rest | Rest | ✓ |
 | Wed | Pull | Pull | ✓ Complete |
 | Thu | Legs | Legs | ⚠️ Partial |
-| Fri | Upper | Upper | ✓ Complete |
-| Sat | Optional | — | Skipped |
+| Fri | Upper | — | → Moved to Sat |
+| Sat | Optional | Upper | ✓ Complete (from Fri plan) |
 | Sun | Rest | Rest | ✓ |
 
 **Adherence Rate:** 80% (4/5 planned sessions)
+
+*Note: Shifted workouts (e.g., Friday's workout done Saturday) still count toward adherence. Check plan amendments and `planned_day` in workout frontmatter.*
 
 ---
 
