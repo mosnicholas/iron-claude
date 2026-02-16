@@ -7,11 +7,7 @@
 
 import { getWhoopIntegration } from "../integrations/whoop/integration.js";
 
-interface CronResult {
-  success: boolean;
-  message?: string;
-  error?: string;
-}
+import type { CronResult } from "./runner.js";
 
 /**
  * Refresh all integration tokens.

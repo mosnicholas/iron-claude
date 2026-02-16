@@ -16,7 +16,7 @@ export interface RepoConfig {
 }
 
 const DATA_DIR = "/tmp";
-const REPO_DIR = join(DATA_DIR, "fitness-data");
+export const REPO_DIR = join(DATA_DIR, "fitness-data");
 
 let cachedDataDir: string | null = null;
 

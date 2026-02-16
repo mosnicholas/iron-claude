@@ -45,6 +45,7 @@ export interface SystemPromptContext {
   gitBinaryPath?: string;
   weeklyPlan?: string; // Current week's plan content
   prsYaml?: string; // Personal records YAML content
+  learnings?: string; // Learnings/memories about the athlete
   todayWorkout?: string; // Today's workout log if it exists
   weekProgress?: WorkoutLogSummary[]; // Workout logs found for this week
   messageHistoryCount?: number; // Number of recent messages to include (default: 10)
@@ -162,6 +163,7 @@ export function buildSystemPrompt(context?: SystemPromptContext): string {
     gitBinaryPath,
     weeklyPlan,
     prsYaml,
+    learnings,
     todayWorkout,
     weekProgress = [],
     messageHistoryCount = 10,
@@ -172,6 +174,13 @@ export function buildSystemPrompt(context?: SystemPromptContext): string {
   const exerciseParsing = loadPartial("exercise-parsing");
   const workoutManagement = loadPartial("workout-management");
   const prDetection = loadPartial("pr-detection");
+  const rpeAnalysis = loadPartial("rpe-analysis");
+  const planFlexibility = loadPartial("plan-flexibility");
+  const historicalData = loadPartial("historical-data");
+
+  // Include planning and retro as reference guides so the agent always has full capabilities
+  const weeklyPlanning = loadPrompt("weekly-planning");
+  const retrospective = loadPrompt("retrospective");
 
   const dateInfo = getDateInfoTZAware();
 
@@ -220,6 +229,19 @@ Reference these PRs when discussing progress, setting targets, or detecting new 
 `
     : "";
 
+  // Format learnings/memories if available
+  const learningsSection = learnings
+    ? `
+## Athlete Memories (learnings.md)
+
+<learnings>
+${learnings}
+</learnings>
+
+These are things you've learned about the athlete across sessions. Reference them when coaching, planning, or giving feedback. Use the \`save_memory\` tool to add new memories during conversation.
+`
+    : "";
+
   // Format today's workout if it exists (active or completed)
   const todayWorkoutSection = todayWorkout
     ? `
@@ -250,6 +272,7 @@ ${envInfo}
 ${messageHistory ? `\n${messageHistory}\n` : ""}
 ${weeklyPlanSection}
 ${prsSection}
+${learningsSection}
 ${todayWorkoutSection}
 ${weekProgressSection}
 ## Scheduling Notes
@@ -285,15 +308,27 @@ ${workoutManagement}
 <pr-detection>
 ${prDetection}
 </pr-detection>
+
+<rpe-analysis>
+${rpeAnalysis}
+</rpe-analysis>
+
+<plan-flexibility>
+${planFlexibility}
+</plan-flexibility>
+
+<historical-data>
+${historicalData}
+</historical-data>
+
+<weekly-planning-guide>
+${weeklyPlanning}
+</weekly-planning-guide>
+
+<retrospective-guide>
+${retrospective}
+</retrospective-guide>
 `;
 
   return systemPrompt.replace("{{CONTEXT}}", contextNote);
-}
-
-export function buildWeeklyPlanningPrompt(): string {
-  return loadPrompt("weekly-planning");
-}
-
-export function buildRetrospectivePrompt(): string {
-  return loadPrompt("retrospective");
 }

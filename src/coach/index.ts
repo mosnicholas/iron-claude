@@ -11,6 +11,7 @@ import { join } from "path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { syncRepo, pushChanges } from "../storage/repo-sync.js";
 import { buildSystemPrompt, type WorkoutLogSummary } from "./prompts.js";
+import { createCoachToolsServer } from "./tools.js";
 import { parseFrontmatter } from "../integrations/storage.js";
 import { getCurrentWeek, getToday, getTimezone } from "../utils/date.js";
 import {
@@ -66,6 +67,7 @@ export interface QueryOptions {
 export class CoachAgent {
   private config: Required<CoachConfig>;
   private repoPath: string | null = null;
+  private mcpServer = createCoachToolsServer();
 
   constructor(config: CoachConfig = {}) {
     this.config = {
@@ -104,6 +106,23 @@ export class CoachAgent {
         return readFileSync(planPath, "utf-8");
       } catch {
         console.log(`[Coach] Could not read weekly plan from ${planPath}`);
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Try to read learnings.md from the local repo
+   */
+  private getLearnings(repoPath: string): string | undefined {
+    const learningsPath = join(repoPath, "learnings.md");
+
+    if (existsSync(learningsPath)) {
+      try {
+        return readFileSync(learningsPath, "utf-8");
+      } catch {
+        console.log(`[Coach] Could not read learnings from ${learningsPath}`);
         return undefined;
       }
     }
@@ -188,6 +207,7 @@ export class CoachAgent {
     // Pre-load context data for faster responses
     const weeklyPlan = this.getWeeklyPlan(repoPath);
     const prsYaml = this.getPRs(repoPath);
+    const learnings = this.getLearnings(repoPath);
     const todayWorkout = this.getTodayWorkout(repoPath);
     const weekProgress = this.getWeekProgress(repoPath);
 
@@ -195,6 +215,7 @@ export class CoachAgent {
     const basePrompt = buildSystemPrompt({
       repoPath,
       gitBinaryPath,
+      learnings,
       weeklyPlan,
       prsYaml,
       todayWorkout,
@@ -217,7 +238,13 @@ export class CoachAgent {
     }
 
     // Build allowed tools list
-    const baseTools = ["Read", "Edit", "Write", "Bash", "Glob", "Grep"];
+    const mcpToolNames = [
+      "coach-tools:get_reminders",
+      "coach-tools:add_reminder",
+      "coach-tools:delete_reminder",
+      "coach-tools:save_memory",
+    ];
+    const baseTools = ["Read", "Edit", "Write", "Bash", "Glob", "Grep", ...mcpToolNames];
     const allowedTools = options?.additionalTools
       ? [...baseTools, ...options.additionalTools]
       : baseTools;
@@ -231,6 +258,9 @@ export class CoachAgent {
         model: this.config.model,
         allowedTools,
         permissionMode: "acceptEdits",
+        mcpServers: {
+          "coach-tools": this.mcpServer,
+        },
         env: {
           ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "",
           TIMEZONE: this.config.timezone,

@@ -10,23 +10,39 @@ When the user sends their first exercise of a session:
    - If found and older: ask if they want to resume or start fresh
 
 2. **Create new workout session**
-   - Determine workout type from first exercise or ask
+   - Determine workout type from first exercise, from the plan, or ask
+   - **ALWAYS use the ACTUAL current date** for the file name and heading (from your date/time context)
+   - If this workout was planned for a different day, add `planned_day` to frontmatter
    - Create `weeks/YYYY-WXX/YYYY-MM-DD.md` with frontmatter:
    ```yaml
    ---
-   date: "YYYY-MM-DD"
+   date: "YYYY-MM-DD"          # ACTUAL date (today)
    type: {type}
    started: "HH:MM"
    location: {from profile or ask}
    status: in_progress
    plan_reference: "YYYY-WXX"
+   planned_day: "Friday"        # Only if this workout was planned for a different day
    ---
    ```
+   - Heading: `# Workout — {ACTUAL day name}, {ACTUAL date}` (e.g., `# Workout — Saturday, Feb 15`)
+   - **NEVER use the plan's day name in the heading** — always the real calendar day
 
-3. **Log the first exercise**
+3. **Match to the plan**
+   - Check the weekly plan for today's scheduled workout
+   - If today has a planned workout, use those exercises as the template
+   - If today has NO planned workout but the user is working out, check what makes sense:
+     - Was a recent day's workout skipped? Offer to do that workout
+     - Otherwise, suggest exercises based on weekly balance
+   - If the workout doesn't match any planned day, that's fine — log what actually happens
+
+4. **Log the first exercise**
    - Parse the input
    - Add to the workout file
    - Commit to main: "Start workout: {exercise}"
+
+5. **Amend the plan if needed**
+   - If this workout shifts from or adds to the plan, update plan.md with an amendment
 
 ## During a Workout
 
@@ -68,6 +84,19 @@ When user sends non-exercise text during a workout:
 **IMPORTANT**: Workout completion can be triggered by `/done` command OR by natural language
 indicating the workout is finished. Both should follow the same completion workflow.
 
+### End Signals — Trigger Completion Immediately
+
+Any of these should trigger the completion workflow:
+- `/done` command
+- "done", "I'm done", "that's it", "finished", "that's all"
+- "workout complete", "wrapping up", "calling it a day"
+- "all done", "that wraps it up", "I'm finished"
+- Any clear indication the workout is over
+
+**When you detect an end signal, you MUST complete the workout. Do not continue logging.**
+
+### Completion Workflow
+
 When the user indicates they're done (via command or natural language):
 
 1. **Ask for energy level** (1-10) if not mentioned during the session
@@ -81,10 +110,17 @@ When the user indicates they're done (via command or natural language):
    - Add `finished`, `duration_minutes`, `energy_level` to frontmatter
    - Add `prs_hit` array if any PRs
    - Add `## Summary` section with observations
-   - **CRITICAL**: Change `status: completed` in the frontmatter
+   - **CRITICAL**: Change `status: completed` in the frontmatter — this MUST happen
 5. **Commit to main**: "Complete workout"
 6. **Update PRs** if any new records (update prs.yaml)
 7. **Send summary to user**
+
+### Verify Completion
+
+After completing a workout, verify that:
+- The frontmatter `status` field says `completed` (not `in_progress`)
+- The `finished` time is set
+- The changes are committed and pushed
 
 ## Workout File Structure
 
