@@ -466,6 +466,17 @@ function splitMessage(text: string, maxLength: number): string[] {
 }
 
 /**
+ * Split message on --- markers for multi-message responses.
+ * Trims whitespace and filters empty chunks.
+ */
+export function splitOnMessageBreaks(text: string): string[] {
+  return text
+    .split(/\n---\n/)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk.length > 0);
+}
+
+/**
  * Extract text content from a Telegram update
  */
 export function extractMessageText(update: TelegramUpdate): string | null {

@@ -12,6 +12,7 @@ import {
   extractVoiceMessage,
   isCommand,
   parseCommand,
+  splitOnMessageBreaks,
   ThrottledMessageEditor,
 } from "../bot/telegram.js";
 import { executeCommand, commandExists } from "../bot/commands.js";
@@ -218,14 +219,26 @@ async function processMessage(
         },
       });
 
-      await editor.finalize(response.message);
+      // Split on --- markers for multi-message responses
+      const chunks = splitOnMessageBreaks(response.message);
+      await editor.finalize(chunks[0]);
+
+      for (let i = 1; i < chunks.length; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        await bot.sendMessageSafe(chunks[i]);
+      }
+
       // Record bot response in history
       addMessage(response.message, false);
     } else {
       // Fallback if we couldn't get a message ID
       const response = await agent.chat(messageText);
-      await bot.sendMessageSafe(response.message);
-      // Record bot response in history
+
+      const chunks = splitOnMessageBreaks(response.message);
+      for (const chunk of chunks) {
+        await bot.sendMessageSafe(chunk);
+      }
+
       addMessage(response.message, false);
     }
   } catch (error) {

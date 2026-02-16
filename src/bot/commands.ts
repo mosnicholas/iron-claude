@@ -7,19 +7,8 @@
  */
 
 import { CoachAgent, StreamingCallbacks } from "../coach/index.js";
-import { TelegramBot, ThrottledMessageEditor } from "./telegram.js";
+import { TelegramBot, ThrottledMessageEditor, splitOnMessageBreaks } from "./telegram.js";
 import { getDateInfoTZAware } from "../utils/date.js";
-
-/**
- * Split message on --- markers for multi-message responses
- * Trims whitespace and filters empty chunks
- */
-function splitOnMessageBreaks(text: string): string[] {
-  return text
-    .split(/\n---\n/)
-    .map((chunk) => chunk.trim())
-    .filter((chunk) => chunk.length > 0);
-}
 
 type CommandHandler = (
   agent: CoachAgent,
