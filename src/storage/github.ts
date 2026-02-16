@@ -355,161 +355,107 @@ export class GitHubStorage {
   }
 
   // ============================================================================
-  // Planning State Management
+  // Generic State Helpers
   // ============================================================================
 
-  /**
-   * Save planning-pending state (cron asks questions, waiting for response)
-   */
+  private async getState<T>(path: string, fallback: T): Promise<T> {
+    const content = await this.readFile(path);
+    if (!content) return fallback;
+    try {
+      return JSON.parse(content);
+    } catch {
+      return fallback;
+    }
+  }
+
+  private async setState<T>(path: string, state: T, message: string): Promise<void> {
+    await this.writeFile(path, JSON.stringify(state, null, 2), message);
+  }
+
+  private async clearState(path: string, message: string): Promise<void> {
+    try {
+      await this.deleteFile(path, message);
+    } catch {
+      // File might not exist, that's fine
+    }
+  }
+
+  // ============================================================================
+  // Planning State
+  // ============================================================================
+
   async savePlanningState(week: string): Promise<void> {
-    const state = {
-      week,
-      askedAt: new Date().toISOString(),
-    };
-    await this.writeFile(
+    await this.setState(
       "state/planning-pending.json",
-      JSON.stringify(state, null, 2),
+      { week, askedAt: new Date().toISOString() },
       `Start planning for ${week}`
     );
   }
 
-  /**
-   * Get pending planning state (if any)
-   */
   async getPlanningState(): Promise<{ week: string; askedAt: string } | null> {
-    const content = await this.readFile("state/planning-pending.json");
-    if (!content) return null;
-    try {
-      return JSON.parse(content);
-    } catch {
-      return null;
-    }
+    return this.getState("state/planning-pending.json", null);
   }
 
-  /**
-   * Clear planning state (after plan is generated)
-   */
   async clearPlanningState(): Promise<void> {
-    try {
-      await this.deleteFile("state/planning-pending.json", "Plan finalized");
-    } catch {
-      // File might not exist, that's fine
-    }
+    await this.clearState("state/planning-pending.json", "Plan finalized");
   }
 
   // ============================================================================
-  // Gym Time State Management
+  // Gym Time State
   // ============================================================================
 
-  /**
-   * Save gym-time-pending state (morning message asked what time user is going to the gym)
-   */
   async saveGymTimePendingState(date: string): Promise<void> {
-    const state = {
-      date,
-      askedAt: new Date().toISOString(),
-    };
-    await this.writeFile(
+    await this.setState(
       "state/gym-time-pending.json",
-      JSON.stringify(state, null, 2),
+      { date, askedAt: new Date().toISOString() },
       `Ask gym time for ${date}`
     );
   }
 
-  /**
-   * Get pending gym time state (if any)
-   */
   async getGymTimePendingState(): Promise<{ date: string; askedAt: string } | null> {
-    const content = await this.readFile("state/gym-time-pending.json");
-    if (!content) return null;
-    try {
-      return JSON.parse(content);
-    } catch {
-      return null;
-    }
+    return this.getState("state/gym-time-pending.json", null);
   }
 
-  /**
-   * Clear gym time pending state
-   */
   async clearGymTimePendingState(): Promise<void> {
-    try {
-      await this.deleteFile("state/gym-time-pending.json", "Gym time set");
-    } catch {
-      // File might not exist, that's fine
-    }
+    await this.clearState("state/gym-time-pending.json", "Gym time set");
   }
 
   // ============================================================================
-  // Reminder Management
+  // Reminders
   // ============================================================================
 
-  /**
-   * Get all reminders
-   */
   async getReminders(): Promise<Reminder[]> {
-    const content = await this.readFile("state/reminders.json");
-    if (!content) return [];
-    try {
-      return JSON.parse(content);
-    } catch {
-      return [];
-    }
+    return this.getState("state/reminders.json", []);
   }
 
-  /**
-   * Add a new reminder
-   */
   async addReminder(reminder: Omit<Reminder, "id" | "createdAt">): Promise<Reminder> {
     const reminders = await this.getReminders();
-
     const newReminder: Reminder = {
       ...reminder,
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
     };
-
     reminders.push(newReminder);
-
-    await this.writeFile(
+    await this.setState(
       "state/reminders.json",
-      JSON.stringify(reminders, null, 2),
+      reminders,
       `Add reminder for ${reminder.triggerDate} ${reminder.triggerHour}:00`
     );
-
     return newReminder;
   }
 
-  /**
-   * Delete a reminder by ID
-   */
   async deleteReminder(id: string): Promise<void> {
     const reminders = await this.getReminders();
     const filtered = reminders.filter((r) => r.id !== id);
-
-    if (filtered.length === reminders.length) {
-      return; // Reminder not found, nothing to do
-    }
+    if (filtered.length === reminders.length) return;
 
     if (filtered.length === 0) {
-      // No reminders left, delete the file
-      try {
-        await this.deleteFile("state/reminders.json", "Clear empty reminders");
-      } catch {
-        // File might not exist
-      }
+      await this.clearState("state/reminders.json", "Clear empty reminders");
     } else {
-      await this.writeFile(
-        "state/reminders.json",
-        JSON.stringify(filtered, null, 2),
-        `Remove processed reminder ${id}`
-      );
+      await this.setState("state/reminders.json", filtered, `Remove processed reminder ${id}`);
     }
   }
 
-  /**
-   * Get reminders due at a specific date and hour
-   */
   async getDueReminders(date: string, hour: number): Promise<Reminder[]> {
     const reminders = await this.getReminders();
     return reminders.filter((r) => r.triggerDate === date && r.triggerHour === hour);

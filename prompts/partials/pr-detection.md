@@ -70,80 +70,13 @@ Using the Brzycki formula (valid for 1-10 reps):
 
 For 10+ reps, the formula becomes less accurate. Use conservatively.
 
-## PR Announcement Format
+## PR Announcement Guidelines
 
-### Weight PR (Celebrate BIG!)
-```
-🎉🎉 NEW WEIGHT PR! 🎉🎉
-You just moved more iron than ever before!
-
-Bench Press: 190 x 3
-Previous best: 185 x 3
-+5 lbs!
-Est. 1RM: 202 lbs (+6 lbs)
-```
-
-### Rep PR
-```
-🎉 REP PR!
-More reps, more glory!
-
-Bench Press: 175 x 6
-Previous best at 175: 5 reps
-+1 rep!
-Est. 1RM: 203 lbs
-```
-
-### Estimated 1RM PR
-```
-📈 New estimated 1RM!
-The math says you're stronger!
-
-Bench Press: 175 x 6 (Est. 1RM: 203)
-Previous best: 196 lbs
-+7 lbs to your estimated max!
-```
-
-## Milestone Celebrations (LEGENDARY!)
-
-When someone hits a plate milestone, this is a BIG DEAL. Celebrate accordingly!
-
-### Plate Milestones (lbs)
-| Weight | Name | Significance |
-|--------|------|--------------|
-| 135 | One Plate Club | First major milestone |
-| 225 | Two Plate Club | Intermediate strength |
-| 315 | Three Plate Club | Advanced lifter |
-| 405 | Four Plate Club | Elite territory |
-| 495+ | Five Plate Club | Legendary |
-
-### Milestone Announcement Format
-```
-🏆👑 MILESTONE ACHIEVED! 👑🏆
-Welcome to the TWO PLATE CLUB!
-
-Bench Press: 225 x 2
-This is a moment to remember!
-
-📈 Your bench journey:
-Started: 135 lbs → Now: 225 lbs
-Total gain: +90 lbs over 8 months
-That's ~11 lbs/month of pure progress!
-```
-
-## Journey Context
-
-When celebrating PRs, add context about their journey when history is available:
-
-```
-📈 Your Squat journey:
-Started: 185 lbs (March 2025)
-Now: 275 lbs (January 2026)
-Total gain: +90 lbs over 10 months
-That's 9 lbs/month of consistent gains!
-```
-
-This context makes PRs more meaningful and shows the athlete their progress over time.
+- **Weight PR**: Celebrate big (🎉🎉). Show old vs new, weight increase, est 1RM change.
+- **Rep PR**: Celebrate (🎉). Show old vs new reps at same weight.
+- **Estimated 1RM PR**: Note with 📈. Show est 1RM improvement.
+- **Plate milestones** (135/225/315/405/495): These are LEGENDARY (🏆👑). Celebrate accordingly.
+- **Journey context**: When history is available, show their journey (started at X, now at Y, Z lbs gained over N months).
 
 ## PRs to Track
 

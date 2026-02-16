@@ -19,8 +19,7 @@ import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js"
 import { createGitHubStorage } from "../storage/github.js";
 import { generatePlanWithContext } from "../cron/weekly-plan.js";
 import { addMessage } from "../bot/message-history.js";
-import { parseTimeToHour } from "../utils/time-parser.js";
-import { getCurrentWeek, getToday, getTimezone } from "../utils/date.js";
+import { getToday, getTimezone } from "../utils/date.js";
 import type { TelegramUpdate } from "../storage/types.js";
 
 // Simple in-memory cache for deduplication
@@ -173,31 +172,25 @@ async function processMessage(
       return;
     }
 
-    // Check for pending gym time state - user told us what time they're going to the gym
+    // Check for pending gym time state - user responding to "what time are you heading to the gym?"
     const storage = createGitHubStorage();
     const gymTimeState = await storage.getGymTimePendingState();
 
-    if (gymTimeState && gymTimeState.date === getToday(getTimezone())) {
-      const hour = parseTimeToHour(messageText);
-      if (hour !== null) {
-        console.log(`[webhook] Gym time parsed: ${hour}:00 for ${gymTimeState.date}`);
-        await storage.clearGymTimePendingState();
+    if (gymTimeState) {
+      await storage.clearGymTimePendingState();
 
-        // Schedule the reminder — run in background so we respond quickly
-        scheduleGymReminder(gymTimeState.date, hour, bot, agent).catch((err) => {
-          console.error("[webhook] Failed to schedule gym reminder:", err);
-        });
-        return;
+      if (gymTimeState.date === getToday(getTimezone())) {
+        // Pass to agent with context — it knows how to parse times and schedule reminders
+        console.log("[webhook] Gym time response detected, routing to agent with context");
+        messageText =
+          `The user is responding to the morning question "What time are you heading to the gym today?". ` +
+          `Their response: "${messageText}". ` +
+          `If they gave a time, schedule a warm-up reminder for that hour by: ` +
+          `1) Reading today's plan to generate a concise warm-up + exercise preview, ` +
+          `2) Writing the reminder to state/reminders.json. ` +
+          `If they said they're not going or it's unclear, just acknowledge naturally.`;
       }
-      // If we couldn't parse a time, fall through to normal processing.
-      // The user might be saying something unrelated — don't block on it.
-      // Clear stale state so it doesn't keep intercepting messages.
-      console.log("[webhook] Could not parse gym time, clearing state and continuing");
-      await storage.clearGymTimePendingState();
-    } else if (gymTimeState) {
-      // Stale state from a different day — clean up
-      console.log("[webhook] Stale gym time state, clearing");
-      await storage.clearGymTimePendingState();
+      // If stale (different day), just clear and fall through to normal processing
     }
 
     // Check for pending planning state - if waiting for input, generate the plan
@@ -245,51 +238,4 @@ async function processMessage(
       // Ignore notification failure
     }
   }
-}
-
-/**
- * Schedule a gym reminder at the given hour.
- * Uses the coach agent to generate a warm-up focused message from today's plan,
- * then stores it as a reminder that fires at the requested hour.
- */
-async function scheduleGymReminder(
-  date: string,
-  hour: number,
-  bot: ReturnType<typeof createTelegramBot>,
-  agent: ReturnType<typeof createCoachAgent>
-): Promise<void> {
-  const storage = createGitHubStorage();
-  const timezone = getTimezone();
-  const currentWeek = getCurrentWeek(timezone);
-
-  const displayHour =
-    hour === 0 ? "12am" : hour < 12 ? `${hour}am` : hour === 12 ? "12pm" : `${hour - 12}pm`;
-
-  // Confirm to the user
-  await bot.sendMessage(`Got it — I'll send your workout reminder at ${displayHour}. 💪`);
-
-  // Generate a concise gym-time reminder message using the agent
-  const response = await agent.runTask(
-    `Generate a concise gym-time reminder message for today (${date}).
-
-Read the weekly plan (weeks/${currentWeek}/plan.md) and create a message that the athlete will receive when it's time to head to the gym.
-
-Include:
-1. A brief "time to hit the gym" opener
-2. The **warm-up** section in full detail (what to do, sets, reps, duration)
-3. A quick bullet list of the main exercises with sets/reps/weights (not full detail, just enough to reference)
-
-Keep it concise and actionable — this is a Telegram reminder, not the full morning breakdown.
-If today is a rest day, just say "Rest day today — enjoy the recovery!" and skip the workout details.`
-  );
-
-  // Store as a reminder
-  await storage.addReminder({
-    triggerDate: date,
-    triggerHour: hour,
-    message: response.message,
-    context: "gym-time-reminder",
-  });
-
-  console.log(`[webhook] Gym reminder scheduled for ${date} at ${hour}:00`);
 }

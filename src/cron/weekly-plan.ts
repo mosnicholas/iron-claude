@@ -14,6 +14,7 @@ import { createCoachAgent } from "../coach/index.js";
 import { createTelegramBot } from "../bot/telegram.js";
 import { createGitHubStorage } from "../storage/github.js";
 import { getCurrentWeek, getNextWeek, getWeekDays, getTimezone } from "../utils/date.js";
+import { runCronTask, type CronResult } from "./runner.js";
 
 /**
  * Format week days info for the planning prompt
@@ -30,12 +31,7 @@ ${lines.join("\n")}
 Use these exact dates when creating the plan. Each day in the plan should include the day name and date (e.g., "## Monday, ${days[0].dateHuman} — Push").`;
 }
 
-export interface WeeklyPlanResult {
-  success: boolean;
-  week?: string;
-  message?: string;
-  error?: string;
-}
+export type WeeklyPlanResult = CronResult & { week?: string };
 
 /**
  * Planning questions to ask the user before generating the plan
@@ -57,84 +53,41 @@ Just reply with whatever's on your mind and I'll build your plan around it.`;
  */
 export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
   const timezone = getTimezone();
-  console.log("[weekly-plan] Starting weekly planning job");
 
-  try {
-    console.log("[weekly-plan] Initializing bot and storage");
-    const bot = createTelegramBot();
-    const storage = createGitHubStorage();
+  return runCronTask(
+    "weekly-plan",
+    async ({ bot, storage }) => {
+      const nextWeek = getNextWeek(getCurrentWeek(timezone));
 
-    // Check if profile exists
-    console.log("[weekly-plan] Checking for profile");
-    const profile = await storage.readProfile();
-    if (!profile) {
-      console.log("[weekly-plan] No profile found, skipping");
-      return {
-        success: true,
-        message: "No profile configured, skipping planning",
-      };
-    }
-    console.log("[weekly-plan] Profile found");
+      // Check if plan already exists
+      const existingPlan = await storage.readWeeklyPlan(nextWeek);
+      if (existingPlan) {
+        await bot.sendMessageSafe(`📋 Plan for ${nextWeek} already exists — no action needed.`);
+        return { success: true, week: nextWeek, message: `Plan already exists for ${nextWeek}` };
+      }
 
-    // Get the next week (we're planning for tomorrow's week)
-    const nextWeek = getNextWeek(getCurrentWeek(timezone));
-    console.log(`[weekly-plan] Planning for week: ${nextWeek}`);
+      // Check if we already asked (don't spam)
+      const pendingState = await storage.getPlanningState();
+      if (pendingState && pendingState.week === nextWeek) {
+        return {
+          success: true,
+          week: nextWeek,
+          message: `Already waiting for planning input for ${nextWeek}`,
+        };
+      }
 
-    // Check if plan already exists
-    console.log("[weekly-plan] Checking for existing plan");
-    const existingPlan = await storage.readWeeklyPlan(nextWeek);
-    if (existingPlan) {
-      console.log(`[weekly-plan] Plan already exists for ${nextWeek}`);
-      await bot.sendMessageSafe(`📋 Plan for ${nextWeek} already exists — no action needed.`);
-      return {
-        success: true,
-        week: nextWeek,
-        message: `Plan already exists for ${nextWeek}`,
-      };
-    }
+      // Save planning state and ask questions
+      await storage.savePlanningState(nextWeek);
+      await bot.sendMessageSafe(PLANNING_QUESTIONS);
 
-    // Check if we already asked (don't spam)
-    const pendingState = await storage.getPlanningState();
-    if (pendingState && pendingState.week === nextWeek) {
-      console.log(`[weekly-plan] Already waiting for planning input for ${nextWeek}`);
       return {
         success: true,
         week: nextWeek,
-        message: `Already waiting for planning input for ${nextWeek}`,
+        message: `Asked planning questions for ${nextWeek}, waiting for response`,
       };
-    }
-
-    // Save planning state and ask questions
-    console.log("[weekly-plan] Saving planning state and asking questions");
-    await storage.savePlanningState(nextWeek);
-    await bot.sendMessageSafe(PLANNING_QUESTIONS);
-    console.log("[weekly-plan] Questions sent, waiting for user response");
-
-    return {
-      success: true,
-      week: nextWeek,
-      message: `Asked planning questions for ${nextWeek}, waiting for response`,
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error("[weekly-plan] Error during planning:", errorMessage);
-
-    // Try to notify user of failure
-    try {
-      const bot = createTelegramBot();
-      await bot.sendMessage(
-        `⚠️ Had trouble starting the planning process. ` +
-          `You can ask me "plan my week" to try again.`
-      );
-    } catch {
-      // Ignore notification failure
-    }
-
-    return {
-      success: false,
-      error: errorMessage,
-    };
-  }
+    },
+    { errorMessage: 'Had trouble starting the planning process. Say "plan my week" to try again.' }
+  ) as Promise<WeeklyPlanResult>;
 }
 
 /**

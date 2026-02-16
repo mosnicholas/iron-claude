@@ -38,25 +38,17 @@ export function createCronHandler(task: CronTask) {
     }
 
     try {
-      let result;
+      const runners: Record<
+        CronTask,
+        () => Promise<{ success: boolean; message?: string; error?: string }>
+      > = {
+        "daily-reminder": runDailyReminder,
+        "weekly-plan": runWeeklyPlan,
+        "check-reminders": runCheckReminders,
+        "refresh-tokens": runRefreshTokens,
+      };
 
-      switch (task) {
-        case "daily-reminder":
-          result = await runDailyReminder();
-          break;
-        case "weekly-plan":
-          result = await runWeeklyPlan();
-          break;
-        case "check-reminders":
-          result = await runCheckReminders();
-          break;
-        case "refresh-tokens":
-          result = await runRefreshTokens();
-          break;
-        default:
-          res.status(400).json({ error: `Unknown task: ${task}` });
-          return;
-      }
+      const result = await runners[task]();
 
       if (result.success) {
         console.log(`[cron] Task ${task} completed successfully: ${result.message}`);

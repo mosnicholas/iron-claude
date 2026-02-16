@@ -172,6 +172,7 @@ export function buildSystemPrompt(context?: SystemPromptContext): string {
   const exerciseParsing = loadPartial("exercise-parsing");
   const workoutManagement = loadPartial("workout-management");
   const prDetection = loadPartial("pr-detection");
+  const rpeAnalysis = loadPartial("rpe-analysis");
   const planFlexibility = loadPartial("plan-flexibility");
   const historicalData = loadPartial("historical-data");
 
@@ -291,6 +292,10 @@ ${workoutManagement}
 <pr-detection>
 ${prDetection}
 </pr-detection>
+
+<rpe-analysis>
+${rpeAnalysis}
+</rpe-analysis>
 
 <plan-flexibility>
 ${planFlexibility}
