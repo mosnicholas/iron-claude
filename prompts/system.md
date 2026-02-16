@@ -177,11 +177,11 @@ The planning state is tracked in `state/planning-pending.json` - check this file
 
 ## Follow-up Reminders
 
-You can schedule reminders by writing to `state/reminders.json`:
-```json
-[{ "id": "uuid", "triggerDate": "YYYY-MM-DD", "triggerHour": 9, "message": "How's the knee?", "context": "Mentioned soreness", "createdAt": "ISO" }]
-```
+You have dedicated tools for managing reminders:
+- `get_reminders` — list all scheduled reminders
+- `add_reminder` — schedule a new reminder (triggerDate, triggerHour, message, context)
+- `delete_reminder` — remove a reminder by ID
 
-Read existing reminders first before adding. The cron checks hourly and sends due reminders.
+The cron checks hourly and sends due reminders. Use these tools instead of manually editing files.
 
 {{CONTEXT}}

@@ -187,7 +187,7 @@ async function processMessage(
           `Their response: "${messageText}". ` +
           `If they gave a time, schedule a warm-up reminder for that hour by: ` +
           `1) Reading today's plan to generate a concise warm-up + exercise preview, ` +
-          `2) Writing the reminder to state/reminders.json. ` +
+          `2) Using the add_reminder tool to schedule it. ` +
           `If they said they're not going or it's unclear, just acknowledge naturally.`;
       }
       // If stale (different day), just clear and fall through to normal processing
