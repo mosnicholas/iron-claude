@@ -113,6 +113,23 @@ export class CoachAgent {
   }
 
   /**
+   * Try to read learnings.md from the local repo
+   */
+  private getLearnings(repoPath: string): string | undefined {
+    const learningsPath = join(repoPath, "learnings.md");
+
+    if (existsSync(learningsPath)) {
+      try {
+        return readFileSync(learningsPath, "utf-8");
+      } catch {
+        console.log(`[Coach] Could not read learnings from ${learningsPath}`);
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Try to read the PRs file from the local repo
    */
   private getPRs(repoPath: string): string | undefined {
@@ -190,6 +207,7 @@ export class CoachAgent {
     // Pre-load context data for faster responses
     const weeklyPlan = this.getWeeklyPlan(repoPath);
     const prsYaml = this.getPRs(repoPath);
+    const learnings = this.getLearnings(repoPath);
     const todayWorkout = this.getTodayWorkout(repoPath);
     const weekProgress = this.getWeekProgress(repoPath);
 
@@ -197,6 +215,7 @@ export class CoachAgent {
     const basePrompt = buildSystemPrompt({
       repoPath,
       gitBinaryPath,
+      learnings,
       weeklyPlan,
       prsYaml,
       todayWorkout,
@@ -223,6 +242,7 @@ export class CoachAgent {
       "coach-tools:get_reminders",
       "coach-tools:add_reminder",
       "coach-tools:delete_reminder",
+      "coach-tools:save_memory",
     ];
     const baseTools = ["Read", "Edit", "Write", "Bash", "Glob", "Grep", ...mcpToolNames];
     const allowedTools = options?.additionalTools

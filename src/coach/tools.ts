@@ -1,13 +1,20 @@
 /**
  * Custom MCP Tools for the Coach Agent
  *
- * Provides dedicated tools for reminder management so the agent
- * doesn't have to hand-write JSON to state/reminders.json.
+ * Provides dedicated tools for reminders and athlete memory so the agent
+ * doesn't have to hand-write JSON or manage file formats manually.
  */
 
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import { join } from "path";
 import { z } from "zod";
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { createGitHubStorage } from "../storage/github.js";
+import { REPO_DIR } from "../storage/repo-sync.js";
+
+// ============================================================================
+// Reminder Tools
+// ============================================================================
 
 const getReminders = tool(
   "get_reminders",
@@ -81,12 +88,96 @@ const deleteReminder = tool(
   }
 );
 
+// ============================================================================
+// Memory Tool
+// ============================================================================
+
+const MEMORY_CATEGORIES = [
+  "preference",
+  "goal",
+  "injury",
+  "schedule",
+  "feedback",
+  "insight",
+] as const;
+
+const CATEGORY_HEADERS: Record<string, string> = {
+  preference: "## Preferences",
+  goal: "## Goals",
+  injury: "## Injuries & Limitations",
+  schedule: "## Schedule & Availability",
+  feedback: "## Coaching Feedback",
+  insight: "## Insights",
+};
+
+const DEFAULT_LEARNINGS = `# Learnings
+
+*Patterns and preferences discovered through conversation and observation.*
+`;
+
+/**
+ * Append a dated entry under the right category section in learnings.md.
+ * Creates the section if it doesn't exist yet.
+ * Writes to local clone — gets pushed with everything else at end of session.
+ */
+function appendToLearnings(category: string, content: string): void {
+  const filePath = join(REPO_DIR, "learnings.md");
+  const current = existsSync(filePath) ? readFileSync(filePath, "utf-8") : DEFAULT_LEARNINGS;
+
+  const date = new Date().toISOString().split("T")[0];
+  const entry = `- [${date}] ${content}`;
+  const header = CATEGORY_HEADERS[category] || `## ${category}`;
+
+  let updated: string;
+  if (current.includes(header)) {
+    // Append entry right after the header line
+    updated = current.replace(header, `${header}\n${entry}`);
+  } else {
+    // Add new section at the end
+    updated = current.trimEnd() + `\n\n${header}\n\n${entry}\n`;
+  }
+
+  writeFileSync(filePath, updated, "utf-8");
+}
+
+const saveMemory = tool(
+  "save_memory",
+  "Save a memory about the athlete to learnings.md. Use this when the athlete shares something worth remembering across sessions — preferences, goals, injuries, schedule changes, or coaching feedback. This is a local file write (<1ms), so call it freely without worrying about latency.",
+  {
+    category: z
+      .enum(MEMORY_CATEGORIES)
+      .describe(
+        "Category: preference (training likes/dislikes), goal (targets they want to hit), injury (pain/limitations), schedule (availability changes), feedback (how they want to be coached), insight (patterns you notice)"
+      ),
+    content: z
+      .string()
+      .describe(
+        "The memory to save. Be specific and actionable, e.g. 'Prefers supersets for accessories' not 'Likes supersets'"
+      ),
+  },
+  async (args) => {
+    appendToLearnings(args.category, args.content);
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Memory saved: [${args.category}] ${args.content}`,
+        },
+      ],
+    };
+  }
+);
+
+// ============================================================================
+// Server
+// ============================================================================
+
 /**
  * Create the MCP server with all coach tools
  */
 export function createCoachToolsServer() {
   return createSdkMcpServer({
     name: "coach-tools",
-    tools: [getReminders, addReminder, deleteReminder],
+    tools: [getReminders, addReminder, deleteReminder, saveMemory],
   });
 }
