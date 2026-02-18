@@ -456,6 +456,19 @@ export class GitHubStorage {
     }
   }
 
+  async updateReminder(id: string, updates: Partial<Pick<Reminder, "triggerDate">>): Promise<void> {
+    const reminders = await this.getReminders();
+    const index = reminders.findIndex((r) => r.id === id);
+    if (index === -1) return;
+
+    reminders[index] = { ...reminders[index], ...updates };
+    await this.setState(
+      "state/reminders.json",
+      reminders,
+      `Advance recurring reminder ${id} to ${updates.triggerDate}`
+    );
+  }
+
   async getDueReminders(date: string, hour: number): Promise<Reminder[]> {
     const reminders = await this.getReminders();
     return reminders.filter((r) => r.triggerDate === date && r.triggerHour === hour);
@@ -472,6 +485,8 @@ export interface Reminder {
   message: string; // The reminder message to send
   context?: string; // Additional context about why this reminder exists
   createdAt: string; // ISO timestamp
+  recurringDays?: number; // Repeat every N days (e.g., 1 = daily, 7 = weekly)
+  recurringUntil?: string; // Stop recurring after this date (YYYY-MM-DD, inclusive)
 }
 
 /**

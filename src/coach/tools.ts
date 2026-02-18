@@ -37,7 +37,7 @@ const getReminders = tool(
 
 const addReminder = tool(
   "add_reminder",
-  "Schedule a new reminder. The cron job checks hourly and sends the message at the specified date/hour.",
+  "Schedule a new reminder. The cron job checks hourly and sends the message at the specified date/hour. Optionally make it recurring by specifying recurringDays and recurringUntil — the reminder will repeat every N days until the end date.",
   {
     triggerDate: z.string().describe("Date to trigger the reminder (YYYY-MM-DD)"),
     triggerHour: z
@@ -48,6 +48,16 @@ const addReminder = tool(
       .describe("Hour to trigger (0-23 in configured timezone)"),
     message: z.string().describe("The reminder message to send to the user"),
     context: z.string().optional().describe("Optional context about why this reminder exists"),
+    recurringDays: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Repeat every N days (e.g., 1 = daily, 7 = weekly). Requires recurringUntil."),
+    recurringUntil: z
+      .string()
+      .optional()
+      .describe("Stop recurring after this date (YYYY-MM-DD, inclusive). Requires recurringDays."),
   },
   async (args) => {
     const storage = createGitHubStorage();
@@ -56,12 +66,18 @@ const addReminder = tool(
       triggerHour: args.triggerHour,
       message: args.message,
       context: args.context,
+      recurringDays: args.recurringDays,
+      recurringUntil: args.recurringUntil,
     });
+    const recurringInfo =
+      reminder.recurringDays && reminder.recurringUntil
+        ? `, recurring every ${reminder.recurringDays} day(s) until ${reminder.recurringUntil}`
+        : "";
     return {
       content: [
         {
           type: "text" as const,
-          text: `Reminder scheduled: ${reminder.message} for ${reminder.triggerDate} at ${reminder.triggerHour}:00 (id: ${reminder.id})`,
+          text: `Reminder scheduled: ${reminder.message} for ${reminder.triggerDate} at ${reminder.triggerHour}:00${recurringInfo} (id: ${reminder.id})`,
         },
       ],
     };
