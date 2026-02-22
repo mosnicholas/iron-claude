@@ -55,10 +55,11 @@ export function setupTestRepo(options: TestRepoOptions = {}): TestRepo {
   const currentWeek = getCurrentWeek();
   const today = getToday();
 
-  // Initialize git
+  // Initialize git (disable signing — test repos don't need it)
   execSync("git init", { cwd: repoPath, stdio: "pipe" });
   execSync('git config user.email "test@iron-claude.dev"', { cwd: repoPath, stdio: "pipe" });
   execSync('git config user.name "IronClaude Test"', { cwd: repoPath, stdio: "pipe" });
+  execSync("git config commit.gpgsign false", { cwd: repoPath, stdio: "pipe" });
 
   // Write base fixture files
   writeFileSync(join(repoPath, "profile.md"), options.profile || PROFILE);

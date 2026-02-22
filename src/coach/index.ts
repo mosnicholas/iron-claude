@@ -294,6 +294,8 @@ export class CoachAgent {
           "coach-tools": this.mcpServer,
         },
         env: {
+          PATH: process.env.PATH || "",
+          HOME: process.env.HOME || "",
           ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "",
           TIMEZONE: this.config.timezone,
         },
@@ -303,7 +305,8 @@ export class CoachAgent {
     try {
       for await (const message of q) {
         if (message.type === "assistant") {
-          responseText = extractTextFromMessage(message);
+          const text = extractTextFromMessage(message);
+          if (text) responseText = text;
           const tools = extractToolsFromMessage(message);
           toolsUsed.push(...tools);
           turnsUsed++;
