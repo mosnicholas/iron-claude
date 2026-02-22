@@ -681,6 +681,40 @@ Don't mix context and instructions in one big paragraph.
 | Confirmation before logging | Standard pattern | Missing | Add to prompt |
 | Error/correction flow | Standard pattern | Missing | Add to prompt |
 
+### Critical Research Findings: Why Claude Bots Get Confused
+
+These findings from the research explain *exactly* why IronClaude behaves the way it does:
+
+#### 1. The Over-Specified CLAUDE.md Problem
+
+> "If the instructions file is too long, Claude ignores half of it because important rules get lost in the noise. Frontier thinking LLMs can follow ~150-200 instructions with reasonable consistency."
+
+**IronClaude's system prompt contains far more than 200 instructions** — it has 8 reference guides, each with dozens of rules. The workout management guide alone has ~50 discrete instructions. Claude literally cannot attend to all of them simultaneously. This is why it follows the plan instead of listening to the user — "proactively suggest the next exercise from the plan" is one instruction competing with hundreds of others.
+
+**Fix**: Ruthlessly prune. If Claude already does something correctly without the instruction, delete it. Convert deterministic rules to code (hooks, validation scripts) rather than prompt instructions. The research found: "never send an LLM to do a linter's job."
+
+#### 2. Context Degradation ("Context Rot")
+
+> "Every token added competes for the model's attention. Stuff 100K tokens of history and the model's ability to reason about what matters degrades. Signal gets drowned by accumulation."
+
+IronClaude injects the FULL weekly plan, FULL PRs yaml, FULL learnings, FULL today's workout, AND all 8 reference guides into every single system prompt. Most of this context is noise for the current message. The model's attention on the current task degrades proportionally.
+
+**Fix**: The six-layer input model — treat the input as: system rules, memory, retrieved docs, tool schemas, recent conversation, current task. Keep each layer small and purposeful. Place the user's immediate request **at the end** of the context (models prioritize recency).
+
+#### 3. Race Conditions from Parallel Processing
+
+IronClaude processes messages with `processMessage(update, bot).catch()` — fire-and-forget async. If a user sends two messages rapidly (e.g., "bench 175x5" immediately followed by "that felt heavy"), both messages spawn separate `query()` calls that may try to write to the same workout file simultaneously. OpenClaw's research found this is "the default failure mode in concurrent agent systems."
+
+**Fix**: Implement a serial execution queue (like OpenClaw's Lane Queue). Messages within a session should execute one at a time. This is especially critical during workouts.
+
+#### 4. Explicit Uncertainty Permission
+
+> "Give Claude explicit permission to say 'I don't know.' This single instruction meaningfully reduces hallucinations."
+
+IronClaude's system prompt says "Don't make things up" but doesn't give *positive permission* to express uncertainty. For a fitness coaching context, this is especially important — Claude should be able to say "I'm not sure about that machine model, let me look it up" rather than guessing.
+
+**Fix**: Add to system prompt: "If you're unsure about an exercise, a piece of equipment, or a training concept, say so. It's better to admit uncertainty than give wrong fitness advice."
+
 ### Key Metrics to Track
 
 After implementing fixes, monitor:
@@ -689,3 +723,17 @@ After implementing fixes, monitor:
 - **Exercise accuracy**: Does the logged exercise match what the user reported? (Should be ~100%)
 - **Response latency**: How long does each response take? (Should decrease with tiered prompts)
 - **Successful workout completions**: What % of started workouts reach `status: completed`?
+
+### Sources
+
+Research drew from these projects and documentation:
+- [OpenClaw](https://github.com/openclaw/openclaw) — 140k stars, gateway architecture with Lane Queue, SOUL.md identity files
+- [NanoClaw](https://github.com/qwibitai/nanoclaw) — 10k stars, minimalist container-based isolation
+- [ClaudeClaw](https://github.com/moazbuilds/claudeclaw) — Lightweight OpenClaw variant, background daemon pattern
+- [claude-code-telegram](https://github.com/RichardAtCT/claude-code-telegram) — Session persistence, dual SDK strategy
+- [Anthropic: Effective Harnesses for Long-Running Agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
+- [Anthropic: Building Agents with the Claude Agent SDK](https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk)
+- [Anthropic: Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills)
+- [Claude Prompting Best Practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)
+- [Claude Context Windows](https://platform.claude.com/docs/en/build-with-claude/context-windows)
+- [Writing a Good CLAUDE.md](https://www.humanlayer.dev/blog/writing-a-good-claude-md)
