@@ -440,21 +440,22 @@ Use the save_memory tool with the most specific category that fits.
 
 **The problem**: IronClaude has slash commands (`/demo`, `/done`, `/help`, `/start`, `/restart`) that are rigid dispatchers. `/demo face pull` passes a hardcoded prompt to `agent.chat()` with `WebSearch` added. This is the opposite of the agentic approach — it's a fixed prompt template, not a skill the agent loads contextually.
 
-**The goal**: Move to a Claude Code-style skills model where capabilities are loaded contextually based on what the agent is doing, not triggered by explicit slash commands.
+**The goal**: Move to a Claude Code-style skills model where capabilities are loaded contextually based on what the agent is doing, not triggered by explicit slash commands. Kill all hardcoded commands except `/help`.
 
 **How Claude Code skills work**: Skills are prompt fragments that get loaded into the system prompt when relevant. They're not commands the user types — they're capabilities the agent activates. For example, Claude Code doesn't have a `/commit` command that runs a fixed script; it has a "commit" skill that loads commit guidelines into the prompt when it detects the user wants to commit.
 
-**The fix**: Convert commands to skills (prompt fragments loaded on demand).
+**The fix**: Delete all commands except `/help`. Replace their functionality with skills.
 
-**Current commands → skills mapping**:
+**Commands to delete**:
 
-| Current Command | Becomes Skill | How It's Triggered |
-|----------------|---------------|-------------------|
-| `/demo <exercise>` | `exercise-demo` skill | Agent detects user asking about exercise form/technique. Loads a prompt fragment with search instructions. |
-| `/done` | `workout-complete` skill | Agent detects user saying "done", "finished", "that's it" or mode has been `workout_active` and user signals completion. Loads completion/summary instructions. |
-| `/help` | Always available | Keep as a slash command — this is a meta-command, not a coaching skill. |
-| `/start` | Always available | Keep — initial greeting is a one-time event. |
-| `/restart` | Keep as admin command | Not a coaching skill. |
+| Deleted Command | Replaced By | Why |
+|----------------|-------------|-----|
+| `/demo <exercise>` | `exercise-demo` skill | "Show me how to do a face pull" triggers it naturally. No slash command needed. |
+| `/done` | `workout-complete` skill | "I'm done", "that's my workout", "finished" all trigger it. More natural than a command. |
+| `/start` | Core identity prompt | The greeting is just the agent responding to a first message. No special handler needed — the core prompt defines who the bot is. |
+| `/restart` | Removed entirely | Admin operation. If needed, restart via Fly.io dashboard or CLI, not via Telegram. |
+
+**Only `/help` survives**: It's a meta-command that describes available capabilities. It doesn't route to the agent — it returns a static help message. This is the one legitimate use of a slash command.
 
 **New skills to add**:
 
@@ -530,9 +531,7 @@ in your response and it will be available next message.
 
 For the initial implementation, use **path 1 only** (application-level hints). It's simpler, deterministic, and doesn't require the agent to "request" skills across messages. Path 2 is a future enhancement if we find the hint patterns too limiting.
 
-**What happens to `/demo`**: It still works as a slash command for backwards compatibility, but it just activates the `exercise-demo` skill. More importantly, if the user says "show me how to do a face pull" without using `/demo`, the skill triggers automatically.
-
-**What happens to `/done`**: Same — still works as a command, but "I'm done" or "that's my workout" also triggers the `workout-complete` skill.
+**What happens if someone types `/demo`?**: Unknown command. The `/help` text will explain that they can just ask naturally — "show me how to do a face pull" — and the bot will search for demos. No backwards compatibility shim. Clean break.
 
 **Why this stays simple**: We're not building a plugin system or dynamic loader. Skills are static TypeScript objects — prompt fragments with optional tool additions. The "routing" is regex pattern matching on the user's message, with a fallback of the agent always having the skill menu in context. No new dependencies, no new abstractions beyond a `skills.ts` file.
 
@@ -616,8 +615,7 @@ Fixes 7-9 are tightly coupled and should ship together.
 ### Phase 3: Skills & Memories (Medium Effort, High Polish)
 
 10. **Fix 10**: Enhanced memory categories + fitness-specific memory instructions
-11. **Fix 11**: Skills system — convert `/demo` and `/done` to skills, add `exercise-lookup`, `progress-check`, `plan-adjustment` skills
-12. Deprecate `/demo` (keep working but skill triggers automatically)
+11. **Fix 11**: Skills system — delete `/demo`, `/done`, `/start`, `/restart`. Only `/help` survives. Add `exercise-demo`, `workout-complete`, `exercise-lookup`, `progress-check`, `plan-adjustment` skills with trigger patterns.
 
 **Expected impact**: Bot remembers user preferences proactively. Capabilities load contextually instead of requiring slash commands. More natural interaction.
 
@@ -640,7 +638,7 @@ Fixes 7-9 are tightly coupled and should ship together.
 | `src/coach/prompts.ts` | Accept `mode` parameter. Load guides conditionally based on mode. Inject session state as `<current-session-state>` XML block. Inject activated skill prompt fragments. Add `<available-skills>` menu to base prompt. |
 | `src/coach/tools.ts` | Add fitness-specific memory categories (`exercise_note`, `weight_note`, `recovery`, `equipment`). |
 | `src/handlers/webhook.ts` | Add message serialization queue. Read session state to determine mode (with 2hr expiry check) before calling agent. |
-| `src/bot/commands.ts` | `/demo` delegates to exercise-demo skill. `/done` delegates to workout-complete skill. Both still work as slash commands for backwards compat. |
+| `src/bot/commands.ts` | Delete all command handlers except `/help`. Strip the COMMANDS map down to `{ help: handleHelp }`. The `handleHelp` response text is rewritten to describe capabilities naturally (not as slash commands). |
 | `prompts/system.md` | Trim to ~120 lines. Add XML structure tags. Add example conversation. Add uncertainty permission. Add investigation mandate. Reduce priority markers. Add `<memory-instructions>` for proactive saving. Add `<available-skills>` menu. |
 | `prompts/partials/workout-management.md` | Rewrite "guide to next exercise" section to be user-biased. Add session state update instructions with push-after-each-exercise. |
 | `prompts/partials/exercise-parsing.md` | Add plate math table. Add retroactive set handling. |
@@ -656,7 +654,8 @@ Fixes 7-9 are tightly coupled and should ship together.
 
 - Remove ~50% of `CRITICAL`/`IMPORTANT`/`ABSOLUTE RULE` markers from all prompt files
 - Remove the `plan-flexibility.md` partial (fold the key insight — "user can deviate from plan" — into the rewritten `workout-management.md`)
-- Eventually deprecate `/demo` command handler (keep for backwards compat, but skill handles it)
+- **Delete all command handlers** in `src/bot/commands.ts` except `handleHelp`: remove `handleDemo`, `handleDone`, `handleStart`, `handleRestart` and all their supporting code (slow command detection, command-specific loading messages, etc.)
+- Remove command routing logic from `src/handlers/webhook.ts` — unknown commands pass through to the agent like any other message (the agent can handle "/demo face pull" via the exercise-demo skill even without a command handler)
 
 ---
 
