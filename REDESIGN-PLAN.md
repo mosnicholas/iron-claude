@@ -482,3 +482,108 @@ The core problem isn't the prompts — it's the architecture. IronClaude is buil
 4. **Smart routing** (classify before sending to LLM)
 
 The prompts are actually well-written — they're just too many instructions all at once. The model can't focus when it has 1300 lines of CRITICAL instructions for every "175x5" message.
+
+---
+
+## Part 8: Research-Backed Patterns (From Anthropic Docs & Academic Research)
+
+The following findings from Anthropic's official documentation, engineering blog posts, and academic research directly validate and extend the recommendations above.
+
+### Finding 1: LLMs Lose 39% Performance in Multi-Turn Conversations
+**Source**: ["LLMs Get Lost In Multi-Turn Conversation" (Microsoft Research, 2025)](https://arxiv.org/abs/2505.06120)
+
+Research shows models exhibit a **39% average performance drop** in multi-turn vs single-turn interactions. Once models take a wrong turn, they tend not to recover. This is exactly the "confusion" problem — the bot makes an incorrect assumption about which exercise is being discussed and then doubles down.
+
+**Mitigation**: Re-inject current state as a structured summary at the top of each API call. The model anchors to structured data more reliably than conversation flow.
+
+### Finding 2: Cumulative State Summary Pattern
+**Source**: [Anthropic — Effective Context Engineering for AI Agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+
+Anthropic recommends injecting a short "game state summary" before each user message:
+
+```
+[Session State: Upper body workout in progress. Logged: Bench Press 3x5@185
+(RPE 8), OHP 2x8@95 (RPE 7). Pending: 1 more set of OHP, then rows.]
+```
+
+This anchors the model regardless of how messy the conversation gets. This is the single most impactful pattern for the workout tracking use case.
+
+### Finding 3: Context Editing Reduces Token Usage 84%
+**Source**: [Anthropic — Context Management](https://www.anthropic.com/news/context-management)
+
+Anthropic's `clear_tool_uses` strategy automatically clears old tool results from context when it grows beyond a threshold. In a 100-turn evaluation, this reduced token consumption by 84% while enabling workflows that would otherwise fail. The insight: **older tool results are rarely needed once processed — replace them with placeholders.**
+
+For IronClaude, this means the bot doesn't need to keep every file read result in the conversation — just the current state summary.
+
+### Finding 4: Agent-Computer Interface (ACI) Design
+**Source**: [Anthropic — Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)
+
+Anthropic emphasizes investing in your "Agent-Computer Interface" as much as your human-computer interface:
+- **Use absolute references** — Anthropic found that switching from relative to absolute filepaths eliminated an entire class of model errors (the "poka-yoke" principle)
+- **Choose natural formats** — avoid unnecessary complexity
+- **Write thorough tool descriptions** including example usage and edge cases
+
+### Finding 5: Investigate Before Answering
+**Source**: [Anthropic — Prompt Engineering Best Practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)
+
+From Anthropic's own prompting best practices for agent-style systems:
+
+```xml
+<investigate_before_answering>
+Never speculate about data you have not opened. If the user references a
+specific file, you MUST read the file before answering.
+</investigate_before_answering>
+```
+
+For IronClaude: the bot should ALWAYS read the workout file before claiming what exercises were completed. Currently it sometimes guesses from memory, which is what causes the hallucinated summaries.
+
+### Finding 6: Allow Uncertainty Explicitly
+**Source**: [Anthropic Docs — Be Clear and Direct](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/be-clear-and-direct)
+
+Give Claude explicit permission to express uncertainty rather than guessing. This single technique significantly reduces hallucinations. Add to the system prompt:
+
+```
+If you are not sure about an exercise, weight, or rep count, ask rather
+than guess. Accuracy matters more than speed for progressive overload tracking.
+```
+
+This directly addresses Bug 3 (wrong machine identification) — the bot guessed instead of saying "I don't know."
+
+### Finding 7: The Five Workflow Patterns
+**Source**: [Anthropic — Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)
+
+Anthropic identifies five composable patterns. The most relevant for IronClaude:
+
+| Pattern | Application |
+|---------|-------------|
+| **Routing** | Classify message type (exercise, question, commentary) before processing |
+| **Prompt Chaining** | Parse input → validate → store → generate feedback (with verification gates) |
+| **Orchestrator-Workers** | Weekly retro: delegate volume analysis, PR check, fatigue analysis to sub-tasks |
+
+The current architecture uses none of these — everything goes through one monolithic path.
+
+### Finding 8: Start Simple, Add Complexity Only When Needed
+**Source**: [Anthropic — Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)
+
+> "Frameworks hide complexity and make debugging harder. Incorrect assumptions about what's under the hood are a common source of customer error."
+
+The Agent SDK's `query()` is actually MORE complex than needed for a chat bot. A direct `messages` API call with a maintained message array would be simpler, more transparent, and give more control over the conversation flow.
+
+### Finding 9: Extended Thinking for Complex Operations
+**Source**: [Anthropic — Chain of Thought](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/chain-of-thought)
+
+Use adaptive thinking (`thinking: {"type": "adaptive"}`) for complex operations (weekly planning, progress analysis) and skip it for simple operations (logging sets). This matches the mode-based architecture — workout mode doesn't need deep reasoning, but planning mode does.
+
+### Sources
+
+- [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)
+- [Anthropic: Building Agents with the Claude Agent SDK](https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk)
+- [Anthropic: Effective Context Engineering for AI Agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+- [Claude Prompting Best Practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)
+- [Claude Tool Use Overview](https://platform.claude.com/docs/en/docs/agents-and-tools/tool-use/overview)
+- [Claude Chain of Thought](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/chain-of-thought)
+- [Claude Structured Outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+- [Claude Context Windows](https://platform.claude.com/docs/en/build-with-claude/context-windows)
+- [Anthropic Cookbook: Agent Patterns](https://github.com/anthropics/anthropic-cookbook/tree/main/patterns/agents)
+- [LLMs Get Lost In Multi-Turn Conversation (Microsoft Research)](https://arxiv.org/abs/2505.06120)
+- [Anthropic Context Management](https://www.anthropic.com/news/context-management)
