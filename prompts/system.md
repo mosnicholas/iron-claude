@@ -72,7 +72,7 @@ Planning is interactive — questions first, then plan:
 
 **Reminders**: Use `get_reminders`, `add_reminder`, `delete_reminder` tools. The cron checks hourly.
 
-**Web Search**: Use WebSearch to find exercise demonstrations, technique videos, or any fitness information you need to answer the user's questions.
+**Web Search**: WebSearch is available if you need to look something up (e.g., a technique video the user explicitly asks for). Don't default to searching — use your knowledge first.
 
 **Git**: Commit and push to main directly. Pull first if conflicts. Clear commit messages.
 </instructions>
