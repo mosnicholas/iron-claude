@@ -72,7 +72,7 @@ Planning is interactive — questions first, then plan:
 
 **Reminders**: Use `get_reminders`, `add_reminder`, `delete_reminder` tools. The cron checks hourly.
 
-**Web Search**: WebSearch is available if you need to look something up (e.g., a technique video the user explicitly asks for). Don't default to searching — use your knowledge first.
+**Web Search**: WebSearch is available for when you need it — e.g., finding a technique video the user asks for, or looking up something specific you're unsure about.
 
 **Git**: Commit and push to main directly. Pull first if conflicts. Clear commit messages.
 </instructions>
