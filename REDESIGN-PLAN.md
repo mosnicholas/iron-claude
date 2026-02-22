@@ -122,14 +122,17 @@ The problem isn't that Claude is dumb — it's that Claude is smart but blind. E
 
 **How it works**:
 1. When a workout starts, the agent creates `state/session.json` with the plan's exercises
-2. After each exercise/set is logged, the agent updates this file (via its normal tool use — Write tool)
+2. After each exercise/set is logged, the agent updates this file AND pushes to GitHub (via its normal tool use — Write tool + git commit). This is the crash-safety mechanism — every exercise logged is a checkpoint.
 3. This file is **injected into the system prompt** as `<current-session-state>` on every message
-4. On crash/restart, the file is read from GitHub — full state recovery
+4. On crash/restart, the file is read from GitHub — full state recovery from the last logged exercise
 5. When the workout ends, the file is cleared (mode → "idle")
+6. Session expires after 2 hours of inactivity (application code checks `lastUpdated` timestamp)
 
 **Why this works with the agentic approach**: Claude already writes files as part of its workflow. We're just asking it to write one more small file. The structured JSON is injected into its context on the next message, so it always knows exactly where things stand. No application-level parsing needed.
 
 **Key design decision**: This file lives in the fitness-data repo (GitHub-persisted), not in `/tmp/`. A Fly.io restart loses `/tmp/` but the GitHub file survives. The tradeoff is a GitHub API call to read it, but we're already making GitHub calls to read the workout file anyway.
+
+**Session timeout**: The application code checks `lastUpdated` on read. If more than 2 hours have passed, it treats the session as expired and resets mode to "idle." This is a simple timestamp comparison — no background timers needed, which means it survives crashes.
 
 **Instructions to add to the prompt**:
 ```
@@ -137,6 +140,7 @@ After every exercise you log or modify, update state/session.json to reflect
 the current workout state. This file is your memory between messages — keep
 it accurate. Include: exercises completed (with sets/reps/weight), exercises
 skipped, current exercise, current set number, and planned exercises remaining.
+Commit and push after each update — this is your crash-safe checkpoint.
 ```
 
 ### Fix 2: Mode-Based Prompt Assembly (High Priority)
@@ -385,6 +389,153 @@ model: config.model || "claude-sonnet-4-6-20250929"
 
 Sonnet 4.6 is better at following nuanced instructions, less prone to over-specified prompt confusion, and more naturally conversational. Combined with the prompt trimming, this should noticeably improve response quality.
 
+### Fix 10: Proactive Fitness Memories (Medium Priority)
+
+**The problem**: The `save_memory` MCP tool exists and writes to `learnings.md`, but it's passive — Claude only saves memories when it "decides" to, and the categories are generic (`preference`, `goal`, `injury`, `schedule`, `feedback`, `insight`). The user wants fitness-specific observations to be captured proactively: "this exercise is boring," "that felt easy," "I want more weight," etc.
+
+**What exists today**: `save_memory` in `src/coach/tools.ts` calls `appendToLearnings()` which appends dated entries under category headers in `learnings.md`. The file is loaded into the system prompt on every message via the `<learnings>` section.
+
+**The fix**: Two changes — better prompt instructions for when to save, and fitness-specific memory categories.
+
+**1. Add fitness-specific categories** to `src/coach/tools.ts`:
+
+```typescript
+const MEMORY_CATEGORIES = [
+  // Existing
+  "preference",    // Training likes/dislikes
+  "goal",         // Targets they want to hit
+  "injury",       // Pain/limitations
+  "schedule",     // Availability changes
+  "feedback",     // How they want to be coached
+  "insight",      // Patterns you notice
+  // New fitness-specific
+  "exercise_note", // "bench felt easy", "hate leg press", "want to try RDLs"
+  "weight_note",   // "185 felt heavy today", "ready to move up on OHP"
+  "recovery",      // "slept badly", "shoulder is sore", "feeling strong today"
+  "equipment",     // "gym got new cable machine", "prefer dumbbells for rows"
+] as const;
+```
+
+**2. Add proactive memory instructions** to the base system prompt:
+
+```
+<memory-instructions>
+Save a memory whenever the athlete says something worth remembering across sessions:
+- Exercise opinions: "bench is boring", "love RDLs", "hate leg press"
+- Weight/difficulty notes: "185 felt easy", "struggled with 95 on OHP"
+- Recovery signals: "slept terribly", "shoulder is bugging me", "feeling great"
+- Equipment preferences: "prefer dumbbells for rows", "the hack squat machine is broken"
+- Training preferences: "want more volume", "let's do supersets", "keep rest periods short"
+
+Don't ask permission — just save it. These memories inform future programming.
+Use the save_memory tool with the most specific category that fits.
+</memory-instructions>
+```
+
+**3. Add memory context to session state**: When building the prompt, include a short summary of relevant memories for the current workout type. For example, if it's an upper body day, surface memories tagged with upper body exercises. This is done by filtering `learnings.md` entries in `buildSystemPrompt()` — not a vector search, just simple string matching against the current plan's exercise names.
+
+**Why this stays simple**: We're not building a RAG system or embedding store. `learnings.md` is a flat file that gets injected into the prompt. The changes are: (a) better categories, (b) explicit prompt instructions to save proactively, (c) optional filtering to surface relevant memories. Claude already has the tool — we just need to tell it to use it more aggressively.
+
+### Fix 11: Skills System — Replace Structured Commands (Medium Priority)
+
+**The problem**: IronClaude has slash commands (`/demo`, `/done`, `/help`, `/start`, `/restart`) that are rigid dispatchers. `/demo face pull` passes a hardcoded prompt to `agent.chat()` with `WebSearch` added. This is the opposite of the agentic approach — it's a fixed prompt template, not a skill the agent loads contextually.
+
+**The goal**: Move to a Claude Code-style skills model where capabilities are loaded contextually based on what the agent is doing, not triggered by explicit slash commands.
+
+**How Claude Code skills work**: Skills are prompt fragments that get loaded into the system prompt when relevant. They're not commands the user types — they're capabilities the agent activates. For example, Claude Code doesn't have a `/commit` command that runs a fixed script; it has a "commit" skill that loads commit guidelines into the prompt when it detects the user wants to commit.
+
+**The fix**: Convert commands to skills (prompt fragments loaded on demand).
+
+**Current commands → skills mapping**:
+
+| Current Command | Becomes Skill | How It's Triggered |
+|----------------|---------------|-------------------|
+| `/demo <exercise>` | `exercise-demo` skill | Agent detects user asking about exercise form/technique. Loads a prompt fragment with search instructions. |
+| `/done` | `workout-complete` skill | Agent detects user saying "done", "finished", "that's it" or mode has been `workout_active` and user signals completion. Loads completion/summary instructions. |
+| `/help` | Always available | Keep as a slash command — this is a meta-command, not a coaching skill. |
+| `/start` | Always available | Keep — initial greeting is a one-time event. |
+| `/restart` | Keep as admin command | Not a coaching skill. |
+
+**New skills to add**:
+
+| Skill | Trigger | What It Loads |
+|-------|---------|---------------|
+| `progress-check` | User asks "how's my bench?", "am I improving?", "show my PRs" | Historical data guide + PR detection + analysis instructions |
+| `plan-adjustment` | User says "swap bench for incline this week", "can we add more volume?" | Plan flexibility guide + current plan context |
+| `exercise-lookup` | User asks about an exercise, machine, or technique | WebSearch tool + search instructions for reputable sources |
+
+**Implementation approach** — keep it simple:
+
+```typescript
+// src/coach/skills.ts
+interface Skill {
+  name: string;
+  description: string;           // For logging/debugging
+  promptFragment: string;        // The prompt text to inject
+  additionalTools?: string[];    // Tools to add (e.g., WebSearch)
+  triggerPatterns?: RegExp[];    // Optional: hint patterns for the application layer
+}
+
+const SKILLS: Record<string, Skill> = {
+  "exercise-demo": {
+    name: "exercise-demo",
+    description: "Find exercise demonstrations and technique cues",
+    promptFragment: `When the user asks about exercise form or technique, search for quality
+instructional content from reputable sources (Jeff Nippard, AthleanX, Renaissance
+Periodization, etc). Provide the video link and key technique cues.`,
+    additionalTools: ["WebSearch"],
+  },
+  "workout-complete": {
+    name: "workout-complete",
+    description: "Complete and summarize a workout",
+    promptFragment: `The user is finishing their workout. Generate a completion summary:
+1. List all exercises completed with sets/reps/weight
+2. Note any PRs hit
+3. Note any exercises skipped from the plan
+4. Brief coaching note (what went well, what to watch)
+5. Update the workout file status to "completed"
+6. Clear state/session.json (set mode to "idle")`,
+  },
+  "exercise-lookup": {
+    name: "exercise-lookup",
+    description: "Look up exercise or equipment information",
+    promptFragment: `The user is asking about an exercise, machine, or training concept.
+Use WebSearch to find accurate information. Prefer reputable fitness sources.
+If you can't find reliable info, say so rather than guessing.`,
+    additionalTools: ["WebSearch"],
+  },
+  // ... etc
+};
+```
+
+**How skills get activated** — two paths:
+
+1. **Application-level hints** (simple, fast): Before calling `query()`, check for obvious patterns. If the user message matches a skill's `triggerPatterns`, inject that skill's `promptFragment` into the system prompt and add its `additionalTools`. This is NOT a message classifier — it's a lightweight hint system. If no pattern matches, that's fine — the agent works without it.
+
+2. **Agent self-activation** (powerful, agentic): List available skills and their descriptions in the base system prompt. Let the agent decide which skill to activate by including a brief skill menu:
+
+```
+<available-skills>
+You have access to these skills. When relevant, their instructions are already
+loaded into your context. If you need a skill that isn't loaded, mention it
+in your response and it will be available next message.
+
+- exercise-demo: Find exercise demonstrations and technique videos
+- exercise-lookup: Look up exercise or equipment information (requires web search)
+- progress-check: Analyze training progress and trends
+- plan-adjustment: Modify the current week's training plan
+- workout-complete: Summarize and finalize a workout session
+</available-skills>
+```
+
+For the initial implementation, use **path 1 only** (application-level hints). It's simpler, deterministic, and doesn't require the agent to "request" skills across messages. Path 2 is a future enhancement if we find the hint patterns too limiting.
+
+**What happens to `/demo`**: It still works as a slash command for backwards compatibility, but it just activates the `exercise-demo` skill. More importantly, if the user says "show me how to do a face pull" without using `/demo`, the skill triggers automatically.
+
+**What happens to `/done`**: Same — still works as a command, but "I'm done" or "that's my workout" also triggers the `workout-complete` skill.
+
+**Why this stays simple**: We're not building a plugin system or dynamic loader. Skills are static TypeScript objects — prompt fragments with optional tool additions. The "routing" is regex pattern matching on the user's message, with a fallback of the agent always having the skill menu in context. No new dependencies, no new abstractions beyond a `skills.ts` file.
+
 ---
 
 ## Part 4: What We Considered and Rejected
@@ -413,7 +564,7 @@ My original plan proposed classifying messages (exercise_input, question, comman
 
 The other plan proposed `let activeSession: WorkoutSession | null = null` — a pure in-memory session object.
 
-**Why we rejected it**: Fly.io can restart the process at any time. In-memory state is lost. For a workout that lasts 45-90 minutes, a crash mid-session would lose all state. By persisting to GitHub (which we already do for the workout file), we get crash recovery for free. The tradeoff is one additional GitHub API call per message to read `state/session.json`, but we're already making GitHub calls for the workout file, plan, and PRs.
+**Why we rejected it**: Fly.io can restart the process at any time. In-memory state is lost. For a workout that can last up to 2 hours, a crash mid-session would lose all state. By persisting to GitHub (which we already do for the workout file), we get crash recovery for free. The tradeoff is one additional GitHub API call per message to read `state/session.json`, but we're already making GitHub calls for the workout file, plan, and PRs.
 
 ### Rejected: OpenClaw-Style Architecture (Lane Queue, SOUL.md, Container Isolation)
 
@@ -445,28 +596,37 @@ These can ship today. They fix real bugs with no risk.
 
 1. **Fix 5**: Rewrite plan-biased instructions in `workout-management.md`
 2. **Fix 6**: Add plate math and retroactive sets to `exercise-parsing.md`
-3. **Fix 8**: Trim base system prompt — fewer priority markers, add examples, add uncertainty permission, add investigation mandate
+3. **Fix 8**: Trim base system prompt — fewer priority markers, add examples, add uncertainty permission, add investigation mandate, add proactive memory instructions
 
-**Expected impact**: Bug 1 (exercise confusion) and Bug 5 (plate math) directly addressed. Bug 4 (stiffness) partially addressed.
+**Expected impact**: Bug 1 (exercise confusion) and Bug 5 (plate math) directly addressed. Bug 4 (stiffness) partially addressed. Memories start being captured proactively.
 
-### Phase 2: Architecture Changes (Medium Effort, High Impact)
+### Phase 2: Core Architecture (Medium Effort, High Impact)
 
 4. **Fix 9**: Upgrade to Sonnet 4.6 (one-line change, but test thoroughly)
 5. **Fix 7**: Enable WebSearch (one-line change)
-6. **Fix 4**: Message serialization queue (10 lines of code)
+6. **Fix 4**: Message serialization queue (~10 lines of code)
 7. **Fix 2**: Mode-based prompt assembly (refactor `buildSystemPrompt()`)
-8. **Fix 1**: Structured session state file (`state/session.json`)
+8. **Fix 1**: Structured session state file (`state/session.json`) with 2hr timeout
 9. **Fix 3**: Inject session state into system prompt
 
 Fixes 7-9 are tightly coupled and should ship together.
 
-**Expected impact**: All bugs addressed. 40-100% reduction in prompt size. Crash-safe state persistence. No more race conditions.
+**Expected impact**: All bugs addressed. 40-100% reduction in prompt size. Crash-safe state with per-exercise checkpointing. No more race conditions.
 
-### Phase 3: Polish (If Needed After Phase 1-2)
+### Phase 3: Skills & Memories (Medium Effort, High Polish)
 
-10. Enrich message history with structured metadata (if session state alone isn't enough)
-11. Add adaptive thinking (enable for planning/retro, skip for workout logging)
-12. Add confirmation flow for ambiguous inputs (prompt-level, not code-level)
+10. **Fix 10**: Enhanced memory categories + fitness-specific memory instructions
+11. **Fix 11**: Skills system — convert `/demo` and `/done` to skills, add `exercise-lookup`, `progress-check`, `plan-adjustment` skills
+12. Deprecate `/demo` (keep working but skill triggers automatically)
+
+**Expected impact**: Bot remembers user preferences proactively. Capabilities load contextually instead of requiring slash commands. More natural interaction.
+
+### Phase 4: Future Polish (If Needed)
+
+13. Enrich message history with structured metadata (if session state alone isn't enough)
+14. Add adaptive thinking (enable for planning/retro, skip for workout logging)
+15. Agent self-activation of skills (path 2 from Fix 11 — agent requests skills across messages)
+16. Memory relevance filtering (surface only memories related to today's workout type)
 
 ---
 
@@ -476,23 +636,27 @@ Fixes 7-9 are tightly coupled and should ship together.
 
 | File | Changes |
 |------|---------|
-| `src/coach/index.ts` | Change default model to `claude-sonnet-4-6-20250929`. Add `WebSearch` to `allowedTools`. Read `state/session.json` in `runQuery()` context pre-loading. |
-| `src/coach/prompts.ts` | Accept `mode` parameter. Load guides conditionally based on mode. Inject session state as `<current-session-state>` XML block. |
-| `src/handlers/webhook.ts` | Add message serialization queue. Read session state to determine mode before calling agent. |
-| `prompts/system.md` | Trim to ~120 lines. Add XML structure tags. Add example conversation. Add uncertainty permission. Add investigation mandate. Reduce priority markers. |
-| `prompts/partials/workout-management.md` | Rewrite "guide to next exercise" section to be user-biased. Add session state update instructions. |
+| `src/coach/index.ts` | Change default model to `claude-sonnet-4-6-20250929`. Add `WebSearch` to `allowedTools`. Read `state/session.json` in `runQuery()` context pre-loading. Activate skills based on message patterns. |
+| `src/coach/prompts.ts` | Accept `mode` parameter. Load guides conditionally based on mode. Inject session state as `<current-session-state>` XML block. Inject activated skill prompt fragments. Add `<available-skills>` menu to base prompt. |
+| `src/coach/tools.ts` | Add fitness-specific memory categories (`exercise_note`, `weight_note`, `recovery`, `equipment`). |
+| `src/handlers/webhook.ts` | Add message serialization queue. Read session state to determine mode (with 2hr expiry check) before calling agent. |
+| `src/bot/commands.ts` | `/demo` delegates to exercise-demo skill. `/done` delegates to workout-complete skill. Both still work as slash commands for backwards compat. |
+| `prompts/system.md` | Trim to ~120 lines. Add XML structure tags. Add example conversation. Add uncertainty permission. Add investigation mandate. Reduce priority markers. Add `<memory-instructions>` for proactive saving. Add `<available-skills>` menu. |
+| `prompts/partials/workout-management.md` | Rewrite "guide to next exercise" section to be user-biased. Add session state update instructions with push-after-each-exercise. |
 | `prompts/partials/exercise-parsing.md` | Add plate math table. Add retroactive set handling. |
 
 ### New Files
 
 | File | Purpose |
 |------|---------|
-| `src/state/session.ts` | TypeScript types for session state. Helper functions: `readSessionState()`, `getMode()`. Reads from GitHub, returns typed object. |
+| `src/state/session.ts` | TypeScript types for session state. Helper functions: `readSessionState()`, `getMode()`, `isSessionExpired()`. Reads from GitHub, returns typed object. 2-hour timeout check on `lastUpdated`. |
+| `src/coach/skills.ts` | Skill definitions: prompt fragments, additional tools, trigger patterns. Static registry of all skills. |
 
 ### Deleted/Removed Content
 
 - Remove ~50% of `CRITICAL`/`IMPORTANT`/`ABSOLUTE RULE` markers from all prompt files
 - Remove the `plan-flexibility.md` partial (fold the key insight — "user can deviate from plan" — into the rewritten `workout-management.md`)
+- Eventually deprecate `/demo` command handler (keep for backwards compat, but skill handles it)
 
 ---
 
@@ -513,6 +677,12 @@ After implementing, verify these scenarios:
 | 9 | Web search | Ask about a specific machine model. Bot searches and gives real info. |
 | 10 | Crash recovery | Kill process mid-workout, restart. Bot picks up from `state/session.json`. |
 | 11 | Rapid messages | Send 3 messages in 2 seconds. All process in order, no file corruption. |
+| 12 | Session timeout | Start workout, wait 2+ hours, send message. Bot treats it as new session, not stale workout. |
+| 13 | Proactive memory | Say "bench felt really easy today." Bot saves a memory without being asked. Check `learnings.md`. |
+| 14 | Memory recall | Next session, bot references the saved "bench felt easy" memory when programming bench weight. |
+| 15 | Skill: exercise lookup | Say "what muscles does the CF3356 machine work?" (no /demo). Bot searches the web and answers. |
+| 16 | Skill: workout complete | Say "that's my workout" (no /done). Bot generates completion summary. |
+| 17 | Skill: progress check | Say "how's my bench progressing?" Bot loads historical data and analyzes trends. |
 
 ---
 
@@ -526,6 +696,8 @@ After implementing, verify these scenarios:
 | Prompt size | Token count of system prompt | 40-60% reduction in workout mode |
 | Response latency | Time from message to response | Decrease (smaller prompt = faster) |
 | Crash recovery | Does state survive restart? | 100% |
+| Memory capture rate | Does the bot save relevant observations? | Most fitness observations captured |
+| Skill activation | Do skills trigger without slash commands? | Natural language triggers work reliably |
 
 ---
 
