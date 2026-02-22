@@ -453,9 +453,9 @@ Use the save_memory tool with the most specific category that fits.
 | `/demo <exercise>` | `exercise-demo` skill | "Show me how to do a face pull" triggers it naturally. No slash command needed. |
 | `/done` | `workout-complete` skill | "I'm done", "that's my workout", "finished" all trigger it. More natural than a command. |
 | `/start` | Core identity prompt | The greeting is just the agent responding to a first message. No special handler needed — the core prompt defines who the bot is. |
-| `/restart` | Removed entirely | Admin operation. If needed, restart via Fly.io dashboard or CLI, not via Telegram. |
+| `/restart` | Kept as admin command | Stays — useful for quick server restarts without leaving Telegram. |
 
-**Only `/help` survives**: It's a meta-command that describes available capabilities. It doesn't route to the agent — it returns a static help message. This is the one legitimate use of a slash command.
+**Only `/help` and `/restart` survive**: `/help` describes available capabilities. `/restart` is an admin escape hatch. Neither routes to the agent — they're infrastructure commands, not coaching skills.
 
 **New skills to add**:
 
@@ -615,7 +615,7 @@ Fixes 7-9 are tightly coupled and should ship together.
 ### Phase 3: Skills & Memories (Medium Effort, High Polish)
 
 10. **Fix 10**: Enhanced memory categories + fitness-specific memory instructions
-11. **Fix 11**: Skills system — delete `/demo`, `/done`, `/start`, `/restart`. Only `/help` survives. Add `exercise-demo`, `workout-complete`, `exercise-lookup`, `progress-check`, `plan-adjustment` skills with trigger patterns.
+11. **Fix 11**: Skills system — delete `/demo`, `/done`, `/start`. Keep `/help` and `/restart`. Add `exercise-demo`, `workout-complete`, `exercise-lookup`, `progress-check`, `plan-adjustment` skills with trigger patterns.
 
 **Expected impact**: Bot remembers user preferences proactively. Capabilities load contextually instead of requiring slash commands. More natural interaction.
 
@@ -638,7 +638,7 @@ Fixes 7-9 are tightly coupled and should ship together.
 | `src/coach/prompts.ts` | Accept `mode` parameter. Load guides conditionally based on mode. Inject session state as `<current-session-state>` XML block. Inject activated skill prompt fragments. Add `<available-skills>` menu to base prompt. |
 | `src/coach/tools.ts` | Add fitness-specific memory categories (`exercise_note`, `weight_note`, `recovery`, `equipment`). |
 | `src/handlers/webhook.ts` | Add message serialization queue. Read session state to determine mode (with 2hr expiry check) before calling agent. |
-| `src/bot/commands.ts` | Delete all command handlers except `/help`. Strip the COMMANDS map down to `{ help: handleHelp }`. The `handleHelp` response text is rewritten to describe capabilities naturally (not as slash commands). |
+| `src/bot/commands.ts` | Delete all command handlers except `/help` and `/restart`. Strip the COMMANDS map down to `{ help: handleHelp, restart: handleRestart }`. The `handleHelp` response text is rewritten to describe capabilities naturally (not as slash commands). |
 | `prompts/system.md` | Trim to ~120 lines. Add XML structure tags. Add example conversation. Add uncertainty permission. Add investigation mandate. Reduce priority markers. Add `<memory-instructions>` for proactive saving. Add `<available-skills>` menu. |
 | `prompts/partials/workout-management.md` | Rewrite "guide to next exercise" section to be user-biased. Add session state update instructions with push-after-each-exercise. |
 | `prompts/partials/exercise-parsing.md` | Add plate math table. Add retroactive set handling. |
@@ -654,7 +654,7 @@ Fixes 7-9 are tightly coupled and should ship together.
 
 - Remove ~50% of `CRITICAL`/`IMPORTANT`/`ABSOLUTE RULE` markers from all prompt files
 - Remove the `plan-flexibility.md` partial (fold the key insight — "user can deviate from plan" — into the rewritten `workout-management.md`)
-- **Delete all command handlers** in `src/bot/commands.ts` except `handleHelp`: remove `handleDemo`, `handleDone`, `handleStart`, `handleRestart` and all their supporting code (slow command detection, command-specific loading messages, etc.)
+- **Delete command handlers** in `src/bot/commands.ts`: remove `handleDemo`, `handleDone`, `handleStart` and their supporting code (slow command detection for demo/done, command-specific loading messages). Keep `handleHelp` and `handleRestart`.
 - Remove command routing logic from `src/handlers/webhook.ts` — unknown commands pass through to the agent like any other message (the agent can handle "/demo face pull" via the exercise-demo skill even without a command handler)
 
 ---
