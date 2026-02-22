@@ -49,6 +49,8 @@ export interface CoachConfig {
   model?: string;
   timezone?: string;
   maxTurns?: number;
+  /** Override repo path for testing — skips GitHub sync and git push */
+  repoPath?: string;
 }
 
 export interface CoachResponse {
@@ -66,19 +68,27 @@ export interface QueryOptions {
 }
 
 export class CoachAgent {
-  private config: Required<CoachConfig>;
+  private config: Required<Omit<CoachConfig, "repoPath">> & { repoPath?: string };
   private repoPath: string | null = null;
-  private mcpServer = createCoachToolsServer();
+  private mcpServer: ReturnType<typeof createCoachToolsServer> | null = null;
 
   constructor(config: CoachConfig = {}) {
     this.config = {
       model: config.model || "claude-sonnet-4-6",
       timezone: config.timezone || getTimezone(),
       maxTurns: config.maxTurns || 25,
+      repoPath: config.repoPath,
     };
+    // Defer MCP server creation to runQuery so we know the repo path
   }
 
   private async ensureRepoSynced(): Promise<string> {
+    // Test mode: use provided path directly (no GitHub sync needed)
+    if (this.config.repoPath) {
+      this.repoPath = this.config.repoPath;
+      return this.repoPath;
+    }
+
     if (!this.repoPath) {
       const repoName = process.env.DATA_REPO;
       const token = process.env.GITHUB_TOKEN;
@@ -204,6 +214,11 @@ export class CoachAgent {
   ): Promise<CoachResponse> {
     const repoPath = await this.ensureRepoSynced();
     const gitBinaryPath = getGitBinaryPath();
+
+    // Create MCP server lazily so it gets the correct repo path
+    if (!this.mcpServer) {
+      this.mcpServer = createCoachToolsServer(repoPath);
+    }
 
     // Pre-load context data for faster responses
     const weeklyPlan = this.getWeeklyPlan(repoPath);
@@ -334,7 +349,10 @@ export class CoachAgent {
       throw error;
     }
 
-    await pushChanges("Update from coach conversation");
+    // Skip git push in test mode (no remote to push to)
+    if (!this.config.repoPath) {
+      await pushChanges("Update from coach conversation");
+    }
 
     return { message: responseText, toolsUsed, turnsUsed };
   }

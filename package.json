@@ -17,7 +17,9 @@
     "lint:fix": "eslint src/ scripts/ --fix",
     "format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.ts\"",
-    "test": "NODE_OPTIONS='--experimental-vm-modules' jest"
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest --testPathIgnorePatterns='/node_modules/' --testPathIgnorePatterns='/dist/' --testPathIgnorePatterns='tests/scenarios'",
+    "test:all": "NODE_OPTIONS='--experimental-vm-modules' jest",
+    "test:scenarios": "NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns='tests/scenarios' --verbose"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.37",
