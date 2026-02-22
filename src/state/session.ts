@@ -1,30 +1,17 @@
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from "fs";
+import { join, dirname } from "path";
 
 // ============================================================================
 // Session State Types
 // ============================================================================
 
-export interface ExerciseSet {
-  weight: number;
-  reps: number;
-  rpe?: number;
-}
-
-export interface CompletedExercise {
-  name: string;
-  sets: ExerciseSet[];
-}
-
 export interface WorkoutSessionState {
   date: string;
   type: string;
-  startedAt: string;
-  exercisesCompleted: CompletedExercise[];
-  exercisesSkipped: string[];
+  exercisesCompleted: string[];
   currentExercise: string | null;
-  currentSetNumber: number;
-  plannedExercises: string[];
+  plannedRemaining?: string[];
+  notes?: string;
 }
 
 export type ConversationMode = "workout_active" | "chatting" | "planning" | "retrospective";
@@ -33,15 +20,18 @@ export interface SessionState {
   mode: ConversationMode;
   workout?: WorkoutSessionState;
   lastUpdated: string;
-  messageCount: number;
 }
 
 // ============================================================================
-// Session State Reader (from local filesystem after repo sync)
+// Constants
 // ============================================================================
 
 const SESSION_STATE_PATH = "state/session.json";
 const SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+// ============================================================================
+// Read
+// ============================================================================
 
 /**
  * Read session state from the locally-synced fitness-data repo.
@@ -86,6 +76,39 @@ export function getMode(state: SessionState | null): ConversationMode {
   if (!state) return "chatting";
   return state.mode;
 }
+
+// ============================================================================
+// Write
+// ============================================================================
+
+/**
+ * Write session state to the fitness-data repo.
+ * Creates the state/ directory if it doesn't exist.
+ */
+export function writeSessionState(repoPath: string, state: SessionState): void {
+  const filePath = join(repoPath, SESSION_STATE_PATH);
+  const dir = dirname(filePath);
+
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  writeFileSync(filePath, JSON.stringify(state, null, 2), "utf-8");
+}
+
+/**
+ * Clear session state (delete the file).
+ */
+export function clearSessionState(repoPath: string): void {
+  const filePath = join(repoPath, SESSION_STATE_PATH);
+  if (existsSync(filePath)) {
+    unlinkSync(filePath);
+  }
+}
+
+// ============================================================================
+// Prompt Injection
+// ============================================================================
 
 /**
  * Format session state as a structured XML block for injection into the system prompt.

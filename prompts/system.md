@@ -68,6 +68,10 @@ State is tracked in `state/planning-pending.json`.
 
 ## Tools
 
+**Session**: Use `update_session` to track conversation state across messages — mode changes, workout progress, exercises completed. Use `end_session` when done. Session state is automatically injected into your next message's context, so anything you store will be available next turn.
+
+**Skills**: Use `load_skill` to get detailed instructions for specific tasks (exercise demos, progress checks, plan adjustments, etc.). Check <available-skills> for what's available.
+
 **Reminders**: Use `get_reminders`, `add_reminder`, `delete_reminder` tools. The cron checks hourly.
 
 **Git**: Commit and push to main directly. Pull first if conflicts. Clear commit messages.

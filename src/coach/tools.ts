@@ -1,8 +1,8 @@
 /**
  * Custom MCP Tools for the Coach Agent
  *
- * Provides dedicated tools for reminders and athlete memory so the agent
- * doesn't have to hand-write JSON or manage file formats manually.
+ * Provides dedicated tools for reminders, athlete memory, session state,
+ * and dynamic skill loading.
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -11,6 +11,13 @@ import { z } from "zod";
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { createGitHubStorage } from "../storage/github.js";
 import { REPO_DIR } from "../storage/repo-sync.js";
+import {
+  writeSessionState,
+  clearSessionState,
+  type SessionState,
+  type ConversationMode,
+} from "../state/session.js";
+import { loadSkillContent, getSkillNames } from "./skills.js";
 
 // ============================================================================
 // Reminder Tools
@@ -177,6 +184,101 @@ const saveMemory = tool(
 );
 
 // ============================================================================
+// Skill Loader Tool
+// ============================================================================
+
+const loadSkill = tool(
+  "load_skill",
+  "Load a skill's full instructions by name. Call this when the user's request matches one of the skills listed in <available-skills>. Returns detailed instructions for handling the request.",
+  {
+    name: z.string().describe("The skill name to load (from the available-skills list)"),
+  },
+  async (args) => {
+    const content = loadSkillContent(args.name);
+    if (!content) {
+      const available = getSkillNames().join(", ");
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Skill '${args.name}' not found. Available: ${available}`,
+          },
+        ],
+      };
+    }
+    return {
+      content: [{ type: "text" as const, text: content }],
+    };
+  }
+);
+
+// ============================================================================
+// Session State Tools
+// ============================================================================
+
+const CONVERSATION_MODES = ["workout_active", "chatting", "planning", "retrospective"] as const;
+
+const updateSession = tool(
+  "update_session",
+  "Update session state to track the current conversation across messages. Call this when starting a workout, after logging exercises, or when the conversation mode changes. State persists across messages and survives server restarts.",
+  {
+    mode: z
+      .enum(CONVERSATION_MODES)
+      .describe(
+        "Current conversation mode: workout_active (logging exercises), chatting (general conversation), planning (creating/adjusting weekly plans), retrospective (analyzing past performance)"
+      ),
+    workout: z
+      .object({
+        date: z.string().describe("Workout date (YYYY-MM-DD)"),
+        type: z.string().describe("Workout type (upper, lower, full, cardio, etc.)"),
+        exercisesCompleted: z.array(z.string()).describe("Exercise names completed so far"),
+        currentExercise: z.string().nullable().describe("Exercise currently being logged, or null"),
+        plannedRemaining: z.array(z.string()).optional().describe("Planned exercises not yet done"),
+        notes: z.string().optional().describe("Any context worth carrying to the next message"),
+      })
+      .optional()
+      .describe("Workout details — include when mode is workout_active"),
+  },
+  async (args) => {
+    const state: SessionState = {
+      mode: args.mode as ConversationMode,
+      lastUpdated: new Date().toISOString(),
+    };
+    if (args.workout) {
+      state.workout = {
+        date: args.workout.date,
+        type: args.workout.type,
+        exercisesCompleted: args.workout.exercisesCompleted,
+        currentExercise: args.workout.currentExercise,
+        plannedRemaining: args.workout.plannedRemaining,
+        notes: args.workout.notes,
+      };
+    }
+    writeSessionState(REPO_DIR, state);
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Session updated: mode=${args.mode}${args.workout ? `, exercises=${args.workout.exercisesCompleted.length}` : ""}`,
+        },
+      ],
+    };
+  }
+);
+
+const endSession = tool(
+  "end_session",
+  "Clear session state. Call this when a workout is completed or the user is done with the current activity.",
+  {},
+  async () => {
+    clearSessionState(REPO_DIR);
+    return {
+      content: [{ type: "text" as const, text: "Session cleared." }],
+    };
+  }
+);
+
+// ============================================================================
 // Server
 // ============================================================================
 
@@ -186,6 +288,14 @@ const saveMemory = tool(
 export function createCoachToolsServer() {
   return createSdkMcpServer({
     name: "coach-tools",
-    tools: [getReminders, addReminder, deleteReminder, saveMemory],
+    tools: [
+      getReminders,
+      addReminder,
+      deleteReminder,
+      saveMemory,
+      loadSkill,
+      updateSession,
+      endSession,
+    ],
   });
 }

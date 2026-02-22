@@ -15,7 +15,6 @@ import { createCoachToolsServer } from "./tools.js";
 import { parseFrontmatter } from "../integrations/storage.js";
 import { getCurrentWeek, getToday, getTimezone } from "../utils/date.js";
 import { readSessionState, getMode } from "../state/session.js";
-import { matchSkills, getSkillPromptFragments, getSkillAdditionalTools } from "./skills.js";
 import {
   extractTextFromMessage,
   extractToolsFromMessage,
@@ -217,11 +216,6 @@ export class CoachAgent {
     const sessionState = readSessionState(repoPath);
     const mode = getMode(sessionState);
 
-    // Match skills based on user message
-    const matchedSkills = matchSkills(prompt);
-    const skillPromptFragments = getSkillPromptFragments(matchedSkills);
-    const skillTools = getSkillAdditionalTools(matchedSkills);
-
     // Build system prompt with mode-based guide loading and session state
     const basePrompt = buildSystemPrompt({
       repoPath,
@@ -233,7 +227,6 @@ export class CoachAgent {
       weekProgress,
       sessionState,
       mode,
-      skillPromptFragments: skillPromptFragments || undefined,
     });
     const systemPrompt = additionalContext
       ? `${basePrompt}\n\n## Additional Context\n\n${additionalContext}`
@@ -257,8 +250,11 @@ export class CoachAgent {
       "coach-tools:add_reminder",
       "coach-tools:delete_reminder",
       "coach-tools:save_memory",
+      "coach-tools:load_skill",
+      "coach-tools:update_session",
+      "coach-tools:end_session",
     ];
-    const baseTools = [
+    const allowedTools = [
       "Read",
       "Edit",
       "Write",
@@ -267,13 +263,8 @@ export class CoachAgent {
       "Grep",
       "WebSearch",
       ...mcpToolNames,
+      ...(options?.additionalTools || []),
     ];
-    // Add tools from matched skills (e.g., WebSearch for exercise-demo)
-    const allAdditionalTools = [...(options?.additionalTools || []), ...skillTools];
-    const allowedTools =
-      allAdditionalTools.length > 0
-        ? [...new Set([...baseTools, ...allAdditionalTools])]
-        : baseTools;
 
     const q = query({
       prompt,

@@ -214,13 +214,3 @@ If a workout file with `status: in_progress` exists but hasn't been touched in 4
 3. If start fresh:
    - Mark the old workout as `status: abandoned` or delete if minimal data
    - Create a new workout file for today
-
-## Session State Management
-
-After every exercise you log or modify, update `state/session.json` to reflect the current workout state. This file is your memory between messages — keep it accurate. Include:
-- Exercises completed (with sets/reps/weight)
-- Exercises skipped
-- Current exercise and set number
-- Planned exercises remaining
-
-Commit and push after each update — this is your crash-safe checkpoint.

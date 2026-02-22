@@ -54,7 +54,6 @@ export interface SystemPromptContext {
   messageHistoryCount?: number; // Number of recent messages to include (default: 10)
   sessionState?: SessionState | null; // Current session state (from state/session.json)
   mode?: ConversationMode; // Conversation mode (derived from session state)
-  skillPromptFragments?: string; // Injected skill prompt fragments
 }
 
 /**
@@ -207,7 +206,6 @@ export function buildSystemPrompt(context?: SystemPromptContext): string {
     messageHistoryCount = 10,
     sessionState,
     mode = "chatting",
-    skillPromptFragments,
   } = context || {};
 
   const systemPrompt = loadPrompt("system");
@@ -327,7 +325,6 @@ Current timezone: ${dateInfo.timezone}
 ${integrationContext}
 ${sessionState ? `\n${formatSessionStateForPrompt(sessionState)}\n` : ""}
 ${getSkillsMenu()}
-${skillPromptFragments || ""}
 ## Reference Guides (${mode} mode)
 
 ${loadGuidesForMode(mode) || "_No reference guides needed for this mode._"}
