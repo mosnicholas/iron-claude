@@ -11,12 +11,8 @@ import { z } from "zod";
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { createGitHubStorage } from "../storage/github.js";
 import { REPO_DIR } from "../storage/repo-sync.js";
-import {
-  writeSessionState,
-  clearSessionState,
-  type SessionState,
-  type ConversationMode,
-} from "../state/session.js";
+import { getToday, getTimezone } from "../utils/date.js";
+import { writeSessionState, clearSessionState, type SessionState } from "../state/session.js";
 import { loadSkillContent, getSkillNames } from "./skills.js";
 
 // ============================================================================
@@ -139,7 +135,7 @@ function appendToLearnings(category: string, content: string): void {
   const filePath = join(REPO_DIR, "learnings.md");
   const current = existsSync(filePath) ? readFileSync(filePath, "utf-8") : DEFAULT_LEARNINGS;
 
-  const date = new Date().toISOString().split("T")[0];
+  const date = getToday(getTimezone());
   const entry = `- [${date}] ${content}`;
   const header = CATEGORY_HEADERS[category] || `## ${category}`;
 
@@ -194,18 +190,18 @@ const loadSkill = tool(
     name: z.string().describe("The skill name to load (from the available-skills list)"),
   },
   async (args) => {
-    const content = loadSkillContent(args.name);
-    if (!content) {
-      const available = getSkillNames().join(", ");
+    const validNames = getSkillNames();
+    if (!validNames.includes(args.name)) {
       return {
         content: [
           {
             type: "text" as const,
-            text: `Skill '${args.name}' not found. Available: ${available}`,
+            text: `Skill not found. Check <available-skills> in your system prompt for valid names.`,
           },
         ],
       };
     }
+    const content = loadSkillContent(args.name)!;
     return {
       content: [{ type: "text" as const, text: content }],
     };
@@ -241,7 +237,7 @@ const updateSession = tool(
   },
   async (args) => {
     const state: SessionState = {
-      mode: args.mode as ConversationMode,
+      mode: args.mode,
       lastUpdated: new Date().toISOString(),
     };
     if (args.workout) {

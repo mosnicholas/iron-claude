@@ -61,11 +61,12 @@ export function readSessionState(repoPath: string): SessionState | null {
 
 /**
  * Check if a session has expired (>2 hours since last update).
+ * Treats malformed dates as expired to prevent infinite sessions.
  */
 export function isSessionExpired(state: SessionState): boolean {
   const lastUpdated = new Date(state.lastUpdated).getTime();
-  const now = Date.now();
-  return now - lastUpdated > SESSION_TIMEOUT_MS;
+  if (isNaN(lastUpdated)) return true;
+  return Date.now() - lastUpdated > SESSION_TIMEOUT_MS;
 }
 
 /**
