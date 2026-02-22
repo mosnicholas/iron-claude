@@ -7,7 +7,7 @@ These constraints shape every decision in this plan:
 1. **Server-deployed, crash-safe**: Runs on Fly.io. Process can die at any time. All meaningful state must survive a restart — no relying on in-memory-only data.
 2. **Agentic-first**: The Agent SDK's `query()` with tool use is the core strength. Claude reads files, writes files, uses tools. We keep that. We don't drop down to raw Messages API.
 3. **Smart agent, simple code**: Prefer giving Claude better context over writing application-level parsers. A well-informed Sonnet 4.6 with the right context will outperform a brittle regex pre-parser. Let the agent do the heavy lifting.
-4. **Model upgrade**: Move from `claude-sonnet-4-5-20250929` to `claude-sonnet-4-6-20250929`.
+4. **Model upgrade**: Move from `claude-sonnet-4-5-20250929` to `claude-sonnet-4-6`.
 
 ---
 
@@ -384,7 +384,7 @@ Coach: Sure. Lateral raises it is — what weight?
 
 **The fix** (in `src/coach/index.ts`):
 ```typescript
-model: config.model || "claude-sonnet-4-6-20250929"
+model: config.model || "claude-sonnet-4-6"
 ```
 
 Sonnet 4.6 is better at following nuanced instructions, less prone to over-specified prompt confusion, and more naturally conversational. Combined with the prompt trimming, this should noticeably improve response quality.
@@ -634,7 +634,7 @@ Fixes 7-9 are tightly coupled and should ship together.
 
 | File | Changes |
 |------|---------|
-| `src/coach/index.ts` | Change default model to `claude-sonnet-4-6-20250929`. Add `WebSearch` to `allowedTools`. Read `state/session.json` in `runQuery()` context pre-loading. Activate skills based on message patterns. |
+| `src/coach/index.ts` | Change default model to `claude-sonnet-4-6`. Add `WebSearch` to `allowedTools`. Read `state/session.json` in `runQuery()` context pre-loading. Activate skills based on message patterns. |
 | `src/coach/prompts.ts` | Accept `mode` parameter. Load guides conditionally based on mode. Inject session state as `<current-session-state>` XML block. Inject activated skill prompt fragments. Add `<available-skills>` menu to base prompt. |
 | `src/coach/tools.ts` | Add fitness-specific memory categories (`exercise_note`, `weight_note`, `recovery`, `equipment`). |
 | `src/handlers/webhook.ts` | Add message serialization queue. Read session state to determine mode (with 2hr expiry check) before calling agent. |

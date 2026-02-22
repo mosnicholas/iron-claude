@@ -99,6 +99,10 @@ const MEMORY_CATEGORIES = [
   "schedule",
   "feedback",
   "insight",
+  "exercise_note",
+  "weight_note",
+  "recovery",
+  "equipment",
 ] as const;
 
 const CATEGORY_HEADERS: Record<string, string> = {
@@ -108,6 +112,10 @@ const CATEGORY_HEADERS: Record<string, string> = {
   schedule: "## Schedule & Availability",
   feedback: "## Coaching Feedback",
   insight: "## Insights",
+  exercise_note: "## Exercise Notes",
+  weight_note: "## Weight & Difficulty Notes",
+  recovery: "## Recovery & Energy",
+  equipment: "## Equipment & Gym",
 };
 
 const DEFAULT_LEARNINGS = `# Learnings
@@ -147,7 +155,7 @@ const saveMemory = tool(
     category: z
       .enum(MEMORY_CATEGORIES)
       .describe(
-        "Category: preference (training likes/dislikes), goal (targets they want to hit), injury (pain/limitations), schedule (availability changes), feedback (how they want to be coached), insight (patterns you notice)"
+        "Category: preference (training likes/dislikes), goal (targets), injury (pain/limitations), schedule (availability), feedback (coaching style), insight (patterns you notice), exercise_note (opinions on exercises — boring/easy/love/hate), weight_note (difficulty observations — felt heavy/easy/ready to move up), recovery (sleep/energy/soreness), equipment (gym equipment preferences/availability)"
       ),
     content: z
       .string()

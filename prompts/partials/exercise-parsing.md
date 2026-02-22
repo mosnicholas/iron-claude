@@ -63,3 +63,29 @@ After parsing, confirm with the user in a standardized format:
 ```
 
 This makes it easy to catch parsing errors.
+
+## Plate Math & Natural Language Weights
+
+Users sometimes describe weights using plate configurations:
+
+| Description | Calculation | Total |
+|-------------|-------------|-------|
+| "bar with 10s" | 45 (bar) + 10 + 10 | 65 lbs |
+| "bar with 25s" | 45 + 25 + 25 | 95 lbs |
+| "bar with 45s" / "a plate" | 45 + 45 + 45 | 135 lbs |
+| "two plates" / "two plates each side" | 45 + 90 + 90 | 225 lbs |
+| "plate and a quarter each side" | 45 + (45+25) + (45+25) | 185 lbs |
+
+Standard barbell = 45 lbs unless stated otherwise.
+"Each side" means the weight is on both ends (reflected in total).
+
+When uncertain, confirm: "Bar + 10s each side = 65 lbs total — right?"
+
+## Retroactive Set Descriptions
+
+Users sometimes describe sets after the fact:
+- "2 & 3 were with bar & 10lb plates" → Sets 2 and 3 used 65 lbs
+- "last set was at 185" → Most recent set used 185 lbs
+- "first two were warmup" → Sets 1 and 2 were warmup sets
+
+Update already-logged sets rather than creating new ones.

@@ -23,6 +23,21 @@ import { addMessage } from "../bot/message-history.js";
 import { getToday, getTimezone } from "../utils/date.js";
 import type { TelegramUpdate } from "../storage/types.js";
 
+// Simple serial queue per chat — prevents concurrent writes to the same files
+const messageQueues = new Map<number, Promise<void>>();
+
+function enqueueMessage(chatId: number, fn: () => Promise<void>): void {
+  const previous = messageQueues.get(chatId) || Promise.resolve();
+  const current = previous.then(fn, fn); // Execute after previous completes (even if it failed)
+  messageQueues.set(chatId, current);
+  // Clean up resolved promises to prevent memory leak
+  current.finally(() => {
+    if (messageQueues.get(chatId) === current) {
+      messageQueues.delete(chatId);
+    }
+  });
+}
+
 // Simple in-memory cache for deduplication
 // Stores update_ids we've already processed
 const processedUpdates = new Set<number>();
@@ -95,9 +110,9 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
     // Process the message in the background
     res.status(200).json({ ok: true });
 
-    // Process message asynchronously
-    processMessage(update, bot).catch((error) => {
-      console.error("[webhook] Background processing error:", error);
+    // Process message asynchronously via per-chat serial queue
+    enqueueMessage(chatId, async () => {
+      await processMessage(update, bot);
     });
   } catch (error) {
     console.error("Webhook error:", error);
@@ -165,12 +180,10 @@ async function processMessage(
           // Record bot response in history
           addMessage(response, false);
         }
-      } else {
-        const unknownCmdResponse = `Unknown command /${command}. Try /help to see available commands.`;
-        await bot.sendMessage(unknownCmdResponse);
-        addMessage(unknownCmdResponse, false);
+        return;
       }
-      return;
+      // Unknown commands fall through to the agent as natural language
+      // e.g. "/demo face pull" gets handled by the exercise-demo skill
     }
 
     // Check for pending gym time state - user responding to "what time are you heading to the gym?"

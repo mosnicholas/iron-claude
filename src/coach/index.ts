@@ -14,6 +14,8 @@ import { buildSystemPrompt, type WorkoutLogSummary } from "./prompts.js";
 import { createCoachToolsServer } from "./tools.js";
 import { parseFrontmatter } from "../integrations/storage.js";
 import { getCurrentWeek, getToday, getTimezone } from "../utils/date.js";
+import { readSessionState, getMode } from "../state/session.js";
+import { matchSkills, getSkillPromptFragments, getSkillAdditionalTools } from "./skills.js";
 import {
   extractTextFromMessage,
   extractToolsFromMessage,
@@ -71,7 +73,7 @@ export class CoachAgent {
 
   constructor(config: CoachConfig = {}) {
     this.config = {
-      model: config.model || "claude-sonnet-4-5-20250929",
+      model: config.model || "claude-sonnet-4-6",
       timezone: config.timezone || getTimezone(),
       maxTurns: config.maxTurns || 10,
     };
@@ -211,7 +213,16 @@ export class CoachAgent {
     const todayWorkout = this.getTodayWorkout(repoPath);
     const weekProgress = this.getWeekProgress(repoPath);
 
-    // Build system prompt with environment paths and context
+    // Read session state and determine mode
+    const sessionState = readSessionState(repoPath);
+    const mode = getMode(sessionState);
+
+    // Match skills based on user message
+    const matchedSkills = matchSkills(prompt);
+    const skillPromptFragments = getSkillPromptFragments(matchedSkills);
+    const skillTools = getSkillAdditionalTools(matchedSkills);
+
+    // Build system prompt with mode-based guide loading and session state
     const basePrompt = buildSystemPrompt({
       repoPath,
       gitBinaryPath,
@@ -220,6 +231,9 @@ export class CoachAgent {
       prsYaml,
       todayWorkout,
       weekProgress,
+      sessionState,
+      mode,
+      skillPromptFragments: skillPromptFragments || undefined,
     });
     const systemPrompt = additionalContext
       ? `${basePrompt}\n\n## Additional Context\n\n${additionalContext}`
@@ -244,10 +258,22 @@ export class CoachAgent {
       "coach-tools:delete_reminder",
       "coach-tools:save_memory",
     ];
-    const baseTools = ["Read", "Edit", "Write", "Bash", "Glob", "Grep", ...mcpToolNames];
-    const allowedTools = options?.additionalTools
-      ? [...baseTools, ...options.additionalTools]
-      : baseTools;
+    const baseTools = [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash",
+      "Glob",
+      "Grep",
+      "WebSearch",
+      ...mcpToolNames,
+    ];
+    // Add tools from matched skills (e.g., WebSearch for exercise-demo)
+    const allAdditionalTools = [...(options?.additionalTools || []), ...skillTools];
+    const allowedTools =
+      allAdditionalTools.length > 0
+        ? [...new Set([...baseTools, ...allAdditionalTools])]
+        : baseTools;
 
     const q = query({
       prompt,

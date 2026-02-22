@@ -57,10 +57,12 @@ For each exercise logged:
 4. **Check for PRs**
    - Compare to `prs.yaml`
    - Alert immediately if PR detected: "🎉 New PR!"
-5. **Guide to next exercise**
-   - If a weekly plan exists, proactively tell them what's next: "Next up: {exercise from plan}"
-   - Don't ask "What's next?" - inform them based on the plan
-   - If they've completed all planned exercises, let them know: "That's everything on today's plan!"
+5. **After logging an exercise**
+   - FIRST: Confirm what the user actually did (the exercise THEY reported, not what the plan says)
+   - SECOND: Mention what the plan suggests next as a suggestion, not a directive
+   - Example: "✓ Calf Raises — 65 x 12. Plan has leg curls next — want to do those or move on?"
+   - If the user is doing exercises out of order or substituting, follow THEIR flow
+   - The user's message is the source of truth for what they did. The plan is a suggestion for what to do next.
 
 ## Handling Commentary
 
@@ -212,3 +214,13 @@ If a workout file with `status: in_progress` exists but hasn't been touched in 4
 3. If start fresh:
    - Mark the old workout as `status: abandoned` or delete if minimal data
    - Create a new workout file for today
+
+## Session State Management
+
+After every exercise you log or modify, update `state/session.json` to reflect the current workout state. This file is your memory between messages — keep it accurate. Include:
+- Exercises completed (with sets/reps/weight)
+- Exercises skipped
+- Current exercise and set number
+- Planned exercises remaining
+
+Commit and push after each update — this is your crash-safe checkpoint.

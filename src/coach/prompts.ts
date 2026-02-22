@@ -10,6 +10,9 @@ import { fileURLToPath } from "url";
 import { getConfiguredIntegrations, hasConfiguredIntegrations } from "../integrations/registry.js";
 import { getDateInfoTZAware, getWeekDays } from "../utils/date.js";
 import { formatRecentMessagesForPrompt } from "../bot/message-history.js";
+import type { ConversationMode, SessionState } from "../state/session.js";
+import { formatSessionStateForPrompt } from "../state/session.js";
+import { getSkillsMenu } from "./skills.js";
 
 export interface WorkoutLogSummary {
   date: string; // "2026-02-03"
@@ -49,6 +52,9 @@ export interface SystemPromptContext {
   todayWorkout?: string; // Today's workout log if it exists
   weekProgress?: WorkoutLogSummary[]; // Workout logs found for this week
   messageHistoryCount?: number; // Number of recent messages to include (default: 10)
+  sessionState?: SessionState | null; // Current session state (from state/session.json)
+  mode?: ConversationMode; // Conversation mode (derived from session state)
+  skillPromptFragments?: string; // Injected skill prompt fragments
 }
 
 /**
@@ -157,6 +163,38 @@ function buildWeekProgressSection(workouts: WorkoutLogSummary[], isoWeek: string
   return section;
 }
 
+/**
+ * Load only the reference guides relevant to the current conversation mode.
+ * This cuts prompt size by 40-100% compared to loading all guides every time.
+ */
+function loadGuidesForMode(mode: ConversationMode): string {
+  switch (mode) {
+    case "workout_active":
+      return [
+        `<exercise-parsing>\n${loadPartial("exercise-parsing")}\n</exercise-parsing>`,
+        `<workout-management>\n${loadPartial("workout-management")}\n</workout-management>`,
+        `<pr-detection>\n${loadPartial("pr-detection")}\n</pr-detection>`,
+      ].join("\n\n");
+
+    case "planning":
+      return [
+        `<weekly-planning-guide>\n${loadPrompt("weekly-planning")}\n</weekly-planning-guide>`,
+        `<historical-data>\n${loadPartial("historical-data")}\n</historical-data>`,
+      ].join("\n\n");
+
+    case "retrospective":
+      return [
+        `<retrospective-guide>\n${loadPrompt("retrospective")}\n</retrospective-guide>`,
+        `<historical-data>\n${loadPartial("historical-data")}\n</historical-data>`,
+        `<rpe-analysis>\n${loadPartial("rpe-analysis")}\n</rpe-analysis>`,
+      ].join("\n\n");
+
+    case "chatting":
+      // No reference guides needed for general chat — the core prompt is enough
+      return "";
+  }
+}
+
 export function buildSystemPrompt(context?: SystemPromptContext): string {
   const {
     repoPath,
@@ -167,20 +205,12 @@ export function buildSystemPrompt(context?: SystemPromptContext): string {
     todayWorkout,
     weekProgress = [],
     messageHistoryCount = 10,
+    sessionState,
+    mode = "chatting",
+    skillPromptFragments,
   } = context || {};
 
   const systemPrompt = loadPrompt("system");
-
-  const exerciseParsing = loadPartial("exercise-parsing");
-  const workoutManagement = loadPartial("workout-management");
-  const prDetection = loadPartial("pr-detection");
-  const rpeAnalysis = loadPartial("rpe-analysis");
-  const planFlexibility = loadPartial("plan-flexibility");
-  const historicalData = loadPartial("historical-data");
-
-  // Include planning and retro as reference guides so the agent always has full capabilities
-  const weeklyPlanning = loadPrompt("weekly-planning");
-  const retrospective = loadPrompt("retrospective");
 
   const dateInfo = getDateInfoTZAware();
 
@@ -295,39 +325,12 @@ You have direct access to the fitness-data repository files:
 Use Read, Glob, and Grep to explore files. Use Edit/Write to update them.
 Current timezone: ${dateInfo.timezone}
 ${integrationContext}
-## Reference Guides
+${sessionState ? `\n${formatSessionStateForPrompt(sessionState)}\n` : ""}
+${getSkillsMenu()}
+${skillPromptFragments || ""}
+## Reference Guides (${mode} mode)
 
-<exercise-parsing>
-${exerciseParsing}
-</exercise-parsing>
-
-<workout-management>
-${workoutManagement}
-</workout-management>
-
-<pr-detection>
-${prDetection}
-</pr-detection>
-
-<rpe-analysis>
-${rpeAnalysis}
-</rpe-analysis>
-
-<plan-flexibility>
-${planFlexibility}
-</plan-flexibility>
-
-<historical-data>
-${historicalData}
-</historical-data>
-
-<weekly-planning-guide>
-${weeklyPlanning}
-</weekly-planning-guide>
-
-<retrospective-guide>
-${retrospective}
-</retrospective-guide>
+${loadGuidesForMode(mode) || "_No reference guides needed for this mode._"}
 `;
 
   return systemPrompt.replace("{{CONTEXT}}", contextNote);
