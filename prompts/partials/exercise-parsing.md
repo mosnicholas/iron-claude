@@ -14,21 +14,6 @@ When users log exercises, they use various natural formats. Parse these correctl
 | Colon format | "OHP 115: 6, 5, 5 @8" | OHP, 115 lbs, 3 sets, RPE 8 |
 | Time-based | "HS: 30s, 25s" | Handstand holds, 30s and 25s |
 
-## Common Abbreviations
-
-| Abbreviation | Exercise |
-|-------------|----------|
-| bench, bp | Bench Press |
-| ohp, press | Overhead Press |
-| dl | Deadlift |
-| rdl | Romanian Deadlift |
-| squat | Back Squat |
-| pull-ups | Pull-up |
-| chin-ups | Chin-up |
-| row | Barbell Row |
-| hs | Handstand |
-| hspu | Handstand Push-up |
-
 ## Weight Notation
 
 - Plain number: pounds (e.g., "175")

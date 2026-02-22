@@ -381,46 +381,6 @@ export class GitHubStorage {
   }
 
   // ============================================================================
-  // Planning State
-  // ============================================================================
-
-  async savePlanningState(week: string): Promise<void> {
-    await this.setState(
-      "state/planning-pending.json",
-      { week, askedAt: new Date().toISOString() },
-      `Start planning for ${week}`
-    );
-  }
-
-  async getPlanningState(): Promise<{ week: string; askedAt: string } | null> {
-    return this.getState("state/planning-pending.json", null);
-  }
-
-  async clearPlanningState(): Promise<void> {
-    await this.clearState("state/planning-pending.json", "Plan finalized");
-  }
-
-  // ============================================================================
-  // Gym Time State
-  // ============================================================================
-
-  async saveGymTimePendingState(date: string): Promise<void> {
-    await this.setState(
-      "state/gym-time-pending.json",
-      { date, askedAt: new Date().toISOString() },
-      `Ask gym time for ${date}`
-    );
-  }
-
-  async getGymTimePendingState(): Promise<{ date: string; askedAt: string } | null> {
-    return this.getState("state/gym-time-pending.json", null);
-  }
-
-  async clearGymTimePendingState(): Promise<void> {
-    await this.clearState("state/gym-time-pending.json", "Gym time set");
-  }
-
-  // ============================================================================
   // Reminders
   // ============================================================================
 

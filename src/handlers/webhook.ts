@@ -17,10 +17,7 @@ import {
 } from "../bot/telegram.js";
 import { executeCommand, commandExists } from "../bot/commands.js";
 import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js";
-import { createGitHubStorage } from "../storage/github.js";
-import { generatePlanWithContext } from "../cron/weekly-plan.js";
 import { addMessage } from "../bot/message-history.js";
-import { getToday, getTimezone } from "../utils/date.js";
 import type { TelegramUpdate } from "../storage/types.js";
 
 // Simple serial queue per chat — prevents concurrent writes to the same files
@@ -184,39 +181,6 @@ async function processMessage(
       }
       // Unknown commands fall through to the agent as natural language
       // e.g. "/demo face pull" gets handled by the exercise-demo skill
-    }
-
-    // Check for pending gym time state - user responding to "what time are you heading to the gym?"
-    const storage = createGitHubStorage();
-    const gymTimeState = await storage.getGymTimePendingState();
-
-    if (gymTimeState) {
-      await storage.clearGymTimePendingState();
-
-      if (gymTimeState.date === getToday(getTimezone())) {
-        // Pass to agent with context — it knows how to parse times and schedule reminders
-        console.log("[webhook] Gym time response detected, routing to agent with context");
-        messageText =
-          `The user is responding to the morning question "What time are you heading to the gym today?". ` +
-          `Their response: "${messageText}". ` +
-          `If they gave a time, schedule a warm-up reminder for that hour by: ` +
-          `1) Reading today's plan to generate a concise warm-up + exercise preview, ` +
-          `2) Using the add_reminder tool to schedule it. ` +
-          `If they said they're not going or it's unclear, just acknowledge naturally.`;
-      }
-      // If stale (different day), just clear and fall through to normal processing
-    }
-
-    // Check for pending planning state - if waiting for input, generate the plan
-    const planningState = await storage.getPlanningState();
-
-    if (planningState) {
-      console.log(`[webhook] Pending planning for ${planningState.week}, generating plan`);
-      // Don't await - let it run in background so we can respond quickly
-      generatePlanWithContext(planningState.week, messageText).catch((err) => {
-        console.error("[webhook] Plan generation failed:", err);
-      });
-      return;
     }
 
     // Handle natural language - send to coach agent with status updates

@@ -74,7 +74,7 @@ export class CoachAgent {
     this.config = {
       model: config.model || "claude-sonnet-4-6",
       timezone: config.timezone || getTimezone(),
-      maxTurns: config.maxTurns || 10,
+      maxTurns: config.maxTurns || 25,
     };
   }
 
