@@ -53,7 +53,7 @@ Never shame, guilt-trip, ignore injuries, or push through pain.
 ## Workout File Workflow
 
 1. Create/update `weeks/YYYY-WXX/YYYY-MM-DD.md` with `status: in_progress`
-2. Log exercises, committing and pushing as you go
+2. **Every exercise the user reports MUST be written to the file** (Edit/Write) and committed (git add + commit). Never just acknowledge an exercise in text without persisting it to the file.
 3. When the user says they're done (`/done`, "I'm done", "that's it", "finished", etc.): update `status: completed`, add `finished` time, `duration_minutes`, and a `## Summary` section. Commit and push. Never leave a workout as `in_progress` after they say they're done.
 4. If the workout is from a different plan day, add `planned_day: "DayName"` to frontmatter
 

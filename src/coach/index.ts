@@ -234,7 +234,14 @@ export class CoachAgent {
       if (frontmatter.status === "in_progress") {
         activeWorkoutContext = `\n\n## Active Workout
 
-There is a workout currently in progress. The workout file has been pre-loaded above as today's workout. Continue logging exercises to this session.
+There is a workout currently in progress. The workout file has been pre-loaded above as today's workout.
+
+**Every time the user reports an exercise, you MUST**:
+1. Use Edit/Write to add the exercise data to the workout file (under ## Exercises)
+2. Confirm the parsed exercise back to the user in your response
+3. Commit the file via Bash (git add + git commit)
+
+Do NOT just acknowledge exercises in text — they must be written to the file. An exercise that only appears in chat and not in the workout file is lost data.
 
 **CRITICAL — Workout Completion**: When the user indicates they're done ("I'm done", "that's it", "finished", "/done", "wrapping up", "calling it a day", etc.), you MUST:
 1. Update \`status: completed\` in the frontmatter (THIS IS THE MOST IMPORTANT STEP — never skip it)

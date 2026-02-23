@@ -28,7 +28,13 @@ Heading: `# Workout — {actual day name}, {actual date}` (e.g., `# Workout — 
 ## Workflow
 
 1. **Start**: Create the file with `status: in_progress`. Match to the weekly plan if one exists for today. If this was planned for a different day, add `planned_day` to frontmatter and amend `plan.md`.
-2. **Log exercises**: Parse input, add to the file under `## Exercises`, commit as you go. Confirm parsed exercises back to the user to catch errors. After each exercise, mention what the plan suggests next (as a suggestion, not directive) — follow the user's flow.
+2. **Log exercises** (MUST write to file every time):
+   - Parse the user's input into structured exercise data
+   - **Write it to the workout file** using Edit/Write — add under `## Exercises`. This is not optional.
+   - Commit via Bash (`git add` + `git commit`) so the data is persisted
+   - Confirm the parsed exercise back to the user in your text response
+   - Mention what the plan suggests next (as a suggestion, not directive) — follow the user's flow
+   - **Never just acknowledge an exercise in text without writing it to the file** — an exercise only in chat is lost data
 3. **Complete** (CRITICAL — never skip this): When the user says they're done ("I'm done", "that's it", "finished", "/done", "wrapping up", etc.):
    - **First**: Update `status: completed` in frontmatter. This is the single most important step — a workout stuck as `in_progress` is invisible to retros and adherence tracking.
    - Then: Add `finished` time, `duration_minutes`, `energy_level` (ask if not mentioned), and a `## Summary` section.
