@@ -14,7 +14,6 @@ import { buildSystemPrompt, type WorkoutLogSummary } from "./prompts.js";
 import { createCoachToolsServer } from "./tools.js";
 import { parseFrontmatter } from "../integrations/storage.js";
 import { getCurrentWeek, getToday, getTimezone } from "../utils/date.js";
-import { readSessionState, getMode } from "../state/session.js";
 import {
   extractTextFromMessage,
   extractToolsFromMessage,
@@ -68,28 +67,29 @@ export interface QueryOptions {
 }
 
 export class CoachAgent {
-  private config: Required<Omit<CoachConfig, "repoPath">> & { repoPath?: string };
-  private repoPath: string | null = null;
+  private model: string;
+  private timezone: string;
+  private maxTurns: number;
+  private repoPath?: string;
+  private syncedRepoPath: string | null = null;
   private mcpServer: ReturnType<typeof createCoachToolsServer> | null = null;
 
   constructor(config: CoachConfig = {}) {
-    this.config = {
-      model: config.model || "claude-sonnet-4-6",
-      timezone: config.timezone || getTimezone(),
-      maxTurns: config.maxTurns || 25,
-      repoPath: config.repoPath,
-    };
+    this.model = config.model || "claude-sonnet-4-6";
+    this.timezone = config.timezone || getTimezone();
+    this.maxTurns = config.maxTurns || 25;
+    this.repoPath = config.repoPath;
     // Defer MCP server creation to runQuery so we know the repo path
   }
 
   private async ensureRepoSynced(): Promise<string> {
     // Test mode: use provided path directly (no GitHub sync needed)
-    if (this.config.repoPath) {
-      this.repoPath = this.config.repoPath;
-      return this.repoPath;
+    if (this.repoPath) {
+      this.syncedRepoPath = this.repoPath;
+      return this.syncedRepoPath;
     }
 
-    if (!this.repoPath) {
+    if (!this.syncedRepoPath) {
       const repoName = process.env.DATA_REPO;
       const token = process.env.GITHUB_TOKEN;
 
@@ -97,19 +97,19 @@ export class CoachAgent {
         throw new Error("DATA_REPO and GITHUB_TOKEN must be set");
       }
 
-      this.repoPath = await syncRepo({
+      this.syncedRepoPath = await syncRepo({
         repoUrl: `https://github.com/${repoName}.git`,
         token,
       });
     }
-    return this.repoPath;
+    return this.syncedRepoPath;
   }
 
   /**
    * Try to read the current week's plan from the local repo
    */
   private getWeeklyPlan(repoPath: string): string | undefined {
-    const currentWeek = getCurrentWeek(this.config.timezone);
+    const currentWeek = getCurrentWeek(this.timezone);
     const planPath = join(repoPath, "weeks", currentWeek, "plan.md");
 
     if (existsSync(planPath)) {
@@ -161,8 +161,8 @@ export class CoachAgent {
    * Try to read today's workout log from the local repo
    */
   private getTodayWorkout(repoPath: string): string | undefined {
-    const currentWeek = getCurrentWeek(this.config.timezone);
-    const today = getToday(this.config.timezone);
+    const currentWeek = getCurrentWeek(this.timezone);
+    const today = getToday(this.timezone);
     const workoutPath = join(repoPath, "weeks", currentWeek, `${today}.md`);
 
     if (existsSync(workoutPath)) {
@@ -180,7 +180,7 @@ export class CoachAgent {
    * Get summaries of all workout logs in the current week's folder
    */
   private getWeekProgress(repoPath: string): WorkoutLogSummary[] {
-    const currentWeek = getCurrentWeek(this.config.timezone);
+    const currentWeek = getCurrentWeek(this.timezone);
     const weekDir = join(repoPath, "weeks", currentWeek);
 
     if (!existsSync(weekDir)) return [];
@@ -227,11 +227,17 @@ export class CoachAgent {
     const todayWorkout = this.getTodayWorkout(repoPath);
     const weekProgress = this.getWeekProgress(repoPath);
 
-    // Read session state and determine mode
-    const sessionState = readSessionState(repoPath);
-    const mode = getMode(sessionState);
+    // Detect active workout from frontmatter instead of session state
+    let activeWorkoutContext = "";
+    if (todayWorkout) {
+      const { frontmatter } = parseFrontmatter(todayWorkout);
+      if (frontmatter.status === "in_progress") {
+        activeWorkoutContext =
+          "\n\n## Active Workout\n\nThere is a workout currently in progress. The workout file has been pre-loaded above as today's workout. Continue logging exercises to this session. When the user indicates they're done, complete the workout (set status: completed, add finished time, duration, energy level, summary, and check for PRs).";
+      }
+    }
 
-    // Build system prompt with mode-based guide loading and session state
+    // Build system prompt
     const basePrompt = buildSystemPrompt({
       repoPath,
       gitBinaryPath,
@@ -240,11 +246,15 @@ export class CoachAgent {
       prsYaml,
       todayWorkout,
       weekProgress,
-      sessionState,
-      mode,
     });
-    const systemPrompt = additionalContext
-      ? `${basePrompt}\n\n## Additional Context\n\n${additionalContext}`
+
+    // Combine all additional context
+    const allAdditionalContext = [additionalContext, activeWorkoutContext]
+      .filter(Boolean)
+      .join("\n\n");
+
+    const systemPrompt = allAdditionalContext
+      ? `${basePrompt}\n\n## Additional Context\n\n${allAdditionalContext}`
       : basePrompt;
 
     const toolsUsed: string[] = [];
@@ -265,9 +275,6 @@ export class CoachAgent {
       "coach-tools:add_reminder",
       "coach-tools:delete_reminder",
       "coach-tools:save_memory",
-      "coach-tools:load_skill",
-      "coach-tools:update_session",
-      "coach-tools:end_session",
     ];
     const allowedTools = [
       "Read",
@@ -286,8 +293,8 @@ export class CoachAgent {
       options: {
         systemPrompt,
         cwd: repoPath,
-        maxTurns: this.config.maxTurns,
-        model: this.config.model,
+        maxTurns: this.maxTurns,
+        model: this.model,
         allowedTools,
         permissionMode: "acceptEdits",
         mcpServers: {
@@ -297,7 +304,7 @@ export class CoachAgent {
           PATH: process.env.PATH || "",
           HOME: process.env.HOME || "",
           ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "",
-          TIMEZONE: this.config.timezone,
+          TIMEZONE: this.timezone,
         },
       },
     });
@@ -353,7 +360,7 @@ export class CoachAgent {
     }
 
     // Skip git push in test mode (no remote to push to)
-    if (!this.config.repoPath) {
+    if (!this.repoPath) {
       await pushChanges("Update from coach conversation");
     }
 

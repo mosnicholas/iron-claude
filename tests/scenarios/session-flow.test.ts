@@ -2,8 +2,8 @@
  * Scenario: Session Flow
  *
  * Tests the full workout session lifecycle:
- * - Starting a workout (session state created)
- * - Ending a workout (session state cleared, status → completed)
+ * - Starting a workout (file created with status: in_progress)
+ * - Ending a workout (status → completed)
  * - General chat (no file mutations)
  */
 
@@ -13,7 +13,6 @@ import {
   expectWorkoutFileExists,
   expectNoWorkoutFile,
   readWorkoutFile,
-  readSessionStateFromRepo,
 } from "./assertions.js";
 
 const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
@@ -33,7 +32,7 @@ describeWithApi("Scenario: Session Flow", () => {
   });
 
   it(
-    "completes a workout and clears session state",
+    "completes a workout and sets status to completed",
     async () => {
       // Pre-seed: active workout with exercises logged
       const existingWorkout = `---
@@ -53,20 +52,7 @@ status: in_progress
 - 155 x 8 x 3 (RPE 7)
 `;
 
-      repo = setupTestRepo({
-        existingWorkout,
-        sessionState: {
-          mode: "workout_active",
-          lastUpdated: new Date().toISOString(),
-          workout: {
-            date: new Date().toISOString().split("T")[0],
-            type: "upper",
-            exercisesCompleted: ["Bench Press", "Overhead Press", "Barbell Row"],
-            currentExercise: null,
-            plannedRemaining: ["Dumbbell Curl", "Tricep Pushdown"],
-          },
-        },
-      });
+      repo = setupTestRepo({ existingWorkout });
 
       const agent = createCoachAgent({
         model: "claude-haiku-4-5",
@@ -81,14 +67,9 @@ status: in_progress
       // Workout file should still exist
       expectWorkoutFileExists(repo.repoPath, repo.currentWeek, repo.today);
 
-      // The agent should have done at least one of:
-      // 1. Cleared session state (called end_session)
-      // 2. Updated workout status to "completed" in the file
-      const sessionCleared = readSessionStateFromRepo(repo.repoPath) === null;
+      // The agent should have updated workout status to "completed" in the file
       const content = readWorkoutFile(repo.repoPath, repo.currentWeek, repo.today);
-      const statusCompleted = content.toLowerCase().includes("completed");
-
-      expect(sessionCleared || statusCompleted).toBe(true);
+      expect(content.toLowerCase()).toContain("completed");
 
       // Response should acknowledge the workout ending
       expect(response.message.length).toBeGreaterThan(0);
@@ -113,13 +94,6 @@ status: in_progress
 
       // Should NOT create a workout file
       expectNoWorkoutFile(repo.repoPath, repo.currentWeek, repo.today);
-
-      // Session should NOT be set to workout_active
-      // (it might be null or "chatting", both are fine)
-      const state = readSessionStateFromRepo(repo.repoPath);
-      if (state) {
-        expect(state.mode).not.toBe("workout_active");
-      }
 
       // Response should be substantive
       expect(response.message.length).toBeGreaterThan(20);

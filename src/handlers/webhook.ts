@@ -4,8 +4,11 @@
  * Main entry point for all Telegram messages.
  */
 
+import { existsSync } from "fs";
+import { join } from "path";
 import type { Request, Response } from "express";
 import { createCoachAgent } from "../coach/index.js";
+import { PLAN_GENERATION_INSTRUCTIONS } from "../coach/prompts.js";
 import {
   createTelegramBot,
   extractMessageText,
@@ -18,6 +21,7 @@ import {
 import { executeCommand, commandExists } from "../bot/commands.js";
 import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js";
 import { addMessage } from "../bot/message-history.js";
+import { REPO_DIR } from "../storage/repo-sync.js";
 import type { TelegramUpdate } from "../storage/types.js";
 
 // Simple serial queue per chat — prevents concurrent writes to the same files
@@ -25,7 +29,9 @@ const messageQueues = new Map<number, Promise<void>>();
 
 function enqueueMessage(chatId: number, fn: () => Promise<void>): void {
   const previous = messageQueues.get(chatId) || Promise.resolve();
-  const current = previous.then(fn, fn); // Execute after previous completes (even if it failed)
+  const current = previous.then(fn, fn).catch((err) => {
+    console.error("[webhook] Message processing error:", err);
+  });
   messageQueues.set(chatId, current);
   // Clean up resolved promises to prevent memory leak
   current.finally(() => {
@@ -180,8 +186,10 @@ async function processMessage(
         return;
       }
       // Unknown commands fall through to the agent as natural language
-      // e.g. "/demo face pull" gets handled by the exercise-demo skill
     }
+
+    // Check for pending planning state — route with plan generation instructions
+    const planningPending = existsSync(join(REPO_DIR, "state", "planning-pending.md"));
 
     // Handle natural language - send to coach agent with status updates
     const messageId = await bot.sendMessage("✨ _Thinking..._", "MarkdownV2");
@@ -189,12 +197,14 @@ async function processMessage(
     if (messageId) {
       const editor = new ThrottledMessageEditor(bot, messageId);
 
-      const response = await agent.chat(messageText, {
-        onStatus: (status) => {
-          console.log(`[webhook] Status update: ${status}`);
-          editor.update(status);
-        },
-      });
+      const response = planningPending
+        ? await agent.runTask(messageText, PLAN_GENERATION_INSTRUCTIONS)
+        : await agent.chat(messageText, {
+            onStatus: (status) => {
+              console.log(`[webhook] Status update: ${status}`);
+              editor.update(status);
+            },
+          });
 
       // Split on --- markers for multi-message responses
       const chunks = splitOnMessageBreaks(response.message);
@@ -209,7 +219,9 @@ async function processMessage(
       addMessage(response.message, false);
     } else {
       // Fallback if we couldn't get a message ID
-      const response = await agent.chat(messageText);
+      const response = planningPending
+        ? await agent.runTask(messageText, PLAN_GENERATION_INSTRUCTIONS)
+        : await agent.chat(messageText);
 
       const chunks = splitOnMessageBreaks(response.message);
       for (const chunk of chunks) {

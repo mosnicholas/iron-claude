@@ -82,20 +82,7 @@ status: in_progress
 - 175 x 5 x 3 (RPE 7)
 `;
 
-      repo = setupTestRepo({
-        existingWorkout,
-        sessionState: {
-          mode: "workout_active",
-          lastUpdated: new Date().toISOString(),
-          workout: {
-            date: new Date().toISOString().split("T")[0],
-            type: "upper",
-            exercisesCompleted: ["Bench Press"],
-            currentExercise: null,
-            plannedRemaining: ["Overhead Press", "Barbell Row", "Dumbbell Curl", "Tricep Pushdown"],
-          },
-        },
-      });
+      repo = setupTestRepo({ existingWorkout });
 
       const agent = createCoachAgent({
         model: "claude-haiku-4-5",

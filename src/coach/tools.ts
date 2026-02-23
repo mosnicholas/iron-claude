@@ -1,8 +1,7 @@
 /**
  * Custom MCP Tools for the Coach Agent
  *
- * Provides dedicated tools for reminders, athlete memory, session state,
- * and dynamic skill loading.
+ * Provides dedicated tools for reminders and athlete memory.
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -12,8 +11,6 @@ import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { createGitHubStorage } from "../storage/github.js";
 import { REPO_DIR as DEFAULT_REPO_DIR } from "../storage/repo-sync.js";
 import { getToday, getTimezone } from "../utils/date.js";
-import { writeSessionState, clearSessionState, type SessionState } from "../state/session.js";
-import { loadSkillContent, getSkillNames } from "./skills.js";
 
 // ============================================================================
 // Reminder Tools (no repo path dependency)
@@ -92,7 +89,7 @@ const deleteReminder = tool(
 );
 
 // ============================================================================
-// Constants for memory/session tools
+// Memory Tool
 // ============================================================================
 
 const MEMORY_CATEGORIES = [
@@ -125,41 +122,6 @@ const DEFAULT_LEARNINGS = `# Learnings
 
 *Patterns and preferences discovered through conversation and observation.*
 `;
-
-const CONVERSATION_MODES = ["workout_active", "chatting", "planning", "retrospective"] as const;
-
-// ============================================================================
-// Skill Loader Tool (no repo path dependency)
-// ============================================================================
-
-const loadSkill = tool(
-  "load_skill",
-  "Load a skill's full instructions by name. Call this when the user's request matches one of the skills listed in <available-skills>. Returns detailed instructions for handling the request.",
-  {
-    name: z.string().describe("The skill name to load (from the available-skills list)"),
-  },
-  async (args) => {
-    const validNames = getSkillNames();
-    if (!validNames.includes(args.name)) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Skill not found. Check <available-skills> in your system prompt for valid names.`,
-          },
-        ],
-      };
-    }
-    const content = loadSkillContent(args.name)!;
-    return {
-      content: [{ type: "text" as const, text: content }],
-    };
-  }
-);
-
-// ============================================================================
-// Tools that depend on repo path (created inside factory)
-// ============================================================================
 
 /**
  * Append a dated entry under the right category section in learnings.md.
@@ -215,73 +177,7 @@ function createRepoTools(repoDir: string) {
     }
   );
 
-  const updateSession = tool(
-    "update_session",
-    "Update session state to track the current conversation across messages. Call this when starting a workout, after logging exercises, or when the conversation mode changes. State persists across messages and survives server restarts.",
-    {
-      mode: z
-        .enum(CONVERSATION_MODES)
-        .describe(
-          "Current conversation mode: workout_active (logging exercises), chatting (general conversation), planning (creating/adjusting weekly plans), retrospective (analyzing past performance)"
-        ),
-      workout: z
-        .object({
-          date: z.string().describe("Workout date (YYYY-MM-DD)"),
-          type: z.string().describe("Workout type (upper, lower, full, cardio, etc.)"),
-          exercisesCompleted: z.array(z.string()).describe("Exercise names completed so far"),
-          currentExercise: z
-            .string()
-            .nullable()
-            .describe("Exercise currently being logged, or null"),
-          plannedRemaining: z
-            .array(z.string())
-            .optional()
-            .describe("Planned exercises not yet done"),
-          notes: z.string().optional().describe("Any context worth carrying to the next message"),
-        })
-        .optional()
-        .describe("Workout details — include when mode is workout_active"),
-    },
-    async (args) => {
-      const state: SessionState = {
-        mode: args.mode,
-        lastUpdated: new Date().toISOString(),
-      };
-      if (args.workout) {
-        state.workout = {
-          date: args.workout.date,
-          type: args.workout.type,
-          exercisesCompleted: args.workout.exercisesCompleted,
-          currentExercise: args.workout.currentExercise,
-          plannedRemaining: args.workout.plannedRemaining,
-          notes: args.workout.notes,
-        };
-      }
-      writeSessionState(repoDir, state);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Session updated: mode=${args.mode}${args.workout ? `, exercises=${args.workout.exercisesCompleted.length}` : ""}`,
-          },
-        ],
-      };
-    }
-  );
-
-  const endSession = tool(
-    "end_session",
-    "Clear session state. Call this when a workout is completed or the user is done with the current activity.",
-    {},
-    async () => {
-      clearSessionState(repoDir);
-      return {
-        content: [{ type: "text" as const, text: "Session cleared." }],
-      };
-    }
-  );
-
-  return { saveMemory, updateSession, endSession };
+  return { saveMemory };
 }
 
 // ============================================================================
@@ -294,18 +190,10 @@ function createRepoTools(repoDir: string) {
  */
 export function createCoachToolsServer(repoPath?: string) {
   const repoDir = repoPath || DEFAULT_REPO_DIR;
-  const { saveMemory, updateSession, endSession } = createRepoTools(repoDir);
+  const { saveMemory } = createRepoTools(repoDir);
 
   return createSdkMcpServer({
     name: "coach-tools",
-    tools: [
-      getReminders,
-      addReminder,
-      deleteReminder,
-      saveMemory,
-      loadSkill,
-      updateSession,
-      endSession,
-    ],
+    tools: [getReminders, addReminder, deleteReminder, saveMemory],
   });
 }

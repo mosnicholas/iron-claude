@@ -65,32 +65,6 @@ export function expectWorkoutStatus(
 }
 
 // ============================================================================
-// Session State
-// ============================================================================
-
-/** Read session state from the test repo, or null if none */
-export function readSessionStateFromRepo(
-  repoPath: string
-): Record<string, unknown> | null {
-  const filePath = join(repoPath, "state", "session.json");
-  if (!existsSync(filePath)) return null;
-  return JSON.parse(readFileSync(filePath, "utf-8"));
-}
-
-/** Assert session state exists and has the expected mode */
-export function expectSessionMode(repoPath: string, mode: string): void {
-  const state = readSessionStateFromRepo(repoPath);
-  expect(state).not.toBeNull();
-  expect(state!.mode).toBe(mode);
-}
-
-/** Assert session state has been cleared (file deleted) */
-export function expectNoSession(repoPath: string): void {
-  const state = readSessionStateFromRepo(repoPath);
-  expect(state).toBeNull();
-}
-
-// ============================================================================
 // PRs
 // ============================================================================
 
@@ -102,11 +76,7 @@ export function readPRsFile(repoPath: string): string {
 }
 
 /** Assert prs.yaml contains a specific weight for an exercise */
-export function expectPRWeight(
-  repoPath: string,
-  exercise: string,
-  weight: number
-): void {
+export function expectPRWeight(repoPath: string, exercise: string, weight: number): void {
   const prs = readPRsFile(repoPath);
   // Simple check: the exercise section should contain the weight
   const exerciseSection = extractYamlSection(prs, exercise);
@@ -128,6 +98,17 @@ export function readLearningsFile(repoPath: string): string {
 export function expectLearningsContains(repoPath: string, substring: string): void {
   const content = readLearningsFile(repoPath);
   expect(content.toLowerCase()).toContain(substring.toLowerCase());
+}
+
+// ============================================================================
+// Plan File
+// ============================================================================
+
+/** Read plan.md content from the test repo */
+export function readPlanFile(repoPath: string, week: string): string {
+  const filePath = join(repoPath, "weeks", week, "plan.md");
+  if (!existsSync(filePath)) return "";
+  return readFileSync(filePath, "utf-8");
 }
 
 // ============================================================================

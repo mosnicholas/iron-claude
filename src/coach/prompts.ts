@@ -10,9 +10,6 @@ import { fileURLToPath } from "url";
 import { getConfiguredIntegrations, hasConfiguredIntegrations } from "../integrations/registry.js";
 import { getDateInfoTZAware, getWeekDays } from "../utils/date.js";
 import { formatRecentMessagesForPrompt } from "../bot/message-history.js";
-import type { ConversationMode, SessionState } from "../state/session.js";
-import { formatSessionStateForPrompt } from "../state/session.js";
-import { getSkillsMenu } from "./skills.js";
 
 export interface WorkoutLogSummary {
   date: string; // "2026-02-03"
@@ -52,8 +49,6 @@ export interface SystemPromptContext {
   todayWorkout?: string; // Today's workout log if it exists
   weekProgress?: WorkoutLogSummary[]; // Workout logs found for this week
   messageHistoryCount?: number; // Number of recent messages to include (default: 10)
-  sessionState?: SessionState | null; // Current session state (from state/session.json)
-  mode?: ConversationMode; // Conversation mode (derived from session state)
 }
 
 /**
@@ -162,38 +157,6 @@ function buildWeekProgressSection(workouts: WorkoutLogSummary[], isoWeek: string
   return section;
 }
 
-/**
- * Load only the reference guides relevant to the current conversation mode.
- * This cuts prompt size by 40-100% compared to loading all guides every time.
- */
-function loadGuidesForMode(mode: ConversationMode): string {
-  switch (mode) {
-    case "workout_active":
-      return [
-        `<exercise-parsing>\n${loadPartial("exercise-parsing")}\n</exercise-parsing>`,
-        `<workout-management>\n${loadPartial("workout-management")}\n</workout-management>`,
-        `<pr-detection>\n${loadPartial("pr-detection")}\n</pr-detection>`,
-      ].join("\n\n");
-
-    case "planning":
-      return [
-        `<weekly-planning-guide>\n${loadPrompt("weekly-planning")}\n</weekly-planning-guide>`,
-        `<historical-data>\n${loadPartial("historical-data")}\n</historical-data>`,
-      ].join("\n\n");
-
-    case "retrospective":
-      return [
-        `<retrospective-guide>\n${loadPrompt("retrospective")}\n</retrospective-guide>`,
-        `<historical-data>\n${loadPartial("historical-data")}\n</historical-data>`,
-        `<rpe-analysis>\n${loadPartial("rpe-analysis")}\n</rpe-analysis>`,
-      ].join("\n\n");
-
-    case "chatting":
-      // No reference guides needed for general chat — the core prompt is enough
-      return "";
-  }
-}
-
 export function buildSystemPrompt(context?: SystemPromptContext): string {
   const {
     repoPath,
@@ -204,8 +167,6 @@ export function buildSystemPrompt(context?: SystemPromptContext): string {
     todayWorkout,
     weekProgress = [],
     messageHistoryCount = 10,
-    sessionState,
-    mode = "chatting",
   } = context || {};
 
   const systemPrompt = loadPrompt("system");
@@ -286,6 +247,13 @@ This is the current state of today's workout. Use this to track what's been logg
   // Build week progress section from actual workout log files
   const weekProgressSection = buildWeekProgressSection(weekProgress, dateInfo.isoWeek);
 
+  // Always load the most common reference guides (workout management + exercise parsing)
+  const referenceGuides = [
+    `<exercise-parsing>\n${loadPartial("exercise-parsing")}\n</exercise-parsing>`,
+    `<workout-management>\n${loadPartial("workout-management")}\n</workout-management>`,
+    `<pr-detection>\n${loadPartial("pr-detection")}\n</pr-detection>`,
+  ].join("\n\n");
+
   const contextNote = `
 ## Current Date & Time
 
@@ -323,12 +291,50 @@ You have direct access to the fitness-data repository files:
 Use Read, Glob, and Grep to explore files. Use Edit/Write to update them.
 Current timezone: ${dateInfo.timezone}
 ${integrationContext}
-${sessionState ? `\n${formatSessionStateForPrompt(sessionState)}\n` : ""}
-${getSkillsMenu()}
-## Reference Guides (${mode} mode)
+## Reference Guides
 
-${loadGuidesForMode(mode) || "_No reference guides needed for this mode._"}
+${referenceGuides}
 `;
 
   return systemPrompt.replace("{{CONTEXT}}", contextNote);
 }
+
+// ============================================================================
+// Exported instruction constants for cron jobs and webhook routing
+// ============================================================================
+
+export const RETRO_INSTRUCTIONS = `
+Generate the weekly retrospective for the ending week.
+
+Steps:
+1. Use Glob to find all workout files in the ending week's folder (weeks/YYYY-WXX/*.md)
+2. Read each workout file — note exercises, weights, sets, RPE, PRs hit, energy levels
+3. Read the week's plan.md and compare plan vs actual (adherence, modifications, skips, additions)
+4. Read prs.yaml for current PR numbers
+5. Read learnings.md for existing patterns
+6. Write the retrospective to weeks/YYYY-WXX/retro.md covering:
+   - Plan adherence summary
+   - Key lifts and progression
+   - PRs hit this week
+   - Energy/recovery trends
+   - Patterns or observations for learnings.md
+7. If you notice new patterns, append them to learnings.md
+8. Commit changes
+`;
+
+export const PLAN_GENERATION_INSTRUCTIONS = `
+The user is responding to your weekly planning questions. Generate next week's training plan.
+
+Steps:
+1. Read profile.md for goals and preferences
+2. Read prs.yaml for current numbers
+3. Use Glob to read the last 2-3 weeks of workout files for progression context
+4. Read learnings.md for coaching observations
+5. Incorporate the user's answers to your planning questions (their message above)
+6. Apply progressive overload where appropriate, deload if fatigue indicators warrant it
+7. Write the plan to weeks/YYYY-WXX/plan.md (for the upcoming week)
+8. Commit changes
+9. Summarize the plan to the user — highlight key changes from last week and how their input shaped it
+
+After generating the plan, delete the file state/planning-pending.md to signal planning is complete.
+`;

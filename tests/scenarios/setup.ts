@@ -24,8 +24,6 @@ export interface TestRepoOptions {
   plan?: string;
   /** Pre-seed an existing workout file for today */
   existingWorkout?: string;
-  /** Pre-seed session state */
-  sessionState?: Record<string, unknown>;
   /** Skip creating a weekly plan */
   noPlan?: boolean;
 }
@@ -48,7 +46,7 @@ export interface TestRepo {
  * - git init with a valid initial commit
  * - profile.md, prs.yaml, learnings.md
  * - weeks/{currentWeek}/plan.md
- * - Optionally: today's workout file, session state
+ * - Optionally: today's workout file
  */
 export function setupTestRepo(options: TestRepoOptions = {}): TestRepo {
   const repoPath = mkdtempSync(join(tmpdir(), "iron-claude-test-"));
@@ -78,13 +76,6 @@ export function setupTestRepo(options: TestRepoOptions = {}): TestRepo {
   // Optional: pre-seed today's workout
   if (options.existingWorkout) {
     writeFileSync(join(weekDir, `${today}.md`), options.existingWorkout);
-  }
-
-  // Optional: pre-seed session state
-  if (options.sessionState) {
-    const stateDir = join(repoPath, "state");
-    mkdirSync(stateDir, { recursive: true });
-    writeFileSync(join(stateDir, "session.json"), JSON.stringify(options.sessionState, null, 2));
   }
 
   // Create initial commit so git is in a valid state
