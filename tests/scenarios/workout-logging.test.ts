@@ -101,6 +101,58 @@ status: in_progress
     },
     180_000
   );
+  it(
+    "persists multiple exercises across separate messages to the file",
+    async () => {
+      // This catches the production bug where the agent acknowledged
+      // exercises in text but never wrote them to the workout file.
+      // Only the initial "Start workout" commit appeared in git.
+      const existingWorkout = `---
+date: "${new Date().toISOString().split("T")[0]}"
+type: upper
+status: in_progress
+started: "10:00"
+---
+# Workout
+
+## Exercises
+`;
+
+      repo = setupTestRepo({ existingWorkout });
+
+      const agent = createCoachAgent({
+        model: "claude-haiku-4-5",
+        maxTurns: 15,
+        repoPath: repo.repoPath,
+      });
+
+      // Simulate two separate Telegram messages (separate runQuery calls)
+      await agent.chat("bench 175x5x3 RPE 7");
+      await agent.chat("OHP 105x5x3 RPE 7");
+
+      // BOTH exercises must appear in the workout file, not just in chat
+      const content = readWorkoutFile(repo.repoPath, repo.currentWeek, repo.today);
+      const contentLower = content.toLowerCase();
+
+      const hasBenchInFile = contentLower.includes("bench") && contentLower.includes("175");
+      const hasOhpInFile =
+        (contentLower.includes("ohp") || contentLower.includes("overhead")) &&
+        contentLower.includes("105");
+
+      expect({
+        benchWrittenToFile: hasBenchInFile,
+        ohpWrittenToFile: hasOhpInFile,
+        note: "Both exercises must be in the workout FILE, not just acknowledged in chat",
+        filePreview: content.slice(0, 500),
+      }).toEqual(
+        expect.objectContaining({
+          benchWrittenToFile: true,
+          ohpWrittenToFile: true,
+        })
+      );
+    },
+    240_000
+  );
 });
 
 if (!hasApiKey) {
