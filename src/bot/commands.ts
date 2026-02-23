@@ -2,8 +2,7 @@
  * Command Handlers
  *
  * Only /help and /restart remain as explicit commands.
- * All other capabilities (demos, workout completion, progress checks, etc.)
- * are handled via the skills system — see src/coach/skills.ts.
+ * All other capabilities are handled by the agent via natural language.
  */
 
 import { CoachAgent, StreamingCallbacks } from "../coach/index.js";
