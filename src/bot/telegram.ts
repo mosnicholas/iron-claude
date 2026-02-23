@@ -96,10 +96,26 @@ export class TelegramBot {
 
   /**
    * Send a message with retry (for long responses that may need splitting)
-   * Formats first, then splits, to ensure length check is accurate
+   * Splits on --- message break markers first, then formats and length-splits each chunk.
    */
   async sendMessageSafe(text: string): Promise<void> {
-    // Format first, then check length
+    // Split on --- markers BEFORE formatting (formatting escapes the dashes)
+    const messageChunks = splitOnMessageBreaks(text);
+
+    for (let i = 0; i < messageChunks.length; i++) {
+      await this.sendSingleChunkSafe(messageChunks[i]);
+
+      // Small delay between message-break chunks
+      if (i < messageChunks.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    }
+  }
+
+  /**
+   * Send a single chunk (no --- markers) with formatting and length splitting.
+   */
+  private async sendSingleChunkSafe(text: string): Promise<void> {
     const formatted = formatForTelegram(text);
 
     if (formatted.length <= MAX_MESSAGE_LENGTH) {
@@ -112,18 +128,16 @@ export class TelegramBot {
       return;
     }
 
-    // Split the formatted text into chunks
+    // Split the formatted text into length-based chunks
     const chunks = splitMessage(formatted, MAX_MESSAGE_LENGTH);
     for (const chunk of chunks) {
       try {
         await this.sendFormattedMessage(chunk);
       } catch (error) {
         console.log(`[sendMessageSafe] MarkdownV2 failed, trying plain text:`, error);
-        // For plain text fallback, we'd need the original unformatted chunk
-        // but that's complex - just send the formatted chunk as plain text
         await this.sendPlainMessage(chunk);
       }
-      // Small delay between messages
+      // Small delay between length-split chunks
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
