@@ -153,6 +153,7 @@ function buildWeekProgressSection(workouts: WorkoutLogSummary[], isoWeek: string
   }
 
   section += `Completed: ${completed} | In Progress: ${inProgress} | Total logged: ${workouts.length}\n`;
+  section += `\n**Note**: This is a snapshot from when your context was built. For retrospectives or adherence analysis, re-read the actual files with Glob — do not rely solely on this summary.\n`;
 
   return section;
 }
@@ -306,14 +307,20 @@ ${referenceGuides}
 export const RETRO_INSTRUCTIONS = `
 Generate the weekly retrospective for the ending week.
 
+CRITICAL — Accurate Workout Counting:
+Do NOT rely on the pre-loaded "This Week's Workout Logs" summary in the system prompt.
+You MUST use Glob to re-read the actual files and verify each one's status field.
+
 Steps:
-1. Use Glob to find all workout files in the ending week's folder (weeks/YYYY-WXX/*.md)
-2. Read each workout file — note exercises, weights, sets, RPE, PRs hit, energy levels
+1. Use Glob to find all date-named workout files: weeks/YYYY-WXX/????-??-??.md
+   (this excludes plan.md and retro.md)
+2. Read EACH workout file — check \`status\` in frontmatter. Count only files with \`status: completed\`.
+   Note exercises, weights, sets, RPE, PRs hit, energy levels from each completed workout.
 3. Read the week's plan.md and compare plan vs actual (adherence, modifications, skips, additions)
 4. Read prs.yaml for current PR numbers
 5. Read learnings.md for existing patterns
 6. Write the retrospective to weeks/YYYY-WXX/retro.md covering:
-   - Plan adherence summary
+   - Plan adherence summary (X of Y planned workouts completed — verified from files)
    - Key lifts and progression
    - PRs hit this week
    - Energy/recovery trends

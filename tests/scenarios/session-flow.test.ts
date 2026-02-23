@@ -67,9 +67,17 @@ status: in_progress
       // Workout file should still exist
       expectWorkoutFileExists(repo.repoPath, repo.currentWeek, repo.today);
 
-      // The agent should have updated workout status to "completed" in the file
+      // The agent MUST have updated the frontmatter status to "completed"
+      // This is the bug we saw in production: workouts left as in_progress
+      // after the user said they were done, making them invisible to retros
       const content = readWorkoutFile(repo.repoPath, repo.currentWeek, repo.today);
-      expect(content.toLowerCase()).toContain("completed");
+      const statusMatch = content.match(/status:\s*(\S+)/);
+      expect({
+        frontmatterStatus: statusMatch?.[1],
+        note: "Workout must have status: completed in frontmatter after user says done",
+      }).toEqual(
+        expect.objectContaining({ frontmatterStatus: "completed" })
+      );
 
       // Response should acknowledge the workout ending
       expect(response.message.length).toBeGreaterThan(0);

@@ -29,7 +29,11 @@ Heading: `# Workout — {actual day name}, {actual date}` (e.g., `# Workout — 
 
 1. **Start**: Create the file with `status: in_progress`. Match to the weekly plan if one exists for today. If this was planned for a different day, add `planned_day` to frontmatter and amend `plan.md`.
 2. **Log exercises**: Parse input, add to the file under `## Exercises`, commit as you go. Confirm parsed exercises back to the user to catch errors. After each exercise, mention what the plan suggests next (as a suggestion, not directive) — follow the user's flow.
-3. **Complete**: When the user says they're done — update `status: completed`, add `finished` time, `duration_minutes`, `energy_level`, and a `## Summary` section. Check for PRs across all logged exercises, update `prs.yaml` if any. Commit and push.
+3. **Complete** (CRITICAL — never skip this): When the user says they're done ("I'm done", "that's it", "finished", "/done", "wrapping up", etc.):
+   - **First**: Update `status: completed` in frontmatter. This is the single most important step — a workout stuck as `in_progress` is invisible to retros and adherence tracking.
+   - Then: Add `finished` time, `duration_minutes`, `energy_level` (ask if not mentioned), and a `## Summary` section.
+   - Then: Check for PRs across all logged exercises, update `prs.yaml` if any.
+   - Finally: Commit and push.
 
 The plan is a suggestion. The user's actual exercises are the source of truth. If they deviate, log what they actually do.
 

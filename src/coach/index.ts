@@ -232,8 +232,18 @@ export class CoachAgent {
     if (todayWorkout) {
       const { frontmatter } = parseFrontmatter(todayWorkout);
       if (frontmatter.status === "in_progress") {
-        activeWorkoutContext =
-          "\n\n## Active Workout\n\nThere is a workout currently in progress. The workout file has been pre-loaded above as today's workout. Continue logging exercises to this session. When the user indicates they're done, complete the workout (set status: completed, add finished time, duration, energy level, summary, and check for PRs).";
+        activeWorkoutContext = `\n\n## Active Workout
+
+There is a workout currently in progress. The workout file has been pre-loaded above as today's workout. Continue logging exercises to this session.
+
+**CRITICAL — Workout Completion**: When the user indicates they're done ("I'm done", "that's it", "finished", "/done", "wrapping up", "calling it a day", etc.), you MUST:
+1. Update \`status: completed\` in the frontmatter (THIS IS THE MOST IMPORTANT STEP — never skip it)
+2. Add \`finished\` time and \`duration_minutes\`
+3. Add a \`## Summary\` section
+4. Check for PRs
+5. Commit and push
+
+A workout left as \`status: in_progress\` after the user says they're done is a bug — it will be invisible to retrospectives and weekly adherence counts.`;
       }
     }
 
