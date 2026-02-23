@@ -19,27 +19,17 @@ Brzycki formula (valid for 1-10 reps, conservative beyond that):
 1. Celebrate genuinely — scale the reaction to the achievement
 2. Show context: old vs new, journey progress if history is available
 3. Note plate milestones (135/225/315/405) — these are significant
-4. Update `prs.yaml` immediately
+4. Use `update_prs` with the exercise (snake_case), weight, and reps — the tool validates and writes `prs.yaml` automatically. If the tool is unavailable, update `prs.yaml` directly with Edit.
 
-## prs.yaml Format
+## prs.yaml Format (for reference)
 
 ```yaml
 bench_press:
-  current:
-    weight: 190
-    reps: 3
-    date: "2025-01-24"
-    estimated_1rm: 202
-    workout_ref: "weeks/2025-W04/2025-01-24.md"
-  history:
-    - weight: 190
-      reps: 3
-      date: "2025-01-24"
-      estimated_1rm: 202
-    - weight: 185
-      reps: 3
-      date: "2025-01-15"
-      estimated_1rm: 196
+  weight: 190
+  reps: 3
+  date: "2025-01-24"
+  estimated_1rm: 202
+  workout_ref: "weeks/2025-W04/2025-01-24.md"
 ```
 
 ## Edge Cases

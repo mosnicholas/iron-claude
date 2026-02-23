@@ -60,7 +60,7 @@ ANTHROPIC_API_KEY=sk-... npm run test:scenarios   # 10 tests — runs in ~2 min
 
 Scenario tests validate end-to-end agent behavior by:
 1. Creating an isolated temp repo with fixture data (profile, PRs, plan, learnings)
-2. Running the real CoachAgent (Haiku model) against it
+2. Running the real CoachAgent (Sonnet 4.6 model) against it
 3. Asserting on **file side effects** (workout file created, prs.yaml updated, session state)
 
 Test suites:
@@ -75,7 +75,7 @@ To add a new scenario test, use the existing pattern:
 - Add fixtures to `tests/scenarios/fixtures.ts` if needed
 - Use `setupTestRepo()` from `tests/scenarios/setup.ts` to create isolated repos
 - Assert on file side effects using helpers from `tests/scenarios/assertions.ts`
-- Use `createCoachAgent({ repoPath, model: "claude-haiku-4-5", maxTurns: 15 })` for the agent
+- Use `createCoachAgent({ repoPath, model: "claude-sonnet-4-6", maxTurns: 15 })` for the agent
 
 ### Local Development
 - Run `npm run dev` for local development

@@ -55,7 +55,7 @@ status: in_progress
       repo = setupTestRepo({ existingWorkout });
 
       const agent = createCoachAgent({
-        model: "claude-haiku-4-5",
+        model: "claude-sonnet-4-6",
         maxTurns: 15,
         repoPath: repo.repoPath,
       });
@@ -91,7 +91,7 @@ status: in_progress
       repo = setupTestRepo();
 
       const agent = createCoachAgent({
-        model: "claude-haiku-4-5",
+        model: "claude-sonnet-4-6",
         maxTurns: 10,
         repoPath: repo.repoPath,
       });

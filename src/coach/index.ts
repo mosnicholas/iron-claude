@@ -237,17 +237,17 @@ export class CoachAgent {
 There is a workout currently in progress. The workout file has been pre-loaded above as today's workout.
 
 **Every time the user reports an exercise, you MUST**:
-1. Use Edit/Write to add the exercise data to the workout file (under ## Exercises)
+1. Use \`log_exercise\` to add the exercise data to the workout file (preferred), OR use Edit/Write to add it under ## Exercises
 2. Confirm the parsed exercise back to the user in your response
 3. Commit the file via Bash (git add + git commit)
 
 Do NOT just acknowledge exercises in text — they must be written to the file. An exercise that only appears in chat and not in the workout file is lost data.
 
 **CRITICAL — Workout Completion**: When the user indicates they're done ("I'm done", "that's it", "finished", "/done", "wrapping up", "calling it a day", etc.), you MUST:
-1. Update \`status: completed\` in the frontmatter (THIS IS THE MOST IMPORTANT STEP — never skip it)
+1. Update \`status: completed\` in the frontmatter — use \`complete_workout\` tool or Edit the frontmatter directly (THIS IS THE MOST IMPORTANT STEP — never skip it)
 2. Add \`finished\` time and \`duration_minutes\`
 3. Add a \`## Summary\` section
-4. Check for PRs
+4. Check for PRs — use \`update_prs\` or Edit prs.yaml directly
 5. Delete the workout-timeout-check reminder (use get_reminders to find it, then delete_reminder)
 6. Commit and push
 
@@ -293,6 +293,11 @@ A workout left as \`status: in_progress\` after the user says they're done is a 
       "coach-tools:add_reminder",
       "coach-tools:delete_reminder",
       "coach-tools:save_memory",
+      "coach-tools:start_workout",
+      "coach-tools:log_exercise",
+      "coach-tools:complete_workout",
+      "coach-tools:update_prs",
+      "coach-tools:save_plan",
     ];
     const allowedTools = [
       "Read",

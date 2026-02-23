@@ -42,7 +42,7 @@ describeWithApi("Scenario: Plan Flexibility", () => {
       repo = setupTestRepo();
 
       const agent = createCoachAgent({
-        model: "claude-haiku-4-5",
+        model: "claude-sonnet-4-6",
         maxTurns: 15,
         repoPath: repo.repoPath,
       });
@@ -81,7 +81,7 @@ describeWithApi("Scenario: Plan Flexibility", () => {
       repo = setupTestRepo();
 
       const agent = createCoachAgent({
-        model: "claude-haiku-4-5",
+        model: "claude-sonnet-4-6",
         maxTurns: 15,
         repoPath: repo.repoPath,
       });
@@ -116,7 +116,7 @@ describeWithApi("Scenario: Plan Flexibility", () => {
       repo = setupTestRepo();
 
       const agent = createCoachAgent({
-        model: "claude-haiku-4-5",
+        model: "claude-sonnet-4-6",
         maxTurns: 15,
         repoPath: repo.repoPath,
       });

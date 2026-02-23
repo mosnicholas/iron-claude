@@ -89,6 +89,34 @@ export function formatToolStatus(
       }
       break;
 
+    case "coach-tools:start_workout":
+      action = "Starting workout";
+      break;
+
+    case "coach-tools:log_exercise":
+      if (input.exercise_name) {
+        action = `Logging ${input.exercise_name}`;
+      } else {
+        action = "Logging exercise";
+      }
+      break;
+
+    case "coach-tools:complete_workout":
+      action = "Completing workout";
+      break;
+
+    case "coach-tools:update_prs":
+      if (input.exercise) {
+        action = `Checking PR for ${input.exercise}`;
+      } else {
+        action = "Updating PRs";
+      }
+      break;
+
+    case "coach-tools:save_plan":
+      action = "Saving plan";
+      break;
+
     default:
       action = `Using ${toolName}`;
   }
