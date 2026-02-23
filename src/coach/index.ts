@@ -248,7 +248,8 @@ Do NOT just acknowledge exercises in text — they must be written to the file. 
 2. Add \`finished\` time and \`duration_minutes\`
 3. Add a \`## Summary\` section
 4. Check for PRs
-5. Commit and push
+5. Delete the workout-timeout-check reminder (use get_reminders to find it, then delete_reminder)
+6. Commit and push
 
 A workout left as \`status: in_progress\` after the user says they're done is a bug — it will be invisible to retrospectives and weekly adherence counts.`;
       }

@@ -27,7 +27,7 @@ Heading: `# Workout — {actual day name}, {actual date}` (e.g., `# Workout — 
 
 ## Workflow
 
-1. **Start**: Create the file with `status: in_progress`. Match to the weekly plan if one exists for today. If this was planned for a different day, add `planned_day` to frontmatter and amend `plan.md`.
+1. **Start**: Create the file with `status: in_progress`. Match to the weekly plan if one exists for today. If this was planned for a different day, add `planned_day` to frontmatter and amend `plan.md`. After creating the file, use `add_reminder` to schedule a workout check-in for 3 hours from now with the message: "Still working out? If you're done, let me know so I can close out the session." Set context to "workout-timeout-check" so you can identify it later.
 2. **Log exercises** (MUST write to file every time):
    - Parse the user's input into structured exercise data
    - **Write it to the workout file** using Edit/Write — add under `## Exercises`. This is not optional.
@@ -39,6 +39,7 @@ Heading: `# Workout — {actual day name}, {actual date}` (e.g., `# Workout — 
    - **First**: Update `status: completed` in frontmatter. This is the single most important step — a workout stuck as `in_progress` is invisible to retros and adherence tracking.
    - Then: Add `finished` time, `duration_minutes`, `energy_level` (ask if not mentioned), and a `## Summary` section.
    - Then: Check for PRs across all logged exercises, update `prs.yaml` if any.
+   - Then: Use `get_reminders` to find and `delete_reminder` any reminder with context "workout-timeout-check" (the one scheduled at workout start).
    - Finally: Commit and push.
 
 The plan is a suggestion. The user's actual exercises are the source of truth. If they deviate, log what they actually do.
