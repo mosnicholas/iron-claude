@@ -4,8 +4,11 @@
  * Main entry point for all Telegram messages.
  */
 
+import { existsSync } from "fs";
+import { join } from "path";
 import type { Request, Response } from "express";
 import { createCoachAgent } from "../coach/index.js";
+import { PLAN_GENERATION_INSTRUCTIONS } from "../coach/prompts.js";
 import {
   createTelegramBot,
   extractMessageText,
@@ -17,11 +20,26 @@ import {
 } from "../bot/telegram.js";
 import { executeCommand, commandExists } from "../bot/commands.js";
 import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js";
-import { createGitHubStorage } from "../storage/github.js";
-import { generatePlanWithContext } from "../cron/weekly-plan.js";
 import { addMessage } from "../bot/message-history.js";
-import { getToday, getTimezone } from "../utils/date.js";
+import { REPO_DIR } from "../storage/repo-sync.js";
 import type { TelegramUpdate } from "../storage/types.js";
+
+// Simple serial queue per chat — prevents concurrent writes to the same files
+const messageQueues = new Map<number, Promise<void>>();
+
+function enqueueMessage(chatId: number, fn: () => Promise<void>): void {
+  const previous = messageQueues.get(chatId) || Promise.resolve();
+  const current = previous.then(fn, fn).catch((err) => {
+    console.error("[webhook] Message processing error:", err);
+  });
+  messageQueues.set(chatId, current);
+  // Clean up resolved promises to prevent memory leak
+  current.finally(() => {
+    if (messageQueues.get(chatId) === current) {
+      messageQueues.delete(chatId);
+    }
+  });
+}
 
 // Simple in-memory cache for deduplication
 // Stores update_ids we've already processed
@@ -95,9 +113,9 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
     // Process the message in the background
     res.status(200).json({ ok: true });
 
-    // Process message asynchronously
-    processMessage(update, bot).catch((error) => {
-      console.error("[webhook] Background processing error:", error);
+    // Process message asynchronously via per-chat serial queue
+    enqueueMessage(chatId, async () => {
+      await processMessage(update, bot);
     });
   } catch (error) {
     console.error("Webhook error:", error);
@@ -165,46 +183,13 @@ async function processMessage(
           // Record bot response in history
           addMessage(response, false);
         }
-      } else {
-        const unknownCmdResponse = `Unknown command /${command}. Try /help to see available commands.`;
-        await bot.sendMessage(unknownCmdResponse);
-        addMessage(unknownCmdResponse, false);
+        return;
       }
-      return;
+      // Unknown commands fall through to the agent as natural language
     }
 
-    // Check for pending gym time state - user responding to "what time are you heading to the gym?"
-    const storage = createGitHubStorage();
-    const gymTimeState = await storage.getGymTimePendingState();
-
-    if (gymTimeState) {
-      await storage.clearGymTimePendingState();
-
-      if (gymTimeState.date === getToday(getTimezone())) {
-        // Pass to agent with context — it knows how to parse times and schedule reminders
-        console.log("[webhook] Gym time response detected, routing to agent with context");
-        messageText =
-          `The user is responding to the morning question "What time are you heading to the gym today?". ` +
-          `Their response: "${messageText}". ` +
-          `If they gave a time, schedule a warm-up reminder for that hour by: ` +
-          `1) Reading today's plan to generate a concise warm-up + exercise preview, ` +
-          `2) Using the add_reminder tool to schedule it. ` +
-          `If they said they're not going or it's unclear, just acknowledge naturally.`;
-      }
-      // If stale (different day), just clear and fall through to normal processing
-    }
-
-    // Check for pending planning state - if waiting for input, generate the plan
-    const planningState = await storage.getPlanningState();
-
-    if (planningState) {
-      console.log(`[webhook] Pending planning for ${planningState.week}, generating plan`);
-      // Don't await - let it run in background so we can respond quickly
-      generatePlanWithContext(planningState.week, messageText).catch((err) => {
-        console.error("[webhook] Plan generation failed:", err);
-      });
-      return;
-    }
+    // Check for pending planning state — route with plan generation instructions
+    const planningPending = existsSync(join(REPO_DIR, "state", "planning-pending.md"));
 
     // Handle natural language - send to coach agent with status updates
     const messageId = await bot.sendMessage("✨ _Thinking..._", "MarkdownV2");
@@ -212,12 +197,14 @@ async function processMessage(
     if (messageId) {
       const editor = new ThrottledMessageEditor(bot, messageId);
 
-      const response = await agent.chat(messageText, {
-        onStatus: (status) => {
-          console.log(`[webhook] Status update: ${status}`);
-          editor.update(status);
-        },
-      });
+      const response = planningPending
+        ? await agent.runTask(messageText, PLAN_GENERATION_INSTRUCTIONS)
+        : await agent.chat(messageText, {
+            onStatus: (status) => {
+              console.log(`[webhook] Status update: ${status}`);
+              editor.update(status);
+            },
+          });
 
       // Split on --- markers for multi-message responses
       const chunks = splitOnMessageBreaks(response.message);
@@ -232,7 +219,9 @@ async function processMessage(
       addMessage(response.message, false);
     } else {
       // Fallback if we couldn't get a message ID
-      const response = await agent.chat(messageText);
+      const response = planningPending
+        ? await agent.runTask(messageText, PLAN_GENERATION_INSTRUCTIONS)
+        : await agent.chat(messageText);
 
       const chunks = splitOnMessageBreaks(response.message);
       for (const chunk of chunks) {

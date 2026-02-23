@@ -59,17 +59,12 @@ This is the athlete's step-by-step guide for the session — they should be able
 If it's a rest day: acknowledge it and suggest optional activities.
 If it's an optional day: present the options with the same two-section format.
 
+After the workout breakdown, ask what time they're heading to the gym. Offer to send a warm-up reminder at that time using the add_reminder tool.
+
 Keep the tone concise and motivating — this is for Telegram. Use emoji sparingly.`
       );
 
       await bot.sendMessageSafe(response.message);
-
-      // Ask what time they're heading to the gym and save pending state
-      await bot.sendMessage(
-        "What time are you heading to the gym today? " +
-          "I'll send you a reminder with your warm-up when it's time."
-      );
-      await storage.saveGymTimePendingState(today);
 
       return { success: true, message: `Sent morning reminder for ${today}` };
     },

@@ -153,6 +153,7 @@ function buildWeekProgressSection(workouts: WorkoutLogSummary[], isoWeek: string
   }
 
   section += `Completed: ${completed} | In Progress: ${inProgress} | Total logged: ${workouts.length}\n`;
+  section += `\n**Note**: This is a snapshot from when your context was built. For retrospectives or adherence analysis, re-read the actual files with Glob — do not rely solely on this summary.\n`;
 
   return section;
 }
@@ -170,17 +171,6 @@ export function buildSystemPrompt(context?: SystemPromptContext): string {
   } = context || {};
 
   const systemPrompt = loadPrompt("system");
-
-  const exerciseParsing = loadPartial("exercise-parsing");
-  const workoutManagement = loadPartial("workout-management");
-  const prDetection = loadPartial("pr-detection");
-  const rpeAnalysis = loadPartial("rpe-analysis");
-  const planFlexibility = loadPartial("plan-flexibility");
-  const historicalData = loadPartial("historical-data");
-
-  // Include planning and retro as reference guides so the agent always has full capabilities
-  const weeklyPlanning = loadPrompt("weekly-planning");
-  const retrospective = loadPrompt("retrospective");
 
   const dateInfo = getDateInfoTZAware();
 
@@ -258,6 +248,13 @@ This is the current state of today's workout. Use this to track what's been logg
   // Build week progress section from actual workout log files
   const weekProgressSection = buildWeekProgressSection(weekProgress, dateInfo.isoWeek);
 
+  // Always load the most common reference guides (workout management + exercise parsing)
+  const referenceGuides = [
+    `<exercise-parsing>\n${loadPartial("exercise-parsing")}\n</exercise-parsing>`,
+    `<workout-management>\n${loadPartial("workout-management")}\n</workout-management>`,
+    `<pr-detection>\n${loadPartial("pr-detection")}\n</pr-detection>`,
+  ].join("\n\n");
+
   const contextNote = `
 ## Current Date & Time
 
@@ -297,38 +294,54 @@ Current timezone: ${dateInfo.timezone}
 ${integrationContext}
 ## Reference Guides
 
-<exercise-parsing>
-${exerciseParsing}
-</exercise-parsing>
-
-<workout-management>
-${workoutManagement}
-</workout-management>
-
-<pr-detection>
-${prDetection}
-</pr-detection>
-
-<rpe-analysis>
-${rpeAnalysis}
-</rpe-analysis>
-
-<plan-flexibility>
-${planFlexibility}
-</plan-flexibility>
-
-<historical-data>
-${historicalData}
-</historical-data>
-
-<weekly-planning-guide>
-${weeklyPlanning}
-</weekly-planning-guide>
-
-<retrospective-guide>
-${retrospective}
-</retrospective-guide>
+${referenceGuides}
 `;
 
   return systemPrompt.replace("{{CONTEXT}}", contextNote);
 }
+
+// ============================================================================
+// Exported instruction constants for cron jobs and webhook routing
+// ============================================================================
+
+export const RETRO_INSTRUCTIONS = `
+Generate the weekly retrospective for the ending week.
+
+CRITICAL — Accurate Workout Counting:
+Do NOT rely on the pre-loaded "This Week's Workout Logs" summary in the system prompt.
+You MUST use Glob to re-read the actual files and verify each one's status field.
+
+Steps:
+1. Use Glob to find all date-named workout files: weeks/YYYY-WXX/????-??-??.md
+   (this excludes plan.md and retro.md)
+2. Read EACH workout file — check \`status\` in frontmatter. Count only files with \`status: completed\`.
+   Note exercises, weights, sets, RPE, PRs hit, energy levels from each completed workout.
+3. Read the week's plan.md and compare plan vs actual (adherence, modifications, skips, additions)
+4. Read prs.yaml for current PR numbers
+5. Read learnings.md for existing patterns
+6. Write the retrospective to weeks/YYYY-WXX/retro.md covering:
+   - Plan adherence summary (X of Y planned workouts completed — verified from files)
+   - Key lifts and progression
+   - PRs hit this week
+   - Energy/recovery trends
+   - Patterns or observations for learnings.md
+7. If you notice new patterns, append them to learnings.md
+8. Commit changes
+`;
+
+export const PLAN_GENERATION_INSTRUCTIONS = `
+The user is responding to your weekly planning questions. Generate next week's training plan.
+
+Steps:
+1. Read profile.md for goals and preferences
+2. Read prs.yaml for current numbers
+3. Use Glob to read the last 2-3 weeks of workout files for progression context
+4. Read learnings.md for coaching observations
+5. Incorporate the user's answers to your planning questions (their message above)
+6. Apply progressive overload where appropriate, deload if fatigue indicators warrant it
+7. Write the plan to weeks/YYYY-WXX/plan.md (for the upcoming week)
+8. Commit changes
+9. Summarize the plan to the user — highlight key changes from last week and how their input shaped it
+
+After generating the plan, delete the file state/planning-pending.md to signal planning is complete.
+`;

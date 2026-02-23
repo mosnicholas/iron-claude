@@ -1,20 +1,27 @@
 /**
  * Weekly Planning Cron Job
  *
- * Initiates the weekly planning flow by asking the user questions first.
+ * Initiates the weekly planning flow by generating a retrospective first,
+ * then asking the user questions before generating the plan.
  * Schedule: Sunday at 8:00pm (user's timezone)
  *
  * Flow:
- * 1. Cron job sends coaching questions
- * 2. User responds via Telegram
- * 3. Webhook detects pending planning state and generates plan with user context
+ * 1. Generate retrospective for the ending week
+ * 2. Create state/planning-pending.md signal file
+ * 3. Ask planning questions via the agent (recorded in message history)
+ * 4. User responds via Telegram
+ * 5. Webhook detects signal file, routes response with PLAN_GENERATION_INSTRUCTIONS
+ * 6. Agent generates the plan and deletes the signal file
  */
 
+import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { join } from "path";
 import { createCoachAgent } from "../coach/index.js";
 import { createTelegramBot } from "../bot/telegram.js";
-import { createGitHubStorage } from "../storage/github.js";
+import { RETRO_INSTRUCTIONS } from "../coach/prompts.js";
 import { getCurrentWeek, getNextWeek, getWeekDays, getTimezone } from "../utils/date.js";
 import { runCronTask, type CronResult } from "./runner.js";
+import { REPO_DIR } from "../storage/repo-sync.js";
 
 /**
  * Format week days info for the planning prompt
@@ -34,22 +41,15 @@ Use these exact dates when creating the plan. Each day in the plan should includ
 export type WeeklyPlanResult = CronResult & { week?: string };
 
 /**
- * Planning questions to ask the user before generating the plan
- */
-const PLANNING_QUESTIONS = `Hey! Time to plan next week 📋
-
-Before I put together your plan, a few quick questions:
-
-1. **How are you feeling?** Any fatigue, soreness, or niggles I should know about?
-
-2. **Any schedule changes?** Travel, busy days, or time constraints?
-
-3. **Anything you want to focus on?** A lift you want to push, skill to work on, or area to prioritize?
-
-Just reply with whatever's on your mind and I'll build your plan around it.`;
-
-/**
- * Run the weekly planning job - asks questions first
+ * Run the weekly planning job.
+ *
+ * Steps:
+ * 1. Generate retrospective for the ending week
+ * 2. Create planning signal file
+ * 3. Ask planning questions via the agent
+ *
+ * The user's response is handled by the webhook, which detects the
+ * signal file and routes the message with PLAN_GENERATION_INSTRUCTIONS.
  */
 export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
   const timezone = getTimezone();
@@ -58,6 +58,7 @@ export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
     "weekly-plan",
     async ({ bot, storage }) => {
       const nextWeek = getNextWeek(getCurrentWeek(timezone));
+      const endingWeek = getCurrentWeek(timezone);
 
       // Check if plan already exists
       const existingPlan = await storage.readWeeklyPlan(nextWeek);
@@ -66,182 +67,39 @@ export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
         return { success: true, week: nextWeek, message: `Plan already exists for ${nextWeek}` };
       }
 
-      // Check if we already asked (don't spam)
-      const pendingState = await storage.getPlanningState();
-      if (pendingState && pendingState.week === nextWeek) {
-        return {
-          success: true,
-          week: nextWeek,
-          message: `Already waiting for planning input for ${nextWeek}`,
-        };
-      }
+      const agent = createCoachAgent({ timezone });
 
-      // Save planning state and ask questions
-      await storage.savePlanningState(nextWeek);
-      await bot.sendMessageSafe(PLANNING_QUESTIONS);
+      // Step 1: Generate retrospective for the ending week
+      console.log(`[weekly-plan] Generating retro for ending week: ${endingWeek}`);
+      await agent.runTask(`Generate the retrospective for week ${endingWeek}.`, RETRO_INSTRUCTIONS);
+      console.log(`[weekly-plan] Retro generated for ${endingWeek}`);
+
+      // Step 2: Create planning signal file
+      const repoPath = REPO_DIR;
+      const stateDir = join(repoPath, "state");
+      if (!existsSync(stateDir)) {
+        mkdirSync(stateDir, { recursive: true });
+      }
+      const signalPath = join(repoPath, "state", "planning-pending.md");
+      writeFileSync(signalPath, `week: ${nextWeek}\ncreated: ${new Date().toISOString()}\n`);
+      console.log(`[weekly-plan] Created planning signal for ${nextWeek}`);
+
+      // Step 3: Ask planning questions via agent
+      const response = await agent.runTask(
+        "Ask the athlete your Sunday planning questions for next week. Ask about fatigue, schedule, and focus areas.",
+        "You are starting the weekly planning flow. Ask 2-3 short coaching questions. Do NOT generate the plan yet — wait for their response."
+      );
+
+      await bot.sendMessageSafe(response.message);
 
       return {
         success: true,
         week: nextWeek,
-        message: `Asked planning questions for ${nextWeek}, waiting for response`,
+        message: `Generated retro for ${endingWeek}, asked planning questions for ${nextWeek}`,
       };
     },
     { errorMessage: 'Had trouble starting the planning process. Say "plan my week" to try again.' }
   ) as Promise<WeeklyPlanResult>;
-}
-
-/**
- * Generate the actual plan after receiving user input.
- * Also generates the retrospective for the ending week (since the retro should
- * happen when the week is complete, not mid-week on Saturday).
- */
-export async function generatePlanWithContext(
-  week: string,
-  userContext: string
-): Promise<WeeklyPlanResult> {
-  const timezone = getTimezone();
-  console.log(`[weekly-plan] Generating plan for ${week} with user context`);
-
-  try {
-    const bot = createTelegramBot();
-    const agent = createCoachAgent({ timezone, maxTurns: 25 });
-    const storage = createGitHubStorage();
-
-    // The ending week (current week) needs a retrospective
-    const endingWeek = getCurrentWeek(timezone);
-    console.log(`[weekly-plan] Will also generate retro for ending week: ${endingWeek}`);
-
-    // Check if retro already exists for the ending week
-    const existingRetro = await storage.readWeeklyRetro(endingWeek);
-    const shouldGenerateRetro = !existingRetro;
-
-    // Send acknowledgment
-    await bot.sendMessage("✨ _Building your plan..._", "MarkdownV2");
-
-    // Build the task prompt — the agent already has full planning and retro knowledge
-    // from its system prompt reference guides, so we just tell it what to do.
-    let taskPrompt = "";
-
-    // Get the week days info for the planning week
-    const weekDaysInfo = formatWeekDaysInfo(week);
-
-    if (shouldGenerateRetro) {
-      taskPrompt = `You have two tasks to complete. Use the retrospective-guide and weekly-planning-guide in your reference guides.
-
-## TASK 1: Generate Retrospective for ${endingWeek}
-
-Analyze the ending week and create a retrospective. Follow the retrospective-guide step by step.
-
-**CRITICAL — Accurate Workout Counting:**
-- Use Glob to find all workout files in weeks/${endingWeek}/ matching the pattern ????-??-??.md
-- Read each file and check the frontmatter status field
-- Count ONLY files with status: completed — do NOT count from the plan
-- Check for plan amendments (shifted workouts count for the day they actually happened)
-
-After generating the retrospective:
-1. Save it to weeks/${endingWeek}/retro.md
-2. Update learnings.md if you discovered new patterns
-
----
-
-## TASK 2: Generate Plan for ${week}
-
-Generate the weekly training plan for ${week}. Follow the weekly-planning-guide step by step.
-
-${weekDaysInfo}
-
-## User Context for This Week
-
-The user shared the following when asked about their schedule, energy, and focus:
-
-"${userContext}"
-
-Take this into account when building the plan. Adjust intensity, volume, or focus areas based on what they shared.
-
-After generating the plan:
-1. Save it to weeks/${week}/plan.md
-
----
-
-## Final Summary
-
-After completing both tasks, send a combined summary that includes:
-
-**For the retrospective:**
-- Adherence rate for ${endingWeek} (based on actual completed workout files)
-- PRs hit (if any)
-- Key wins
-- Areas to watch
-
-**For the new plan:**
-- How you incorporated their input
-- The week's theme/focus
-- Brief overview of each day
-- Any key targets or goals`;
-    } else {
-      console.log(`[weekly-plan] Retro already exists for ${endingWeek}, skipping`);
-      taskPrompt = `Generate the weekly training plan for ${week}. Follow the weekly-planning-guide in your reference guides step by step.
-
-${weekDaysInfo}
-
-## User Context for This Week
-
-The user shared the following when asked about their schedule, energy, and focus:
-
-"${userContext}"
-
-Take this into account when building the plan. Adjust intensity, volume, or focus areas based on what they shared.
-
-After generating the plan:
-1. Save it to weeks/${week}/plan.md
-2. Send a summary to the user
-
-The summary should include:
-- How you incorporated their input
-- The week's theme/focus
-- Brief overview of each day
-- Any key targets or goals`;
-    }
-
-    // Run the planning (and optionally retro) task
-    console.log("[weekly-plan] Starting agent task");
-    const response = await agent.runTask(
-      taskPrompt,
-      `Planning for: ${week}${shouldGenerateRetro ? ` (with retro for ${endingWeek})` : ""}`
-    );
-    console.log("[weekly-plan] Agent completed task");
-
-    // Clear pending state
-    await storage.clearPlanningState();
-    console.log("[weekly-plan] Cleared planning state");
-
-    // Send summary to Telegram
-    await bot.sendMessageSafe(response.message);
-    console.log("[weekly-plan] Summary sent successfully");
-
-    return {
-      success: true,
-      week,
-      message: `Generated plan for ${week}${shouldGenerateRetro ? ` and retro for ${endingWeek}` : ""}`,
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error("[weekly-plan] Error during plan generation:", errorMessage);
-
-    try {
-      const bot = createTelegramBot();
-      await bot.sendMessage(
-        `⚠️ Had trouble generating the plan. You can ask me "plan my week" to try again.`
-      );
-    } catch {
-      // Ignore notification failure
-    }
-
-    return {
-      success: false,
-      error: errorMessage,
-    };
-  }
 }
 
 /**
@@ -254,7 +112,7 @@ export async function forceRegeneratePlan(week: string): Promise<WeeklyPlanResul
   try {
     console.log("[weekly-plan] Initializing bot and agent");
     const bot = createTelegramBot();
-    const agent = createCoachAgent({ timezone, maxTurns: 20 });
+    const agent = createCoachAgent({ timezone });
 
     const weekDaysInfo = formatWeekDaysInfo(week);
 

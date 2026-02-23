@@ -12,6 +12,7 @@
 workout-routine/
 ├── src/                  # Bot source code
 ├── scripts/              # Deployment and setup scripts
+├── tests/scenarios/      # Agent scenario tests (end-to-end, calls real model)
 ├── .env.example          # Environment template
 └── CLAUDE.md             # This file
 ```
@@ -45,7 +46,38 @@ The `getDateInfoTZAware()` function includes sanity checks and logging to help d
 - GitHub API for data persistence
 - **Fly CLI**: Use `~/.fly/bin/fly` (not in PATH by default)
 
-### Testing Changes
+### Testing
+
+**Unit tests** (no API key needed, fast):
+```bash
+npm test              # 268 tests — runs in ~10s
+```
+
+**Scenario tests** (requires `ANTHROPIC_API_KEY`, calls real model):
+```bash
+ANTHROPIC_API_KEY=sk-... npm run test:scenarios   # 10 tests — runs in ~2 min
+```
+
+Scenario tests validate end-to-end agent behavior by:
+1. Creating an isolated temp repo with fixture data (profile, PRs, plan, learnings)
+2. Running the real CoachAgent (Haiku model) against it
+3. Asserting on **file side effects** (workout file created, prs.yaml updated, session state)
+
+Test suites:
+- `tests/scenarios/workout-logging.test.ts` — creates workout files, appends exercises
+- `tests/scenarios/pr-detection.test.ts` — detects new PRs, ignores sub-PR weights
+- `tests/scenarios/session-flow.test.ts` — workout completion, general chat isolation
+- `tests/scenarios/response-quality.test.ts` — concise responses, no fabrication, correct dates
+
+**After making changes to coaching logic, prompts, or tools, always run scenario tests** to catch regressions.
+
+To add a new scenario test, use the existing pattern:
+- Add fixtures to `tests/scenarios/fixtures.ts` if needed
+- Use `setupTestRepo()` from `tests/scenarios/setup.ts` to create isolated repos
+- Assert on file side effects using helpers from `tests/scenarios/assertions.ts`
+- Use `createCoachAgent({ repoPath, model: "claude-haiku-4-5", maxTurns: 15 })` for the agent
+
+### Local Development
 - Run `npm run dev` for local development
 - Test bot commands via Telegram before deploying
 

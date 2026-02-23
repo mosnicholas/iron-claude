@@ -1,8 +1,7 @@
 /**
  * Custom MCP Tools for the Coach Agent
  *
- * Provides dedicated tools for reminders and athlete memory so the agent
- * doesn't have to hand-write JSON or manage file formats manually.
+ * Provides dedicated tools for reminders and athlete memory.
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -10,10 +9,11 @@ import { join } from "path";
 import { z } from "zod";
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { createGitHubStorage } from "../storage/github.js";
-import { REPO_DIR } from "../storage/repo-sync.js";
+import { REPO_DIR as DEFAULT_REPO_DIR } from "../storage/repo-sync.js";
+import { getToday, getTimezone } from "../utils/date.js";
 
 // ============================================================================
-// Reminder Tools
+// Reminder Tools (no repo path dependency)
 // ============================================================================
 
 const getReminders = tool(
@@ -99,6 +99,10 @@ const MEMORY_CATEGORIES = [
   "schedule",
   "feedback",
   "insight",
+  "exercise_note",
+  "weight_note",
+  "recovery",
+  "equipment",
 ] as const;
 
 const CATEGORY_HEADERS: Record<string, string> = {
@@ -108,6 +112,10 @@ const CATEGORY_HEADERS: Record<string, string> = {
   schedule: "## Schedule & Availability",
   feedback: "## Coaching Feedback",
   insight: "## Insights",
+  exercise_note: "## Exercise Notes",
+  weight_note: "## Weight & Difficulty Notes",
+  recovery: "## Recovery & Energy",
+  equipment: "## Equipment & Gym",
 };
 
 const DEFAULT_LEARNINGS = `# Learnings
@@ -120,11 +128,11 @@ const DEFAULT_LEARNINGS = `# Learnings
  * Creates the section if it doesn't exist yet.
  * Writes to local clone — gets pushed with everything else at end of session.
  */
-function appendToLearnings(category: string, content: string): void {
-  const filePath = join(REPO_DIR, "learnings.md");
+function appendToLearnings(repoDir: string, category: string, content: string): void {
+  const filePath = join(repoDir, "learnings.md");
   const current = existsSync(filePath) ? readFileSync(filePath, "utf-8") : DEFAULT_LEARNINGS;
 
-  const date = new Date().toISOString().split("T")[0];
+  const date = getToday(getTimezone());
   const entry = `- [${date}] ${content}`;
   const header = CATEGORY_HEADERS[category] || `## ${category}`;
 
@@ -140,42 +148,50 @@ function appendToLearnings(category: string, content: string): void {
   writeFileSync(filePath, updated, "utf-8");
 }
 
-const saveMemory = tool(
-  "save_memory",
-  "Save a memory about the athlete to learnings.md. Use this when the athlete shares something worth remembering across sessions — preferences, goals, injuries, schedule changes, or coaching feedback. This is a local file write (<1ms), so call it freely without worrying about latency.",
-  {
-    category: z
-      .enum(MEMORY_CATEGORIES)
-      .describe(
-        "Category: preference (training likes/dislikes), goal (targets they want to hit), injury (pain/limitations), schedule (availability changes), feedback (how they want to be coached), insight (patterns you notice)"
-      ),
-    content: z
-      .string()
-      .describe(
-        "The memory to save. Be specific and actionable, e.g. 'Prefers supersets for accessories' not 'Likes supersets'"
-      ),
-  },
-  async (args) => {
-    appendToLearnings(args.category, args.content);
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Memory saved: [${args.category}] ${args.content}`,
-        },
-      ],
-    };
-  }
-);
+function createRepoTools(repoDir: string) {
+  const saveMemory = tool(
+    "save_memory",
+    "Save a memory about the athlete to learnings.md. Use this when the athlete shares something worth remembering across sessions — preferences, goals, injuries, schedule changes, or coaching feedback. This is a local file write (<1ms), so call it freely without worrying about latency.",
+    {
+      category: z
+        .enum(MEMORY_CATEGORIES)
+        .describe(
+          "Category: preference (training likes/dislikes), goal (targets), injury (pain/limitations), schedule (availability), feedback (coaching style), insight (patterns you notice), exercise_note (opinions on exercises — boring/easy/love/hate), weight_note (difficulty observations — felt heavy/easy/ready to move up), recovery (sleep/energy/soreness), equipment (gym equipment preferences/availability)"
+        ),
+      content: z
+        .string()
+        .describe(
+          "The memory to save. Be specific and actionable, e.g. 'Prefers supersets for accessories' not 'Likes supersets'"
+        ),
+    },
+    async (args) => {
+      appendToLearnings(repoDir, args.category, args.content);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Memory saved: [${args.category}] ${args.content}`,
+          },
+        ],
+      };
+    }
+  );
+
+  return { saveMemory };
+}
 
 // ============================================================================
 // Server
 // ============================================================================
 
 /**
- * Create the MCP server with all coach tools
+ * Create the MCP server with all coach tools.
+ * Pass repoPath to bind file-writing tools to the correct directory.
  */
-export function createCoachToolsServer() {
+export function createCoachToolsServer(repoPath?: string) {
+  const repoDir = repoPath || DEFAULT_REPO_DIR;
+  const { saveMemory } = createRepoTools(repoDir);
+
   return createSdkMcpServer({
     name: "coach-tools",
     tools: [getReminders, addReminder, deleteReminder, saveMemory],

@@ -1,110 +1,27 @@
-# PR Detection Guide
+# PR Detection
 
-## What Counts as a PR
+## PR Types
 
-There are three types of personal records:
-
-### 1. Weight PR
-**Definition**: Lifting more weight than ever before for that exercise, regardless of reps.
-
-**Example**: If best previous bench was 185x3, doing 190x1 is a weight PR.
-
-**Celebration level**: High 🎉🎉
-
-### 2. Rep PR (at a specific weight)
-**Definition**: More reps than ever before at the same weight.
-
-**Example**: If best at 175 was 5 reps, doing 175x6 is a rep PR.
-
-**Celebration level**: Medium 🎉
-
-### 3. Estimated 1RM PR
-**Definition**: Higher calculated 1RM than any previous performance.
-
-**Formula**: 1RM = weight × (36 / (37 - reps)) [Brzycki formula]
-
-**Example**: 175x6 (est 1RM: 203) beats previous best of 185x3 (est 1RM: 196).
-
-**Celebration level**: Medium 📈
-
-## PR Detection Logic
-
-For each exercise logged:
-
-1. **Extract best set**
-   - Find the set with highest estimated 1RM
-   - Skip time-based sets (holds, cardio)
-   - Skip bodyweight-only sets (unless weighted)
-
-2. **Compare to history**
-   ```
-   current_1rm = calculate_1rm(weight, reps)
-
-   is_weight_pr = weight > max(all_previous_weights)
-   is_rep_pr = reps > max(reps_at_same_weight)
-   is_1rm_pr = current_1rm > previous_best_1rm
-   ```
-
-3. **Prioritize notification**
-   - Weight PR > Rep PR > 1RM PR
-   - Only announce the highest-level PR
+1. **Weight PR**: More weight than ever before for that exercise, regardless of reps.
+2. **Rep PR**: More reps than ever before at the same weight.
+3. **Estimated 1RM PR**: Higher calculated 1RM than any previous performance.
 
 ## 1RM Calculation
 
-Using the Brzycki formula (valid for 1-10 reps):
+Brzycki formula (valid for 1-10 reps, conservative beyond that):
 
 ```
 1RM = weight × (36 / (37 - reps))
 ```
 
-| Reps | % of 1RM |
-|------|----------|
-| 1 | 100% |
-| 2 | 95% |
-| 3 | 93% |
-| 4 | 90% |
-| 5 | 87% |
-| 6 | 85% |
-| 8 | 80% |
-| 10 | 75% |
+## When a PR is Detected
 
-For 10+ reps, the formula becomes less accurate. Use conservatively.
+1. Celebrate genuinely — scale the reaction to the achievement
+2. Show context: old vs new, journey progress if history is available
+3. Note plate milestones (135/225/315/405) — these are significant
+4. Update `prs.yaml` immediately
 
-## PR Announcement Guidelines
-
-- **Weight PR**: Celebrate big (🎉🎉). Show old vs new, weight increase, est 1RM change.
-- **Rep PR**: Celebrate (🎉). Show old vs new reps at same weight.
-- **Estimated 1RM PR**: Note with 📈. Show est 1RM improvement.
-- **Plate milestones** (135/225/315/405/495): These are LEGENDARY (🏆👑). Celebrate accordingly.
-- **Journey context**: When history is available, show their journey (started at X, now at Y, Z lbs gained over N months).
-
-## PRs to Track
-
-Track PRs for these movements:
-
-**Primary (always track)**:
-- Bench Press
-- Squat (Back Squat)
-- Deadlift
-- Overhead Press
-- Weighted Pull-up
-- Weighted Chin-up
-- Barbell Row
-
-**Secondary (track if logged frequently)**:
-- Incline Bench
-- Front Squat
-- Romanian Deadlift
-- Dumbbell Press variants
-- Any exercise logged 5+ times
-
-## Updating prs.yaml
-
-When a PR is detected:
-
-1. Add new record to history array
-2. Update current if applicable
-3. Include workout reference for context
+## prs.yaml Format
 
 ```yaml
 bench_press:
@@ -127,20 +44,7 @@ bench_press:
 
 ## Edge Cases
 
-**Bodyweight exercises**:
-- Track as "weighted" even if +0 lbs initially
-- Once weighted, only track weighted sets
-- Include bodyweight in notes for context
-
-**Time-based holds**:
-- Don't calculate 1RM
-- Track as duration PR instead
-- "Handstand: 45s (previous best: 30s)"
-
-**Failed/partial reps**:
-- Don't count as PRs
-- Note in workout but exclude from PR calculation
-
-**Same weight, same reps**:
-- Not a PR, but note if it's been a while since achieved
-- "Matched your bench PR from 3 months ago!"
+- **Bodyweight exercises**: Track as weighted (+0 initially). Once weighted, only track weighted sets.
+- **Time-based holds**: Track duration PRs, not 1RM. E.g., "Handstand: 45s (previous best: 30s)".
+- **Failed/partial reps**: Don't count as PRs. Note in workout but exclude from calculations.
+- **Matched PR**: Not a new PR, but worth noting if it's been a while.
