@@ -92,6 +92,9 @@ To add a new scenario test, use the existing pattern:
 2. Summarize changes to athlete via Telegram
 3. Update any relevant files (prs.yaml if PRs mentioned, learnings.md if patterns noted)
 
+### Git Workflow
+**Always push after committing.** When you `git add` and `git commit` changes to the fitness-data repo, follow up with `git push` to ensure the remote is up to date. Do not leave commits unpushed.
+
 ### After Logging a Workout
 1. Save workout log to `weeks/YYYY-WXX/YYYY-MM-DD.md` (in the appropriate week folder)
 2. Check for new PRs and update `prs.yaml` if found
@@ -141,6 +144,7 @@ All athlete data changes go to their fitness-data repo:
 
 ### Current Integrations
 - **Whoop** - Sleep, recovery scores, HRV, and workout strain data
+  - **OAuth note:** Whoop's token endpoint requires `Content-Type: application/x-www-form-urlencoded` (not JSON) for all token requests (exchange and refresh). See `src/integrations/whoop/oauth.ts`.
 
 ### Using Integration Data
 Integration data is stored with key metrics in frontmatter for programmatic access, and full details in a readable markdown table:
