@@ -144,6 +144,7 @@ All athlete data changes go to their fitness-data repo:
 
 ### Current Integrations
 - **Whoop** - Sleep, recovery scores, HRV, and workout strain data
+  - **OAuth note:** Whoop's token endpoint requires `Content-Type: application/x-www-form-urlencoded` (not JSON) for all token requests (exchange and refresh). See `src/integrations/whoop/oauth.ts`.
 
 ### Using Integration Data
 Integration data is stored with key metrics in frontmatter for programmatic access, and full details in a readable markdown table:
