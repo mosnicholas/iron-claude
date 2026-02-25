@@ -7,6 +7,7 @@
 
 import { CoachAgent, StreamingCallbacks } from "../coach/index.js";
 import { TelegramBot } from "./telegram.js";
+import { getIntegration } from "../integrations/registry.js";
 
 type CommandHandler = (
   agent: CoachAgent,
@@ -21,6 +22,7 @@ type CommandHandler = (
 export const COMMANDS: Record<string, CommandHandler> = {
   help: handleHelp,
   restart: handleRestart,
+  reauth: handleReauth,
 };
 
 const HELP_TEXT = `**How to Use IronClaude**
@@ -63,6 +65,29 @@ No slash commands needed — just talk to me!`;
  */
 async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
   return HELP_TEXT;
+}
+
+/**
+ * /reauth - Generate a Whoop OAuth re-authorization link.
+ * Optionally accepts a device name (defaults to "whoop").
+ */
+async function handleReauth(_agent: CoachAgent, _bot: TelegramBot, args: string): Promise<string> {
+  const device = args.trim().toLowerCase() || "whoop";
+  const integration = getIntegration(device);
+
+  if (!integration) {
+    return `Unknown integration: ${device}`;
+  }
+
+  if (!integration.isConfigured()) {
+    return `${device} is not configured. Set client credentials first.`;
+  }
+
+  const appUrl = process.env.APP_URL || "https://workout-coach.fly.dev";
+  const redirectUri = `${appUrl}/api/integrations/${device}/callback`;
+  const authUrl = integration.getAuthUrl(redirectUri);
+
+  return `Click the link below to re-authorize ${integration.name}:\n\n${authUrl}`;
 }
 
 /**

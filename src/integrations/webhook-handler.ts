@@ -147,6 +147,56 @@ export async function integrationWebhookHandler(req: Request, res: Response): Pr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// OAuth Auth Initiation Handler
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build the callback redirect URI from the current request.
+ * Uses X-Forwarded-Proto for protocol when behind a reverse proxy (Fly.io).
+ */
+function getRedirectUri(req: Request, device: string): string {
+  const proto = req.get("x-forwarded-proto") || req.protocol;
+  return `${proto}://${req.get("host")}/api/integrations/${device}/callback`;
+}
+
+/**
+ * Initiate OAuth flow by redirecting the user to the device's authorization page.
+ *
+ * Route: GET /api/integrations/:device/auth
+ *
+ * Redirects the user to the device's OAuth authorization URL.
+ * After the user authorizes, they are redirected back to the callback endpoint
+ * which will exchange the code for tokens automatically.
+ */
+export async function integrationOAuthAuthHandler(req: Request, res: Response): Promise<void> {
+  const device = req.params.device as string;
+
+  console.log(`[integration-oauth] Auth initiation for: ${device}`);
+
+  const integration = getIntegration(device);
+  if (!integration) {
+    res.status(404).json({ error: "Unknown integration" });
+    return;
+  }
+
+  if (!integration.isConfigured()) {
+    res.status(400).json({
+      error: `${device} integration is not configured. Set client credentials first.`,
+    });
+    return;
+  }
+
+  const redirectUri = getRedirectUri(req, device);
+  const authUrl = integration.getAuthUrl(redirectUri);
+
+  console.log(
+    `[integration-oauth] Redirecting to auth URL for ${device}, callback: ${redirectUri}`
+  );
+
+  res.redirect(authUrl);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // OAuth Callback Handler
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -155,12 +205,8 @@ export async function integrationWebhookHandler(req: Request, res: Response): Pr
  *
  * Route: GET /api/integrations/:device/callback
  *
- * Security note: This endpoint only displays the authorization code for manual
- * copy/paste into the CLI setup wizard. It does NOT exchange the code for tokens.
- * CSRF protection (state parameter) is not required because:
- * 1. No tokens are exchanged or stored
- * 2. The code is only displayed, not processed
- * 3. An attacker could only show a victim a code that would fail validation
+ * Automatically exchanges the authorization code for tokens and persists them.
+ * On success, shows a confirmation page. On failure, shows the error.
  */
 export async function integrationOAuthCallbackHandler(req: Request, res: Response): Promise<void> {
   const device = req.params.device as string;
@@ -202,23 +248,55 @@ export async function integrationOAuthCallbackHandler(req: Request, res: Respons
     return;
   }
 
-  // Display the code for manual setup
-  // Escape the code to prevent XSS
-  const safeCode = escapeHtml(String(code));
+  // Look up the integration
+  const integration = getIntegration(device);
+  if (!integration) {
+    res.status(404).send(`
+      <html>
+        <head><title>Unknown Integration</title></head>
+        <body style="font-family: system-ui; padding: 40px; max-width: 600px; margin: 0 auto;">
+          <h1>Unknown Integration</h1>
+          <p>No integration found for: ${escapeHtml(device)}</p>
+        </body>
+      </html>
+    `);
+    return;
+  }
 
-  res.send(`
-    <html>
-      <head><title>Authorization Successful</title></head>
-      <body style="font-family: system-ui; padding: 40px; max-width: 600px; margin: 0 auto;">
-        <h1>Authorization Successful!</h1>
-        <p>Copy this authorization code and paste it into the setup wizard:</p>
-        <div style="background: #f0f0f0; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <code style="font-size: 14px; word-break: break-all;">${safeCode}</code>
-        </div>
-        <p>You can close this window after copying the code.</p>
-      </body>
-    </html>
-  `);
+  // Exchange the code for tokens automatically
+  const redirectUri = getRedirectUri(req, device);
+
+  try {
+    await integration.handleOAuthCallback(String(code), redirectUri);
+
+    console.log(`[integration-oauth] Tokens exchanged and saved for: ${device}`);
+
+    res.send(`
+      <html>
+        <head><title>Authorization Successful</title></head>
+        <body style="font-family: system-ui; padding: 40px; max-width: 600px; margin: 0 auto;">
+          <h1>Authorization Successful!</h1>
+          <p>Your ${escapeHtml(integration.name)} tokens have been saved. The integration is now active.</p>
+          <p>You can close this window.</p>
+        </body>
+      </html>
+    `);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[integration-oauth] Token exchange failed for ${device}:`, message);
+
+    res.status(500).send(`
+      <html>
+        <head><title>Token Exchange Failed</title></head>
+        <body style="font-family: system-ui; padding: 40px; max-width: 600px; margin: 0 auto;">
+          <h1>Token Exchange Failed</h1>
+          <p>Failed to exchange authorization code for tokens.</p>
+          <p><strong>Error:</strong> ${escapeHtml(message)}</p>
+          <p>Please try the authorization process again.</p>
+        </body>
+      </html>
+    `);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

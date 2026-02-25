@@ -66,10 +66,13 @@ export class WhoopIntegration implements DeviceIntegration {
   }
 
   /**
-   * Exchange an authorization code for tokens.
+   * Exchange an authorization code for tokens and persist them.
    */
   async handleOAuthCallback(code: string, redirectUri: string): Promise<TokenSet> {
-    return exchangeCodeForTokens(code, redirectUri);
+    const tokens = await exchangeCodeForTokens(code, redirectUri);
+    await persistTokens(tokens);
+    this.invalidateClient();
+    return tokens;
   }
 
   /**

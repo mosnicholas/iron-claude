@@ -10,6 +10,7 @@ import { createCronHandler } from "./handlers/cron.js";
 import { createTelegramBot } from "./bot/telegram.js";
 import {
   integrationWebhookHandler,
+  integrationOAuthAuthHandler,
   integrationOAuthCallbackHandler,
   integrationSyncHandler,
 } from "./integrations/webhook-handler.js";
@@ -40,6 +41,9 @@ registerIntegration(getWhoopIntegration());
 
 // Integration webhooks (e.g., POST /api/integrations/whoop/webhook)
 app.post("/api/integrations/:device/webhook", integrationWebhookHandler);
+
+// OAuth initiation (e.g., GET /api/integrations/whoop/auth → redirects to Whoop)
+app.get("/api/integrations/:device/auth", integrationOAuthAuthHandler);
 
 // OAuth callbacks (e.g., GET /api/integrations/whoop/callback?code=xxx)
 app.get("/api/integrations/:device/callback", integrationOAuthCallbackHandler);
