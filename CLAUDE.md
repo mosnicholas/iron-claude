@@ -92,6 +92,9 @@ To add a new scenario test, use the existing pattern:
 2. Summarize changes to athlete via Telegram
 3. Update any relevant files (prs.yaml if PRs mentioned, learnings.md if patterns noted)
 
+### Git Workflow
+**Always push after committing.** When you `git add` and `git commit` changes to the fitness-data repo, follow up with `git push` to ensure the remote is up to date. Do not leave commits unpushed.
+
 ### After Logging a Workout
 1. Save workout log to `weeks/YYYY-WXX/YYYY-MM-DD.md` (in the appropriate week folder)
 2. Check for new PRs and update `prs.yaml` if found

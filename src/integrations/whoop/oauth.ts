@@ -240,20 +240,19 @@ export function getAuthorizationUrl(
 export async function exchangeCodeForTokens(code: string, redirectUri: string): Promise<TokenSet> {
   const config = getWhoopOAuthConfig();
 
-  // Whoop requires JSON body format for token requests
-  // See: https://developer.whoop.com/docs/developing/oauth/
+  // Whoop token endpoint requires form-encoded body (RFC 6749 §4.1.3)
   const response = await fetch(WHOOP_TOKEN_URL, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: JSON.stringify({
+    body: new URLSearchParams({
       grant_type: "authorization_code",
       code,
       redirect_uri: redirectUri,
       client_id: config.clientId,
       client_secret: config.clientSecret,
-    }),
+    }).toString(),
   });
 
   if (!response.ok) {
