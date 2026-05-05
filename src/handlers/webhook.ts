@@ -9,6 +9,7 @@ import { join } from "path";
 import type { Request, Response } from "express";
 import { createCoachAgent } from "../coach/index.js";
 import { PLAN_GENERATION_INSTRUCTIONS } from "../coach/prompts.js";
+import { createCoachAgentV2, isV2Enabled } from "../coach-v2/index.js";
 import {
   createTelegramBot,
   extractMessageText,
@@ -136,8 +137,10 @@ async function processMessage(
     // Send typing indicator
     await bot.sendTypingAction();
 
-    // Initialize agent
-    const agent = createCoachAgent();
+    // Initialize agent — v2 when COACH_HARNESS=v2, v1 otherwise.
+    const useV2 = isV2Enabled();
+    const agent = useV2 ? null : createCoachAgent();
+    const agentV2 = useV2 ? createCoachAgentV2() : null;
 
     // Extract message content (text or voice)
     const voice = extractVoiceMessage(update);
@@ -171,12 +174,16 @@ async function processMessage(
     // Record user message in history
     addMessage(messageText, true);
 
-    // Handle commands
-    if (isCommand(messageText)) {
+    // Handle commands. v1 commands keep working; v2 doesn't expose them yet
+    // (it routes by message text), so commands continue to use the v1 agent.
+    if (isCommand(messageText) && !messageText.trim().startsWith("/debug")) {
       const { command, args } = parseCommand(messageText);
 
       if (commandExists(command)) {
-        const response = await executeCommand(command, args, agent, bot);
+        // Commands always use v1 agent for now; the v2 router only handles
+        // free-text + /debug.
+        const v1Agent = agent ?? createCoachAgent();
+        const response = await executeCommand(command, args, v1Agent, bot);
         // Only send if response is non-empty (status messages handle their own output)
         if (response) {
           await bot.sendMessageSafe(response);
@@ -194,17 +201,20 @@ async function processMessage(
     // Handle natural language - send to coach agent with status updates
     const messageId = await bot.sendMessage("✨ _Thinking..._", "MarkdownV2");
 
+    const callV1 = async (statusCb?: (s: string) => void) =>
+      planningPending
+        ? agent!.runTask(messageText, PLAN_GENERATION_INSTRUCTIONS)
+        : agent!.chat(messageText, statusCb ? { onStatus: statusCb } : undefined);
+
+    const callV2 = async (statusCb?: (s: string) => void) => agentV2!.chat(messageText, statusCb);
+
     if (messageId) {
       const editor = new ThrottledMessageEditor(bot, messageId);
-
-      const response = planningPending
-        ? await agent.runTask(messageText, PLAN_GENERATION_INSTRUCTIONS)
-        : await agent.chat(messageText, {
-            onStatus: (status) => {
-              console.log(`[webhook] Status update: ${status}`);
-              editor.update(status);
-            },
-          });
+      const onStatus = (status: string) => {
+        console.log(`[webhook] Status update: ${status}`);
+        editor.update(status);
+      };
+      const response = useV2 ? await callV2(onStatus) : await callV1(onStatus);
 
       // Split on --- markers for multi-message responses
       const chunks = splitOnMessageBreaks(response.message);
@@ -219,9 +229,7 @@ async function processMessage(
       addMessage(response.message, false);
     } else {
       // Fallback if we couldn't get a message ID
-      const response = planningPending
-        ? await agent.runTask(messageText, PLAN_GENERATION_INSTRUCTIONS)
-        : await agent.chat(messageText);
+      const response = useV2 ? await callV2() : await callV1();
 
       const chunks = splitOnMessageBreaks(response.message);
       for (const chunk of chunks) {

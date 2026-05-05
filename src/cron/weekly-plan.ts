@@ -17,6 +17,7 @@
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
 import { createCoachAgent } from "../coach/index.js";
+import { createCoachAgentV2, isV2Enabled } from "../coach-v2/index.js";
 import { createTelegramBot } from "../bot/telegram.js";
 import { RETRO_INSTRUCTIONS } from "../coach/prompts.js";
 import { getCurrentWeek, getNextWeek, getWeekDays, getTimezone } from "../utils/date.js";
@@ -67,11 +68,20 @@ export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
         return { success: true, week: nextWeek, message: `Plan already exists for ${nextWeek}` };
       }
 
-      const agent = createCoachAgent({ timezone });
+      const useV2 = isV2Enabled();
+      const agent = useV2 ? null : createCoachAgent({ timezone });
+      const agentV2 = useV2 ? createCoachAgentV2({ timezone }) : null;
 
       // Step 1: Generate retrospective for the ending week
       console.log(`[weekly-plan] Generating retro for ending week: ${endingWeek}`);
-      await agent.runTask(`Generate the retrospective for week ${endingWeek}.`, RETRO_INSTRUCTIONS);
+      if (useV2) {
+        await agentV2!.runRetrospective(`Generate the retrospective for week ${endingWeek}.`);
+      } else {
+        await agent!.runTask(
+          `Generate the retrospective for week ${endingWeek}.`,
+          RETRO_INSTRUCTIONS
+        );
+      }
       console.log(`[weekly-plan] Retro generated for ${endingWeek}`);
 
       // Step 2: Create planning signal file
@@ -84,11 +94,17 @@ export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
       writeFileSync(signalPath, `week: ${nextWeek}\ncreated: ${new Date().toISOString()}\n`);
       console.log(`[weekly-plan] Created planning signal for ${nextWeek}`);
 
-      // Step 3: Ask planning questions via agent
-      const response = await agent.runTask(
-        "Ask the athlete your Sunday planning questions for next week. Ask about fatigue, schedule, and focus areas.",
-        "You are starting the weekly planning flow. Ask 2-3 short coaching questions. Do NOT generate the plan yet — wait for their response."
-      );
+      // Step 3: Ask planning questions via agent. v2 routes through the
+      // coach handler with a planning-question prompt — same shape as v1.
+      const planningQuestion =
+        "You are starting the weekly planning flow. Ask 2-3 short coaching questions for next week — fatigue, schedule, focus areas. Do NOT generate the plan yet — wait for the athlete's response.";
+
+      const response = useV2
+        ? await agentV2!.chat(planningQuestion)
+        : await agent!.runTask(
+            "Ask the athlete your Sunday planning questions for next week. Ask about fatigue, schedule, and focus areas.",
+            "You are starting the weekly planning flow. Ask 2-3 short coaching questions. Do NOT generate the plan yet — wait for their response."
+          );
 
       await bot.sendMessageSafe(response.message);
 

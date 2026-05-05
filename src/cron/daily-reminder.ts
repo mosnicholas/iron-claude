@@ -6,6 +6,7 @@
  */
 
 import { createCoachAgent } from "../coach/index.js";
+import { createCoachAgentV2, isV2Enabled } from "../coach-v2/index.js";
 import { getCurrentWeek, getToday, formatDateHuman, getTimezone } from "../utils/date.js";
 import { runCronTask, type CronResult } from "./runner.js";
 
@@ -33,6 +34,15 @@ export async function runDailyReminder(): Promise<CronResult> {
       }
 
       // Use the agent to generate a good morning message
+      if (isV2Enabled()) {
+        const agentV2 = createCoachAgentV2({ timezone });
+        const r = await agentV2.runDailyReminder(
+          `Generate the morning workout reminder for ${formatDateHuman(new Date(today))} (${today}). Reference today's plan if there is one. End by asking what time they're heading to the gym so you can schedule a warm-up reminder.`
+        );
+        await bot.sendMessageSafe(r.message);
+        return { success: true, message: `Sent morning reminder (v2) for ${today}` };
+      }
+
       const agent = createCoachAgent({ timezone });
       const response = await agent.runTask(
         `Generate a morning workout reminder for today (${formatDateHuman(new Date(today))}).
