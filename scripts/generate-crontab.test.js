@@ -1,3 +1,4 @@
+import { jest } from "@jest/globals";
 import { localToUtcSchedule, adjustDayOfWeek, generateCrontab } from "./generate-crontab.js";
 
 describe("generate-crontab", () => {
@@ -12,20 +13,35 @@ describe("generate-crontab", () => {
   });
 
   describe("localToUtcSchedule", () => {
+    // Pin Date to a known winter day so the EST (UTC-5) offset is stable
+    // year-round. Without this, the tests pass in winter and fail in summer
+    // when America/New_York is in EDT (UTC-4).
+    const EST_WINTER_DATE = new Date("2026-01-15T12:00:00Z");
+
     it("converts America/New_York time to UTC (EST = UTC-5)", () => {
-      // 6:00 AM EST = 11:00 AM UTC
-      const result = localToUtcSchedule(6, 0, "America/New_York");
-      expect(result.utcHour).toBe(11);
-      expect(result.utcMinute).toBe(0);
-      expect(result.dayOffset).toBe(0);
+      jest.useFakeTimers({ now: EST_WINTER_DATE, doNotFake: ["setTimeout", "setInterval", "setImmediate", "queueMicrotask", "performance"] });
+      try {
+        // 6:00 AM EST = 11:00 AM UTC
+        const result = localToUtcSchedule(6, 0, "America/New_York");
+        expect(result.utcHour).toBe(11);
+        expect(result.utcMinute).toBe(0);
+        expect(result.dayOffset).toBe(0);
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it("converts America/New_York evening to next day UTC", () => {
-      // 8:00 PM EST = 1:00 AM UTC next day
-      const result = localToUtcSchedule(20, 0, "America/New_York");
-      expect(result.utcHour).toBe(1);
-      expect(result.utcMinute).toBe(0);
-      expect(result.dayOffset).toBe(1);
+      jest.useFakeTimers({ now: EST_WINTER_DATE, doNotFake: ["setTimeout", "setInterval", "setImmediate", "queueMicrotask", "performance"] });
+      try {
+        // 8:00 PM EST = 1:00 AM UTC next day
+        const result = localToUtcSchedule(20, 0, "America/New_York");
+        expect(result.utcHour).toBe(1);
+        expect(result.utcMinute).toBe(0);
+        expect(result.dayOffset).toBe(1);
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it("converts Europe/London time to UTC (same in winter)", () => {
