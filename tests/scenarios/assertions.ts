@@ -8,7 +8,7 @@
 
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
-import type { CoachResponse } from "../../src/coach/index.js";
+import type { CoachV2Response as CoachResponse } from "../../src/coach-v2/index.js";
 
 // ============================================================================
 // File Existence

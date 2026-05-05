@@ -8,8 +8,8 @@
  */
 
 // Core exports
-export { CoachAgent, createCoachAgent, processMessage } from "./coach/index.js";
-export type { CoachConfig, CoachResponse } from "./coach/index.js";
+export { CoachAgentV2, createCoachAgentV2 } from "./coach-v2/index.js";
+export type { CoachV2Config, CoachV2Response } from "./coach-v2/index.js";
 
 // Storage
 export { GitHubStorage, createGitHubStorage } from "./storage/github.js";

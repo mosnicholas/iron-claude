@@ -19,7 +19,7 @@
 
 import { existsSync, readdirSync } from "fs";
 import { join } from "path";
-import { createCoachAgent } from "../../src/coach/index.js";
+import { createCoachAgentV2 } from "../../src/coach-v2/index.js";
 import { setupTestRepo, type TestRepo } from "./setup.js";
 import { readWorkoutFile, readPRsFile } from "./assertions.js";
 
@@ -44,13 +44,13 @@ describeWithApi("Scenario: Response Quality", () => {
     async () => {
       repo = setupTestRepo();
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 15,
+
         repoPath: repo.repoPath,
       });
 
-      const response = await agent.chat(
+      const response = await agent.runCoach(
         "bench 175x5x3 RPE 7. Please log this."
       );
 
@@ -74,14 +74,14 @@ describeWithApi("Scenario: Response Quality", () => {
     async () => {
       repo = setupTestRepo();
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 15,
+
         repoPath: repo.repoPath,
       });
 
       // User only reports ONE exercise
-      await agent.chat(
+      await agent.runCoach(
         "Just did bench press: 175x5x3. RPE 7. Please log this workout."
       );
 
@@ -129,13 +129,13 @@ describeWithApi("Scenario: Response Quality", () => {
     async () => {
       repo = setupTestRepo();
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 15,
+
         repoPath: repo.repoPath,
       });
 
-      await agent.chat(
+      await agent.runCoach(
         "Squat 225x5x3 RPE 8. Please log this workout."
       );
 
@@ -169,15 +169,15 @@ describeWithApi("Scenario: Response Quality", () => {
     async () => {
       repo = setupTestRepo();
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 15,
+
         repoPath: repo.repoPath,
       });
 
       // Squat PR is 225x5. Logging exactly 225x5 (matching, not exceeding)
       // should NOT trigger a PR update
-      await agent.chat(
+      await agent.runCoach(
         "Squats today: 225x5x3, RPE 8. Standard working sets. Please log this."
       );
 

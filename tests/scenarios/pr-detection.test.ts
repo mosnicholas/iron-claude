@@ -8,7 +8,7 @@
  * If user sends "bench 175x5", that's a new PR.
  */
 
-import { createCoachAgent } from "../../src/coach/index.js";
+import { createCoachAgentV2 } from "../../src/coach-v2/index.js";
 import { setupTestRepo, type TestRepo } from "./setup.js";
 import { readPRsFile } from "./assertions.js";
 
@@ -33,14 +33,14 @@ describeWithApi("Scenario: PR Detection", () => {
     async () => {
       repo = setupTestRepo();
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 15,
+
         repoPath: repo.repoPath,
       });
 
       // Bench PR is 170x5. Sending 175x5 should trigger PR detection.
-      const response = await agent.chat(
+      const response = await agent.runCoach(
         "Just finished bench press: 175 x 5 x 3, all sets. Felt strong today! Please log this workout."
       );
 
@@ -66,14 +66,14 @@ describeWithApi("Scenario: PR Detection", () => {
     async () => {
       repo = setupTestRepo();
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 10,
+
         repoPath: repo.repoPath,
       });
 
       // Bench PR is 170x5. Sending 155x8 is a volume day, not a PR.
-      await agent.chat("bench 155x8x3 RPE 7, volume day");
+      await agent.runCoach("bench 155x8x3 RPE 7, volume day");
 
       // prs.yaml should NOT have been modified
       const prs = readPRsFile(repo.repoPath);
