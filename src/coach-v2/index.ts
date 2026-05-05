@@ -114,11 +114,3 @@ export class CoachAgentV2 {
 export function createCoachAgentV2(config?: CoachV2Config): CoachAgentV2 {
   return new CoachAgentV2(config);
 }
-
-/**
- * Feature flag — when COACH_HARNESS=v2, the webhook + cron use v2.
- * Default false until we cut over.
- */
-export function isV2Enabled(): boolean {
-  return process.env.COACH_HARNESS === "v2";
-}

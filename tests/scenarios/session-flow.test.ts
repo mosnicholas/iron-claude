@@ -7,7 +7,7 @@
  * - General chat (no file mutations)
  */
 
-import { createCoachAgent } from "../../src/coach/index.js";
+import { createCoachAgentV2 } from "../../src/coach-v2/index.js";
 import { setupTestRepo, type TestRepo } from "./setup.js";
 import {
   expectWorkoutFileExists,
@@ -54,13 +54,13 @@ status: in_progress
 
       repo = setupTestRepo({ existingWorkout });
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 15,
+
         repoPath: repo.repoPath,
       });
 
-      const response = await agent.chat(
+      const response = await agent.runCoach(
         "that's it for today, skipping accessories. Felt good overall!"
       );
 
@@ -90,13 +90,13 @@ status: in_progress
     async () => {
       repo = setupTestRepo();
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 10,
+
         repoPath: repo.repoPath,
       });
 
-      const response = await agent.chat(
+      const response = await agent.runCoach(
         "How's my progress looking this week? Any suggestions?"
       );
 

@@ -7,13 +7,19 @@
 
 import * as readline from "readline";
 import { readFileSync, existsSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 import { confirm } from "@inquirer/prompts";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { ui } from "./ui.js";
-import { loadPrompt } from "../../src/coach/prompts.js";
 import { syncRepo, pushChanges } from "../../src/storage/repo-sync.js";
 import { extractTextFromMessage, extractToolsFromMessage } from "../../src/utils/sdk-helpers.js";
+
+const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../prompts");
+
+function loadPrompt(name: string): string {
+  return readFileSync(join(PROMPTS_DIR, `${name}.md`), "utf-8");
+}
 
 /**
  * Check if onboarding has been completed by looking at profile.md

@@ -12,7 +12,7 @@
 
 import { existsSync, readdirSync } from "fs";
 import { join } from "path";
-import { createCoachAgent } from "../../src/coach/index.js";
+import { createCoachAgentV2 } from "../../src/coach-v2/index.js";
 import { setupTestRepo, type TestRepo } from "./setup.js";
 import { readWorkoutFile, readPlanFile } from "./assertions.js";
 
@@ -41,14 +41,14 @@ describeWithApi("Scenario: Plan Flexibility", () => {
       // with today's actual date, not Monday's date.
       repo = setupTestRepo();
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 15,
+
         repoPath: repo.repoPath,
       });
 
       // Send a Monday Upper A exercise (bench 175x5 is from Monday's plan)
-      await agent.chat(
+      await agent.runCoach(
         "bench 175x5x3 RPE 7. Log this please."
       );
 
@@ -80,14 +80,14 @@ describeWithApi("Scenario: Plan Flexibility", () => {
       // the agent should amend plan.md with an Amendments section.
       repo = setupTestRepo();
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 15,
+
         repoPath: repo.repoPath,
       });
 
       // Log Monday's exercise
-      await agent.chat(
+      await agent.runCoach(
         "Did Monday's upper day today instead. Bench 175x5x3, OHP 105x5x3, rows 155x8x3. All RPE 7. Please log it and update the plan."
       );
 
@@ -115,14 +115,14 @@ describeWithApi("Scenario: Plan Flexibility", () => {
     async () => {
       repo = setupTestRepo();
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 15,
+
         repoPath: repo.repoPath,
       });
 
       // Log Monday's exercises on a different day and ask for plan update
-      await agent.chat(
+      await agent.runCoach(
         "Did Monday's upper day today. Bench 175x5x3, OHP 105x5x3, rows 155x8x3. All RPE 7. Please log this and update the plan to reflect the shift."
       );
 

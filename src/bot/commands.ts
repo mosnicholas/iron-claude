@@ -1,20 +1,15 @@
 /**
  * Command Handlers
  *
- * Only /help and /restart remain as explicit commands.
+ * Only /help, /restart, /reauth remain as explicit commands.
  * All other capabilities are handled by the agent via natural language.
  */
 
-import { CoachAgent, StreamingCallbacks } from "../coach/index.js";
+import { CoachAgentV2 } from "../coach-v2/index.js";
 import { TelegramBot } from "./telegram.js";
 import { getIntegration } from "../integrations/registry.js";
 
-type CommandHandler = (
-  agent: CoachAgent,
-  bot: TelegramBot,
-  args: string,
-  callbacks?: StreamingCallbacks
-) => Promise<string>;
+type CommandHandler = (agent: CoachAgentV2, bot: TelegramBot, args: string) => Promise<string>;
 
 /**
  * Available commands — only infrastructure commands, not coaching capabilities.
@@ -54,24 +49,25 @@ Just talk to me naturally! Here's what I can help with:
 ⏰ **Reminders**
 • "Remind me at 5pm for the workout"
 
+🛠️ **Diagnostics**
+• \`/debug why didn't the AM reminder fire yesterday?\` — read-only system inspection
+
 💬 **General**
 • Ask me anything about training, form, recovery
-• Tell me how you're feeling — I'll adjust the plan
+• Tell me how you're feeling — I'll adjust the plan`;
 
-No slash commands needed — just talk to me!`;
-
-/**
- * /help - Show help text
- */
-async function handleHelp(_agent: CoachAgent, _bot: TelegramBot, _args: string): Promise<string> {
+async function handleHelp(_agent: CoachAgentV2, _bot: TelegramBot, _args: string): Promise<string> {
   return HELP_TEXT;
 }
 
 /**
  * /reauth - Generate a Whoop OAuth re-authorization link.
- * Optionally accepts a device name (defaults to "whoop").
  */
-async function handleReauth(_agent: CoachAgent, _bot: TelegramBot, args: string): Promise<string> {
+async function handleReauth(
+  _agent: CoachAgentV2,
+  _bot: TelegramBot,
+  args: string
+): Promise<string> {
   const device = args.trim().toLowerCase() || "whoop";
   const integration = getIntegration(device);
 
@@ -90,10 +86,11 @@ async function handleReauth(_agent: CoachAgent, _bot: TelegramBot, args: string)
   return `Click the link below to re-authorize ${integration.name}:\n\n${authUrl}`;
 }
 
-/**
- * /restart - Restart the server
- */
-async function handleRestart(_agent: CoachAgent, bot: TelegramBot, _args: string): Promise<string> {
+async function handleRestart(
+  _agent: CoachAgentV2,
+  bot: TelegramBot,
+  _args: string
+): Promise<string> {
   await bot.sendPlainMessage("Restarting server... Be back in a moment!");
 
   // Small delay to ensure the message is sent before exit
@@ -105,28 +102,19 @@ async function handleRestart(_agent: CoachAgent, bot: TelegramBot, _args: string
   return "";
 }
 
-/**
- * Check if a command exists
- */
 export function commandExists(command: string): boolean {
   return command in COMMANDS;
 }
 
-/**
- * Execute a command
- */
 export async function executeCommand(
   command: string,
   args: string,
-  agent: CoachAgent,
+  agent: CoachAgentV2,
   bot: TelegramBot
 ): Promise<string> {
   const handler = COMMANDS[command];
   if (!handler) {
-    // Unknown commands pass through to the agent as natural language
     return "";
   }
-
-  // All remaining commands are fast (help, restart) - return directly
   return handler(agent, bot, args);
 }

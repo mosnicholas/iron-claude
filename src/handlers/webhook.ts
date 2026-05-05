@@ -4,12 +4,8 @@
  * Main entry point for all Telegram messages.
  */
 
-import { existsSync } from "fs";
-import { join } from "path";
 import type { Request, Response } from "express";
-import { createCoachAgent } from "../coach/index.js";
-import { PLAN_GENERATION_INSTRUCTIONS } from "../coach/prompts.js";
-import { createCoachAgentV2, isV2Enabled } from "../coach-v2/index.js";
+import { createCoachAgentV2 } from "../coach-v2/index.js";
 import {
   createTelegramBot,
   extractMessageText,
@@ -22,7 +18,6 @@ import {
 import { executeCommand, commandExists } from "../bot/commands.js";
 import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js";
 import { addMessage } from "../bot/message-history.js";
-import { REPO_DIR } from "../storage/repo-sync.js";
 import type { TelegramUpdate } from "../storage/types.js";
 
 // Simple serial queue per chat — prevents concurrent writes to the same files
@@ -137,10 +132,7 @@ async function processMessage(
     // Send typing indicator
     await bot.sendTypingAction();
 
-    // Initialize agent — v2 when COACH_HARNESS=v2, v1 otherwise.
-    const useV2 = isV2Enabled();
-    const agent = useV2 ? null : createCoachAgent();
-    const agentV2 = useV2 ? createCoachAgentV2() : null;
+    const agent = createCoachAgentV2();
 
     // Extract message content (text or voice)
     const voice = extractVoiceMessage(update);
@@ -174,20 +166,16 @@ async function processMessage(
     // Record user message in history
     addMessage(messageText, true);
 
-    // Handle commands. v1 commands keep working; v2 doesn't expose them yet
-    // (it routes by message text), so commands continue to use the v1 agent.
+    // Handle infrastructure commands (help / restart / reauth). /debug is a
+    // command but we let it fall through to the v2 router which has its own
+    // handler for it.
     if (isCommand(messageText) && !messageText.trim().startsWith("/debug")) {
       const { command, args } = parseCommand(messageText);
 
       if (commandExists(command)) {
-        // Commands always use v1 agent for now; the v2 router only handles
-        // free-text + /debug.
-        const v1Agent = agent ?? createCoachAgent();
-        const response = await executeCommand(command, args, v1Agent, bot);
-        // Only send if response is non-empty (status messages handle their own output)
+        const response = await executeCommand(command, args, agent, bot);
         if (response) {
           await bot.sendMessageSafe(response);
-          // Record bot response in history
           addMessage(response, false);
         }
         return;
@@ -195,26 +183,18 @@ async function processMessage(
       // Unknown commands fall through to the agent as natural language
     }
 
-    // Check for pending planning state — route with plan generation instructions
-    const planningPending = existsSync(join(REPO_DIR, "state", "planning-pending.md"));
+    // The v2 router inspects state/planning-pending.md internally to choose
+    // the planner handler — no need to check here.
 
-    // Handle natural language - send to coach agent with status updates
+    // Handle natural language — send to the coach with status updates
     const messageId = await bot.sendMessage("✨ _Thinking..._", "MarkdownV2");
-
-    const callV1 = async (statusCb?: (s: string) => void) =>
-      planningPending
-        ? agent!.runTask(messageText, PLAN_GENERATION_INSTRUCTIONS)
-        : agent!.chat(messageText, statusCb ? { onStatus: statusCb } : undefined);
-
-    const callV2 = async (statusCb?: (s: string) => void) => agentV2!.chat(messageText, statusCb);
 
     if (messageId) {
       const editor = new ThrottledMessageEditor(bot, messageId);
-      const onStatus = (status: string) => {
+      const response = await agent.chat(messageText, (status) => {
         console.log(`[webhook] Status update: ${status}`);
         editor.update(status);
-      };
-      const response = useV2 ? await callV2(onStatus) : await callV1(onStatus);
+      });
 
       // Split on --- markers for multi-message responses
       const chunks = splitOnMessageBreaks(response.message);
@@ -225,17 +205,14 @@ async function processMessage(
         await bot.sendMessageSafe(chunks[i]);
       }
 
-      // Record bot response in history
       addMessage(response.message, false);
     } else {
       // Fallback if we couldn't get a message ID
-      const response = useV2 ? await callV2() : await callV1();
-
+      const response = await agent.chat(messageText);
       const chunks = splitOnMessageBreaks(response.message);
       for (const chunk of chunks) {
         await bot.sendMessageSafe(chunk);
       }
-
       addMessage(response.message, false);
     }
   } catch (error) {

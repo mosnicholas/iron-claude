@@ -9,7 +9,7 @@
 
 import { existsSync, readdirSync } from "fs";
 import { join } from "path";
-import { createCoachAgent } from "../../src/coach/index.js";
+import { createCoachAgentV2 } from "../../src/coach-v2/index.js";
 import { setupTestRepo, type TestRepo } from "./setup.js";
 import {
   expectWorkoutContains,
@@ -33,13 +33,13 @@ describeWithApi("Scenario: Workout Logging", () => {
     async () => {
       repo = setupTestRepo();
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 15,
+
         repoPath: repo.repoPath,
       });
 
-      const response = await agent.chat(
+      const response = await agent.runCoach(
         "Just finished bench press: 175 x 5 x 3 sets. RPE 7, all sets felt good. Please log this workout."
       );
 
@@ -84,13 +84,13 @@ status: in_progress
 
       repo = setupTestRepo({ existingWorkout });
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 15,
+
         repoPath: repo.repoPath,
       });
 
-      const response = await agent.chat("OHP 105x5x3 RPE 7");
+      const response = await agent.runCoach("OHP 105x5x3 RPE 7");
 
       // Workout file should now contain both exercises
       const content = readWorkoutFile(repo.repoPath, repo.currentWeek, repo.today);
@@ -120,15 +120,15 @@ started: "10:00"
 
       repo = setupTestRepo({ existingWorkout });
 
-      const agent = createCoachAgent({
+      const agent = createCoachAgentV2({
         model: "claude-haiku-4-5",
-        maxTurns: 15,
+
         repoPath: repo.repoPath,
       });
 
       // Simulate two separate Telegram messages (separate runQuery calls)
-      await agent.chat("bench 175x5x3 RPE 7");
-      await agent.chat("OHP 105x5x3 RPE 7");
+      await agent.runCoach("bench 175x5x3 RPE 7");
+      await agent.runCoach("OHP 105x5x3 RPE 7");
 
       // BOTH exercises must appear in the workout file, not just in chat
       const content = readWorkoutFile(repo.repoPath, repo.currentWeek, repo.today);
