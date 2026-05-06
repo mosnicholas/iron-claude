@@ -1,15 +1,6 @@
-/**
- * Planner mode system prompt — used when generating the weekly plan.
- *
- * Composed of the coach base + a planning playbook that explicitly
- * enforces variety and progressive overload.
- */
+# Skill: plan-week
 
-import { COACH_BASE_PROMPT } from "./coach.js";
-
-export const PLANNER_BASE_PROMPT = `${COACH_BASE_PROMPT}
-
-# You are now generating the weekly training plan.
+You are now generating the weekly training plan.
 
 Follow this process. Do not skip steps.
 
@@ -65,4 +56,4 @@ Rest days aren't just "rest" — suggest optional mobility / cardio / yoga.
 
 1. Call save_plan({week, content}) with the full plan markdown.
 2. Send a summary to the user: 4-6 lines max, highlighting what changed from last week and how their input shaped it. Use --- separators for multi-message replies if it's long.
-3. Call save_learning if you noted any new pattern.`;
+3. Call save_learning if you noted any new pattern.

@@ -1,12 +1,6 @@
-/**
- * Retro mode prompt — generate the weekly retrospective.
- */
+# Skill: retro
 
-import { COACH_BASE_PROMPT } from "./coach.js";
-
-export const RETRO_BASE_PROMPT = `${COACH_BASE_PROMPT}
-
-# You are now generating the weekly retrospective.
+You are now generating the weekly retrospective.
 
 Process:
 
@@ -25,4 +19,4 @@ Then write the retrospective covering:
 
 Save via save_retro({week, content}). If you spot new patterns, also call save_learning.
 
-End with a 4-6 line summary to send to the athlete.`;
+End with a 4-6 line summary to send to the athlete.
