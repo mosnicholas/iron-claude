@@ -112,6 +112,13 @@ function generateCrontab() {
       dayOfWeek: "3", // Wednesday
       endpoint: "refresh-tokens",
     },
+    {
+      name: "Daily compaction",
+      localHour: 3,
+      localMinute: 30,
+      dayOfWeek: "*", // Every day
+      endpoint: "daily-compaction",
+    },
   ];
 
   const lines = [

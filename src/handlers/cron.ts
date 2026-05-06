@@ -9,8 +9,14 @@ import { runDailyReminder } from "../cron/daily-reminder.js";
 import { runWeeklyPlan } from "../cron/weekly-plan.js";
 import { runCheckReminders } from "../cron/check-reminders.js";
 import { runRefreshTokens } from "../cron/refresh-tokens.js";
+import { runDailyCompaction } from "../cron/daily-compaction.js";
 
-type CronTask = "daily-reminder" | "weekly-plan" | "check-reminders" | "refresh-tokens";
+type CronTask =
+  | "daily-reminder"
+  | "weekly-plan"
+  | "check-reminders"
+  | "refresh-tokens"
+  | "daily-compaction";
 
 /**
  * Validates the cron secret from the Authorization header.
@@ -46,6 +52,7 @@ export function createCronHandler(task: CronTask) {
         "weekly-plan": runWeeklyPlan,
         "check-reminders": runCheckReminders,
         "refresh-tokens": runRefreshTokens,
+        "daily-compaction": runDailyCompaction,
       };
 
       const result = await runners[task]();
