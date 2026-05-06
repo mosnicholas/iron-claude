@@ -63,8 +63,11 @@ export interface LLMRequest {
   system: SystemBlock[];
   messages: Message[];
   tools: ToolDef[];
-  maxTokens?: number;
 }
+
+// Claude 4.x models support up to 64K output tokens. The Anthropic API requires
+// max_tokens to be set, so we pass the model's ceiling rather than capping below it.
+const MAX_OUTPUT_TOKENS = 64_000;
 
 export interface LLMResponse {
   stop_reason: "end_turn" | "tool_use" | "max_tokens" | "stop_sequence" | string;
@@ -91,7 +94,7 @@ export class AnthropicLLMClient implements LLMClient {
   async query(req: LLMRequest): Promise<LLMResponse> {
     const response = await this.client.messages.create({
       model: req.model,
-      max_tokens: req.maxTokens ?? 4096,
+      max_tokens: MAX_OUTPUT_TOKENS,
       system: req.system,
       // SDK message types are slightly stricter than ours, but the runtime
       // shape is identical for the blocks we use.

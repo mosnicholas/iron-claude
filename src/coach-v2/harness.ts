@@ -45,8 +45,6 @@ export interface HarnessResult {
   };
 }
 
-const TOOL_RESULT_TRUNCATE = 16_000;
-
 export async function runHarness(opts: HarnessOptions): Promise<HarnessResult> {
   const llm = opts.llm ?? createLLMClient();
   const turnId = newTurnId();
@@ -72,7 +70,6 @@ export async function runHarness(opts: HarnessOptions): Promise<HarnessResult> {
       system: opts.system,
       messages,
       tools: anthropicTools,
-      maxTokens: 4096,
     });
 
     usage.input_tokens += response.usage.input_tokens;
@@ -184,10 +181,6 @@ async function executeTool(
 
   try {
     const result = await tool.handler(parsed.data, ctx);
-    const truncated =
-      result.length > TOOL_RESULT_TRUNCATE
-        ? result.slice(0, TOOL_RESULT_TRUNCATE) + "\n…[truncated]"
-        : result;
     logToolCall(ctx.repoPath, {
       ts: new Date().toISOString(),
       turn: ctx.turnId,
@@ -196,12 +189,12 @@ async function executeTool(
       args: parsed.data as Record<string, unknown>,
       ms: Date.now() - start,
       ok: true,
-      result_preview: truncated.slice(0, 200),
+      result_preview: result.slice(0, 200),
     });
     return {
       type: "tool_result",
       tool_use_id: block.id,
-      content: truncated,
+      content: result,
     };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);

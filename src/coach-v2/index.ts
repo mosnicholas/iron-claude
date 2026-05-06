@@ -3,15 +3,15 @@
  *
  * Mirrors the v1 shape (createCoachAgent / chat / runTask) so the
  * existing webhook + cron callers can swap in v2 with a flag flip.
+ *
+ * Specialized cron tasks (planning, retrospective, daily reminder) all run
+ * through the coach handler; the model loads the relevant skill via load_skill.
  */
 
 import { syncRepo } from "../storage/repo-sync.js";
 import { getTimezone } from "../utils/date.js";
 import { route, type RoutedResult } from "./router.js";
 import { runCoach } from "./handlers/coach.js";
-import { runPlanner } from "./handlers/planner.js";
-import { runRetro } from "./handlers/retro.js";
-import { runDailyReminder as runDailyReminderHandler } from "./handlers/daily-reminder.js";
 import type { HarnessResult } from "./harness.js";
 
 export interface CoachV2Config {
@@ -65,49 +65,35 @@ export class CoachAgentV2 {
     return toResponse(result, result.mode);
   }
 
-  /** Cron entry point — runs the planner directly. */
+  /** Cron entry point — runs the planner skill via the coach. */
   async runPlanning(message: string): Promise<CoachV2Response> {
-    const repoPath = await ensureRepo(this.config);
-    const timezone = this.config.timezone ?? getTimezone();
-    const r = await runPlanner({
-      repoPath,
-      timezone,
-      message,
-      model: this.config.model,
-    });
-    return toResponse(r, "planner");
+    return this.runCoachWithMode(message, "planner");
   }
 
   async runRetrospective(message: string): Promise<CoachV2Response> {
-    const repoPath = await ensureRepo(this.config);
-    const timezone = this.config.timezone ?? getTimezone();
-    const r = await runRetro({
-      repoPath,
-      timezone,
-      message,
-      model: this.config.model,
-    });
-    return toResponse(r, "retro");
+    return this.runCoachWithMode(message, "retro");
   }
 
   async runDailyReminder(message: string): Promise<CoachV2Response> {
+    return this.runCoachWithMode(message, "daily-reminder");
+  }
+
+  /** Force-run the coach with a plain user message — useful for tests. */
+  async runCoach(message: string): Promise<CoachV2Response> {
+    return this.runCoachWithMode(message, "coach");
+  }
+
+  private async runCoachWithMode(message: string, mode: string): Promise<CoachV2Response> {
     const repoPath = await ensureRepo(this.config);
     const timezone = this.config.timezone ?? getTimezone();
-    const r = await runDailyReminderHandler({
+    const r = await runCoach({
       repoPath,
       timezone,
       message,
       model: this.config.model,
+      maxTurns: this.config.maxTurns,
     });
-    return toResponse(r, "daily-reminder");
-  }
-
-  /** Force-run a specific handler — useful for tests. */
-  async runCoach(message: string): Promise<CoachV2Response> {
-    const repoPath = await ensureRepo(this.config);
-    const timezone = this.config.timezone ?? getTimezone();
-    const r = await runCoach({ repoPath, timezone, message, model: this.config.model });
-    return toResponse(r, "coach");
+    return toResponse(r, mode);
   }
 }
 
