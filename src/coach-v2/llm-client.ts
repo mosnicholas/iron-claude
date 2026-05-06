@@ -65,9 +65,9 @@ export interface LLMRequest {
   tools: ToolDef[];
 }
 
-// Claude 4.x models support up to 64K output tokens. The Anthropic API requires
-// max_tokens to be set, so we pass the model's ceiling rather than capping below it.
-const MAX_OUTPUT_TOKENS = 64_000;
+// Coach replies are short (a few hundred tokens). 8K leaves plenty of headroom
+// while staying well under the SDK's non-streaming 10-minute timeout threshold.
+const MAX_OUTPUT_TOKENS = 8_000;
 
 export interface LLMResponse {
   stop_reason: "end_turn" | "tool_use" | "max_tokens" | "stop_sequence" | string;
@@ -92,10 +92,7 @@ export class AnthropicLLMClient implements LLMClient {
   }
 
   async query(req: LLMRequest): Promise<LLMResponse> {
-    // The SDK requires streaming for requests whose max_tokens could exceed the
-    // 10-minute non-streaming timeout. finalMessage() aggregates the stream into
-    // the same Message shape messages.create() returns.
-    const stream = this.client.messages.stream({
+    const response = await this.client.messages.create({
       model: req.model,
       max_tokens: MAX_OUTPUT_TOKENS,
       system: req.system,
@@ -104,7 +101,6 @@ export class AnthropicLLMClient implements LLMClient {
       messages: req.messages as unknown as Anthropic.MessageParam[],
       tools: req.tools,
     });
-    const response = await stream.finalMessage();
 
     return {
       stop_reason: response.stop_reason ?? "end_turn",
