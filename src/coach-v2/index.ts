@@ -56,7 +56,8 @@ export class CoachAgentV2 {
   async chat(
     message: string,
     onStatus?: (s: string) => void,
-    onTextDelta?: (delta: string) => void
+    onTextDelta?: (delta: string) => void,
+    onThinkingDelta?: (delta: string) => void
   ): Promise<CoachV2Response> {
     const repoPath = await ensureRepo(this.config);
     const timezone = this.config.timezone ?? getTimezone();
@@ -66,6 +67,7 @@ export class CoachAgentV2 {
       message,
       onStatus,
       onTextDelta,
+      onThinkingDelta,
     });
     return toResponse(result, result.mode);
   }
