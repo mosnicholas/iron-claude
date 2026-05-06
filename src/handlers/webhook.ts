@@ -191,9 +191,39 @@ async function processMessage(
 
     if (messageId) {
       const editor = new ThrottledMessageEditor(bot, messageId);
-      const response = await agent.chat(messageText, (status) => {
-        console.log(`[webhook] Status update: ${status}`);
-        editor.update(status);
+
+      // Streaming preview: thinking + visible-text deltas are buffered and
+      // shown as a tail snippet through the editor. The editor's 2s throttle
+      // is the debounce — many deltas/sec coalesce into ~one Telegram edit/2s.
+      const PREVIEW_TAIL = 200;
+      let thinkingBuf = "";
+      let textBuf = "";
+
+      const updatePreview = () => {
+        const source = textBuf || thinkingBuf;
+        const tail = source.slice(-PREVIEW_TAIL).trim();
+        if (!tail) return;
+        const prefix = textBuf ? "" : "💭 ";
+        editor.update(`${prefix}${tail}`);
+      };
+
+      const response = await agent.chat(messageText, {
+        onStatus: (status) => {
+          console.log(`[webhook] Status update: ${status}`);
+          // A tool is firing — reset stream buffers so the next turn's
+          // thinking starts fresh on screen.
+          thinkingBuf = "";
+          textBuf = "";
+          editor.update(status);
+        },
+        onThinking: (delta) => {
+          thinkingBuf += delta;
+          updatePreview();
+        },
+        onText: (delta) => {
+          textBuf += delta;
+          updatePreview();
+        },
       });
 
       // Split on --- markers for multi-message responses

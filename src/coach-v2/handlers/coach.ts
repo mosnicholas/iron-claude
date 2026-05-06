@@ -20,9 +20,13 @@ export interface CoachHandlerOptions {
   message: string;
   model?: string;
   onStatus?: (status: string) => void;
+  onThinking?: (delta: string) => void;
+  onText?: (delta: string) => void;
 }
 
 const COACH_TOOLS = [...READ_TOOLS, ...WRITE_TOOLS, ...REMINDER_TOOLS, ...WEB_TOOLS];
+
+const COACH_THINKING_BUDGET = 1024;
 
 export async function runCoach(opts: CoachHandlerOptions): Promise<HarnessResult> {
   const ctx = loadCoachContext(opts.repoPath, opts.timezone);
@@ -34,5 +38,8 @@ export async function runCoach(opts: CoachHandlerOptions): Promise<HarnessResult
     tools: COACH_TOOLS,
     ctx: { repoPath: opts.repoPath, timezone: opts.timezone, handler: "coach" },
     onStatus: opts.onStatus,
+    thinking: { budgetTokens: COACH_THINKING_BUDGET },
+    onThinking: opts.onThinking,
+    onText: opts.onText,
   });
 }

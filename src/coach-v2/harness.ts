@@ -29,6 +29,16 @@ export interface HarnessOptions {
   maxTurns?: number;
   /** Optional progress callback — fires when a tool is about to run. */
   onStatus?: (status: string) => void;
+  /**
+   * Enable Claude extended thinking. When set, thinking deltas stream through
+   * `onThinking` and a thinking block is preserved in the assistant message
+   * history (required by the API across tool-use turns).
+   */
+  thinking?: { budgetTokens: number };
+  /** Streamed thinking deltas — fired as the model thinks, every turn. */
+  onThinking?: (delta: string) => void;
+  /** Streamed visible-text deltas — fired as the model writes its reply. */
+  onText?: (delta: string) => void;
   /** Custom LLM client (used by tests / OpenRouter swap). */
   llm?: LLMClient;
 }
@@ -73,6 +83,9 @@ export async function runHarness(opts: HarnessOptions): Promise<HarnessResult> {
       messages,
       tools: anthropicTools,
       maxTokens: 4096,
+      thinking: opts.thinking,
+      onThinkingDelta: opts.onThinking,
+      onTextDelta: opts.onText,
     });
 
     usage.input_tokens += response.usage.input_tokens;

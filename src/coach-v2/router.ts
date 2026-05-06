@@ -19,6 +19,10 @@ export interface RouterContext {
   /** The (raw) message text from the user. */
   message: string;
   onStatus?: (status: string) => void;
+  /** Streamed thinking deltas (coach mode only emits these). */
+  onThinking?: (delta: string) => void;
+  /** Streamed reply-text deltas. */
+  onText?: (delta: string) => void;
 }
 
 export interface RoutedResult extends HarnessResult {
