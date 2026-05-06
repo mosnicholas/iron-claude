@@ -65,9 +65,9 @@ export interface LLMRequest {
   tools: ToolDef[];
 }
 
-// Coach replies are short (a few hundred tokens). 8K leaves plenty of headroom
+// Coach replies are short (a few hundred tokens). 6K leaves plenty of headroom
 // while staying well under the SDK's non-streaming 10-minute timeout threshold.
-const MAX_OUTPUT_TOKENS = 8_000;
+const MAX_OUTPUT_TOKENS = 6_000;
 
 export interface LLMResponse {
   stop_reason: "end_turn" | "tool_use" | "max_tokens" | "stop_sequence" | string;
