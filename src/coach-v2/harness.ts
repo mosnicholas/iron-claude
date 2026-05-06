@@ -31,6 +31,12 @@ export interface HarnessOptions {
   onStatus?: (status: string) => void;
   /** Optional callback for streaming assistant text deltas to the user. */
   onTextDelta?: (delta: string) => void;
+  /**
+   * Optional callback for streaming thinking/reasoning deltas (extended
+   * thinking models). Surfaced separately from text so callers can format
+   * the model's reasoning differently from its reply.
+   */
+  onThinkingDelta?: (delta: string) => void;
   /** Custom LLM client (used by tests / OpenRouter swap). */
   llm?: LLMClient;
 }
@@ -73,6 +79,7 @@ export async function runHarness(opts: HarnessOptions): Promise<HarnessResult> {
       messages,
       tools: anthropicTools,
       onTextDelta: opts.onTextDelta,
+      onThinkingDelta: opts.onThinkingDelta,
     });
 
     usage.input_tokens += response.usage.input_tokens;

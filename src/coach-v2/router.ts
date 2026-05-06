@@ -20,6 +20,7 @@ export interface RouterContext {
   message: string;
   onStatus?: (status: string) => void;
   onTextDelta?: (delta: string) => void;
+  onThinkingDelta?: (delta: string) => void;
 }
 
 export interface RoutedResult extends HarnessResult {

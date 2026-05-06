@@ -199,6 +199,9 @@ async function processMessage(
         },
         (delta) => {
           editor.appendStreamDelta(delta);
+        },
+        (delta) => {
+          editor.appendThinkingDelta(delta);
         }
       );
 

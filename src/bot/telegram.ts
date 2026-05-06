@@ -613,6 +613,12 @@ export class ThrottledMessageEditor {
   private placeholderMode: "status" | "stream" = "status";
   /** Latest formatted status text shown in the placeholder (markdown). */
   private currentStatusFormatted: string | null = "🧠 _Thinking..._";
+  /**
+   * Accumulated reasoning/thinking text from the model's extended-thinking
+   * stream. Re-rendered into the placeholder as deltas arrive, then locked in
+   * (alongside the brain emoji + italics) when we transition to reply text.
+   */
+  private thinkingBuffer = "";
 
   constructor(bot: TelegramBot, messageId: number, throttleMs = 2000) {
     this.bot = bot;
@@ -640,15 +646,23 @@ export class ThrottledMessageEditor {
 
     // Format as: 🧠 _status message_
     const formattedText = `🧠 _${escaped}_`;
-    this.currentStatusFormatted = formattedText;
 
-    // If the placeholder currently holds streamed text, rotate it out so the
-    // streamed reply isn't overwritten by this status.
-    if (this.placeholderMode === "stream" && this.streamBuffer.trim().length > 0) {
+    const hadThinking = this.thinkingBuffer.trim().length > 0;
+    const hadStream = this.placeholderMode === "stream" && this.streamBuffer.trim().length > 0;
+
+    // The new status replaces any in-flight thinking — but we still want to
+    // lock in the thinking content (below) before clearing the buffer.
+    if (hadStream) {
+      this.thinkingBuffer = "";
       void this.rotateStreamForStatus(formattedText);
       return;
     }
+    if (hadThinking) {
+      void this.rotateThinkingForStatus(formattedText);
+      return;
+    }
 
+    this.currentStatusFormatted = formattedText;
     this.placeholderMode = "status";
     this.scheduleStatusEdit(formattedText);
   }
@@ -689,11 +703,46 @@ export class ThrottledMessageEditor {
     // First delta after a status update — keep the brain-prefixed status
     // visible by locking it in and creating a fresh placeholder for the reply.
     if (this.placeholderMode === "status") {
+      this.thinkingBuffer = "";
       void this.rotateStatusForStream();
       return;
     }
 
     this.maybeRotateOrEdit();
+  }
+
+  /**
+   * Append a streamed thinking/reasoning delta. Renders the accumulated
+   * thinking buffer with the same brain-emoji italic treatment as a status
+   * update, so the model's reasoning shows up as its own visually distinct
+   * block and survives in chat after the reply finishes streaming.
+   */
+  appendThinkingDelta(delta: string): void {
+    if (!delta) return;
+
+    const isFirstDelta = this.thinkingBuffer.length === 0;
+    this.thinkingBuffer += delta;
+
+    const escaped = formatForTelegram(this.thinkingBuffer);
+    const formattedText = `🧠 _${escaped}_`;
+    this.currentStatusFormatted = formattedText;
+
+    if (isFirstDelta) {
+      // First delta of a new thinking session — preserve whatever the
+      // placeholder currently shows (a partial reply or a tool-use status)
+      // instead of overwriting it with the reasoning text.
+      if (this.placeholderMode === "stream" && this.streamBuffer.trim().length > 0) {
+        void this.rotateStreamForStatus(formattedText);
+        return;
+      }
+      if (this.placeholderMode === "status" && this.completedSegments > 0) {
+        void this.rotateStatusForThinking(formattedText);
+        return;
+      }
+    }
+
+    this.placeholderMode = "status";
+    this.scheduleStatusEdit(formattedText);
   }
 
   private maybeRotateOrEdit(): void {
@@ -797,6 +846,32 @@ export class ThrottledMessageEditor {
    * after a status update, so the brain-prefixed status survives in chat.
    */
   private async rotateStatusForStream(): Promise<void> {
+    await this.rotateAfterStatus({
+      newPlaceholder: "🧠 _Continuing..._",
+      newMode: "stream",
+    });
+    if (!this.streamSuppressed && this.streamBuffer.length > 0) {
+      this.maybeRotateOrEdit();
+    }
+  }
+
+  /**
+   * Lock in the current status placeholder and open a fresh placeholder
+   * showing the new (streaming) thinking block. Called on the first thinking
+   * delta after a status update — preserves the prior status (e.g. "Using
+   * readFile…") instead of overwriting it with the model's reasoning.
+   */
+  private async rotateStatusForThinking(formattedThinking: string): Promise<void> {
+    await this.rotateAfterStatus({
+      newPlaceholder: formattedThinking,
+      newMode: "status",
+    });
+  }
+
+  private async rotateAfterStatus(opts: {
+    newPlaceholder: string;
+    newMode: "stream" | "status";
+  }): Promise<void> {
     if (this.rotating || this.streamSuppressed) return;
     this.rotating = true;
     try {
@@ -816,20 +891,72 @@ export class ThrottledMessageEditor {
           // edit failure here just means we keep what's already there.
         }
       }
+      this.completedSegments += 1;
 
-      const newId = await this.bot.sendMessage("🧠 _Continuing..._", "MarkdownV2");
+      const newId = await this.bot.sendMessage(opts.newPlaceholder, "MarkdownV2");
       if (newId) {
         this.messageId = newId;
-        this.lastEditTime = 0;
-        this.placeholderMode = "stream";
-      } else {
+        this.lastEditTime = opts.newMode === "stream" ? 0 : Date.now();
+        this.placeholderMode = opts.newMode;
+        if (opts.newMode === "status") {
+          this.currentStatusFormatted = opts.newPlaceholder;
+        }
+      } else if (opts.newMode === "stream") {
         this.streamSuppressed = true;
+      } else {
+        // Couldn't open a new placeholder — fall back to in-place edits.
+        this.placeholderMode = "status";
+        this.currentStatusFormatted = opts.newPlaceholder;
+        this.scheduleStatusEdit(opts.newPlaceholder);
       }
     } finally {
       this.rotating = false;
     }
-    if (!this.streamSuppressed && this.streamBuffer.length > 0) {
-      this.maybeRotateOrEdit();
+  }
+
+  /**
+   * Lock in the brain-prefixed reasoning block currently shown in the
+   * placeholder and open a fresh placeholder for the incoming status update.
+   * Called when a tool-use status fires after extended-thinking deltas — so
+   * the reasoning survives in chat instead of being overwritten by the
+   * shorter status line.
+   */
+  private async rotateThinkingForStatus(formattedStatus: string): Promise<void> {
+    if (this.rotating || this.streamSuppressed) return;
+    this.rotating = true;
+    try {
+      // Force the latest thinking render into the placeholder synchronously
+      // so the locked-in message reflects everything we received.
+      if (this.pendingTimeout) {
+        clearTimeout(this.pendingTimeout);
+        this.pendingTimeout = null;
+      }
+      const finalThinking = this.pendingText ?? this.currentStatusFormatted;
+      this.pendingText = null;
+      if (finalThinking) {
+        try {
+          await this.bot.editMessage(this.messageId, finalThinking);
+        } catch {
+          // Best-effort — placeholder already shows a recent thinking render.
+        }
+      }
+      this.thinkingBuffer = "";
+      this.completedSegments += 1;
+
+      const newId = await this.bot.sendMessage(formattedStatus, "MarkdownV2");
+      if (newId) {
+        this.messageId = newId;
+        this.lastEditTime = Date.now();
+        this.placeholderMode = "status";
+        this.currentStatusFormatted = formattedStatus;
+      } else {
+        // No new placeholder — fall back to in-place edits on the old one.
+        this.placeholderMode = "status";
+        this.currentStatusFormatted = formattedStatus;
+        this.scheduleStatusEdit(formattedStatus);
+      }
+    } finally {
+      this.rotating = false;
     }
   }
 

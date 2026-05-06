@@ -65,6 +65,11 @@ export interface LLMRequest {
   tools: ToolDef[];
   /** Fires for each text delta as the assistant streams its response. */
   onTextDelta?: (delta: string) => void;
+  /**
+   * Fires for each thinking/reasoning delta when extended thinking is enabled
+   * on the model. Streamed before any text deltas in the same turn.
+   */
+  onThinkingDelta?: (delta: string) => void;
 }
 
 // We always stream, so the SDK's non-streaming timeout doesn't constrain us.
@@ -106,6 +111,9 @@ export class AnthropicLLMClient implements LLMClient {
     });
     if (req.onTextDelta) {
       stream.on("text", req.onTextDelta);
+    }
+    if (req.onThinkingDelta) {
+      stream.on("thinking", req.onThinkingDelta);
     }
     const response = await stream.finalMessage();
 
