@@ -549,11 +549,43 @@ export function createTelegramBot(): TelegramBot {
  * state when the throttle window expires. Telegram allows ~30 edits/min.
  */
 /**
- * Telegram's hard cap is 4096 characters per message. We cap streamed-display
- * a bit below that to leave headroom for the trailing ellipsis and any
+ * Telegram's hard cap is 4096 characters per message. We start looking for a
+ * clean break point in the streamed text once we exceed SOFT_STREAM_CAP, and
+ * force a split (at the latest whitespace we can find) once we exceed
+ * HARD_STREAM_CAP. The 200-char gap below 4096 leaves headroom for
  * platform-side counting differences.
  */
-const MAX_STREAM_DISPLAY_CHARS = 3900;
+const SOFT_STREAM_CAP = 3000;
+const HARD_STREAM_CAP = 3900;
+const MESSAGE_BREAK = "\n---\n";
+
+/**
+ * Find the latest "clean" break point in `text` for splitting a streamed
+ * message into multiple Telegram messages. Returns the index where the next
+ * segment begins, or -1 if no acceptable break exists.
+ *
+ * Preference order: paragraph (\n\n) > sentence end > line break > word.
+ * We only consider breaks within the last `lookbackChars` of the text so we
+ * split as late as possible (and don't carry a tiny leftover into the next
+ * message).
+ */
+function findCleanBreakIndex(text: string, lookbackChars = 1500): number {
+  const minIdx = Math.max(0, text.length - lookbackChars);
+
+  const paragraph = text.lastIndexOf("\n\n");
+  if (paragraph >= minIdx) return paragraph + 2;
+
+  // Sentence end followed by space (rough heuristic).
+  for (const sep of [". ", "? ", "! "]) {
+    const idx = text.lastIndexOf(sep);
+    if (idx >= minIdx) return idx + sep.length;
+  }
+
+  const newline = text.lastIndexOf("\n");
+  if (newline >= minIdx) return newline + 1;
+
+  return -1;
+}
 
 export class ThrottledMessageEditor {
   private bot: TelegramBot;
@@ -563,12 +595,16 @@ export class ThrottledMessageEditor {
   private pendingText: string | null = null;
   private pendingTimeout: ReturnType<typeof setTimeout> | null = null;
   private dotCount = 1;
-  /** Accumulates streamed assistant text for the current turn. */
+  /** Accumulates streamed assistant text for the *current* segment only. */
   private streamBuffer = "";
   private streamPending = false;
   private streamTimeout: ReturnType<typeof setTimeout> | null = null;
-  /** Set once the buffer exceeds the display cap — further deltas are no-ops. */
-  private streamCapped = false;
+  /** True while a rotation (finalize current + send new placeholder) is in flight. */
+  private rotating = false;
+  /** Set if we couldn't get a new placeholder; suppresses further streaming edits. */
+  private streamSuppressed = false;
+  /** Number of fully-finalized message segments (incremented on each rotation). */
+  private completedSegments = 0;
 
   constructor(bot: TelegramBot, messageId: number, throttleMs = 2000) {
     this.bot = bot;
@@ -623,19 +659,56 @@ export class ThrottledMessageEditor {
   }
 
   /**
-   * Append a streamed assistant text delta and edit the message (debounced).
-   * Streams as plain text — partial markdown can fail to parse mid-token.
-   * Once the buffer exceeds Telegram's per-message cap, further deltas are
-   * no-ops; finalize() will send the full response as a new message instead.
+   * Append a streamed assistant text delta. Detects message-break markers
+   * (`\n---\n`) and size thresholds; rotates to a new Telegram message at
+   * those boundaries so we never overflow the per-message limit.
    */
   appendStreamDelta(delta: string): void {
-    if (!delta) return;
+    if (!delta || this.streamSuppressed) return;
     this.streamBuffer += delta;
-    if (this.streamCapped) return;
-    if (this.streamBuffer.length > MAX_STREAM_DISPLAY_CHARS) {
-      this.streamCapped = true;
+    this.maybeRotateOrEdit();
+  }
+
+  private maybeRotateOrEdit(): void {
+    if (this.rotating || this.streamSuppressed) return;
+
+    // 1. Explicit message break (matches splitOnMessageBreaks).
+    const breakIdx = this.streamBuffer.indexOf(MESSAGE_BREAK);
+    if (breakIdx !== -1) {
+      const before = this.streamBuffer.slice(0, breakIdx);
+      const after = this.streamBuffer.slice(breakIdx + MESSAGE_BREAK.length);
+      this.streamBuffer = after;
+      void this.rotate(before);
+      return;
     }
 
+    // 2. Size-based split: find a clean break once we cross the soft cap.
+    if (this.streamBuffer.length >= SOFT_STREAM_CAP) {
+      const splitIdx = findCleanBreakIndex(this.streamBuffer);
+      if (splitIdx !== -1) {
+        const before = this.streamBuffer.slice(0, splitIdx);
+        const after = this.streamBuffer.slice(splitIdx);
+        this.streamBuffer = after;
+        void this.rotate(before);
+        return;
+      }
+      // 3. No clean break and we're past the hard cap — split at last space.
+      if (this.streamBuffer.length >= HARD_STREAM_CAP) {
+        const lastSpace = this.streamBuffer.lastIndexOf(" ");
+        const splitAt = lastSpace > 0 ? lastSpace : HARD_STREAM_CAP;
+        const before = this.streamBuffer.slice(0, splitAt);
+        const after = this.streamBuffer.slice(splitAt + (lastSpace > 0 ? 1 : 0));
+        this.streamBuffer = after;
+        void this.rotate(before);
+        return;
+      }
+    }
+
+    // No rotation needed — schedule a debounced edit of the current message.
+    this.scheduleStreamEdit();
+  }
+
+  private scheduleStreamEdit(): void {
     // Streamed text takes priority over any pending status edit.
     this.pendingText = null;
     if (this.pendingTimeout) {
@@ -648,26 +721,52 @@ export class ThrottledMessageEditor {
 
     if (timeSinceLastEdit >= this.throttleMs) {
       this.lastEditTime = now;
-      void this.editPlainSafe(this.streamDisplay());
+      void this.editPlainSafe(this.streamBuffer);
     } else if (!this.streamTimeout) {
       const waitTime = this.throttleMs - timeSinceLastEdit;
       this.streamTimeout = setTimeout(() => {
         this.streamTimeout = null;
         this.lastEditTime = Date.now();
-        void this.editPlainSafe(this.streamDisplay());
+        void this.editPlainSafe(this.streamBuffer);
       }, waitTime);
     }
   }
 
-  private streamDisplay(): string {
-    return this.streamCapped
-      ? this.streamBuffer.slice(0, MAX_STREAM_DISPLAY_CHARS) + "…"
-      : this.streamBuffer;
+  /**
+   * Finalize the current message (with markdown) and start a fresh placeholder
+   * for the next segment. Caller is responsible for setting `streamBuffer` to
+   * the post-break content *before* invoking this.
+   */
+  private async rotate(beforeText: string): Promise<void> {
+    this.rotating = true;
+    if (this.streamTimeout) {
+      clearTimeout(this.streamTimeout);
+      this.streamTimeout = null;
+    }
+    try {
+      await this.writeFinalToCurrent(beforeText.trim());
+      const newId = await this.bot.sendMessage("✨ _Continuing..._", "MarkdownV2");
+      if (newId) {
+        this.messageId = newId;
+        this.lastEditTime = 0;
+        this.completedSegments += 1;
+      } else {
+        // Couldn't open a new placeholder — give up on streaming the rest.
+        // finalize() will send the remainder as a new message.
+        this.streamSuppressed = true;
+      }
+    } finally {
+      this.rotating = false;
+    }
+    if (!this.streamSuppressed && this.streamBuffer.length > 0) {
+      // More content already arrived (or another break is buffered) — re-check.
+      this.maybeRotateOrEdit();
+    }
   }
 
   private resetStream(): void {
     this.streamBuffer = "";
-    this.streamCapped = false;
+    this.streamSuppressed = false;
     if (this.streamTimeout) {
       clearTimeout(this.streamTimeout);
       this.streamTimeout = null;
@@ -676,7 +775,7 @@ export class ThrottledMessageEditor {
   }
 
   private async editPlainSafe(text: string): Promise<void> {
-    if (this.streamPending) return;
+    if (this.streamPending || this.streamSuppressed) return;
     if (!text || !text.trim()) return;
     this.streamPending = true;
     try {
@@ -687,38 +786,77 @@ export class ThrottledMessageEditor {
   }
 
   /**
-   * Final edit with no throttling. Clears any pending updates.
-   * Falls back to plain text if markdown formatting fails.
-   * If message is too long, sends as new message instead of edit.
+   * Final edit (with markdown) of the current placeholder message.
+   * Falls back to plain text if markdown parsing fails.
+   * Sends as a new message if `text` exceeds Telegram's per-message limit.
    */
-  async finalize(text: string): Promise<void> {
-    // Clear any pending updates
-    if (this.pendingTimeout) {
-      clearTimeout(this.pendingTimeout);
-      this.pendingTimeout = null;
-    }
-    this.pendingText = null;
-    this.resetStream();
-
-    // Guard against empty or whitespace-only messages (Telegram rejects these)
+  private async writeFinalToCurrent(text: string): Promise<void> {
     if (!text || !text.trim()) {
-      console.warn(`[ThrottledEditor] Empty message text, sending fallback`);
-      text = "Done! Nothing to report.";
+      // Empty segment is awkward but Telegram rejects empty edits — replace
+      // with a hairline so the message isn't stuck on "✨ ...".
+      text = "—";
     }
-
-    // If message is too long for edit, send as new message
     if (text.length > 4000) {
-      console.log(`[ThrottledEditor] Message too long (${text.length}), sending as new message`);
+      console.log(`[ThrottledEditor] Segment too long (${text.length}), sending as new message`);
       await this.bot.sendMessageSafe(text);
       return;
     }
-
-    // Try MarkdownV2 first, fall back to plain text
     try {
       await this.bot.editMessage(this.messageId, text);
     } catch (error) {
       console.log(`[ThrottledEditor] MarkdownV2 failed, trying plain text:`, error);
       await this.editPlain(text);
+    }
+  }
+
+  /**
+   * Finalize the response. Trusts the streamed buffer when streaming happened;
+   * otherwise falls back to splitting `fullText` on `---` markers.
+   *
+   * After eager rotation during streaming, the current placeholder corresponds
+   * to the last segment — `streamBuffer` already holds its content.
+   */
+  async finalize(fullText: string): Promise<void> {
+    if (this.pendingTimeout) {
+      clearTimeout(this.pendingTimeout);
+      this.pendingTimeout = null;
+    }
+    this.pendingText = null;
+    if (this.streamTimeout) {
+      clearTimeout(this.streamTimeout);
+      this.streamTimeout = null;
+    }
+
+    const streamed = this.streamBuffer.trim();
+    const rotatedDuringStream = this.completedSegments > 0;
+
+    if (this.streamSuppressed) {
+      // Streaming gave up partway. Send the remaining buffer as a new message.
+      if (streamed) {
+        await this.bot.sendMessageSafe(streamed);
+      }
+      this.resetStream();
+      return;
+    }
+
+    if (rotatedDuringStream || streamed) {
+      // Streaming path: trust the stream. Edit the current (last) placeholder.
+      await this.writeFinalToCurrent(streamed);
+      this.resetStream();
+      return;
+    }
+
+    // No streaming happened — fall back to the existing split behavior.
+    this.resetStream();
+    const chunks = splitOnMessageBreaks(fullText);
+    if (chunks.length === 0) {
+      await this.writeFinalToCurrent(fullText);
+      return;
+    }
+    await this.writeFinalToCurrent(chunks[0]);
+    for (let i = 1; i < chunks.length; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await this.bot.sendMessageSafe(chunks[i]);
     }
   }
 
