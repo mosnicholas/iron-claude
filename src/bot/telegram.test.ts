@@ -1,4 +1,4 @@
-import { formatForTelegram } from "./telegram.js";
+import { escapeForTelegramItalic, formatForTelegram } from "./telegram.js";
 
 describe("formatForTelegram", () => {
   describe("heading conversion", () => {
@@ -204,5 +204,44 @@ Form felt good today.`;
       const result = formatForTelegram(input);
       expect(result).toContain("\\\\");
     });
+  });
+});
+
+describe("escapeForTelegramItalic", () => {
+  it("escapes underscores so tool names like get_prs don't break italic", () => {
+    // Regression: "🧠 _Using get_prs_" was parsed as italic("Using get") +
+    // unmatched "_", crashing the bot with "Can't find end of Italic entity".
+    const escaped = escapeForTelegramItalic("Using get_prs");
+    expect(escaped).toBe("Using get\\_prs");
+    // The wrapped form has matched outer _..._ around literal text.
+    expect(`🧠 _${escaped}_`).toBe("🧠 _Using get\\_prs_");
+  });
+
+  it("escapes asterisks", () => {
+    expect(escapeForTelegramItalic("Using *bold*")).toBe("Using \\*bold\\*");
+  });
+
+  it("escapes brackets, parens, and backticks", () => {
+    expect(escapeForTelegramItalic("(a) [b] `c`")).toBe("\\(a\\) \\[b\\] \\`c\\`");
+  });
+
+  it("escapes dots, exclamation, and other MarkdownV2 specials", () => {
+    expect(escapeForTelegramItalic("done!")).toBe("done\\!");
+    expect(escapeForTelegramItalic("v2.0")).toBe("v2\\.0");
+    expect(escapeForTelegramItalic("a+b=c")).toBe("a\\+b\\=c");
+  });
+
+  it("escapes backslashes before other escapes", () => {
+    // A literal backslash must become \\, not interfere with other escapes.
+    expect(escapeForTelegramItalic("a\\b")).toBe("a\\\\b");
+  });
+
+  it("handles tool-call status text with trailing ellipsis", () => {
+    const escaped = escapeForTelegramItalic("Using get_prs.");
+    expect(escaped).toBe("Using get\\_prs\\.");
+  });
+
+  it("returns empty string for empty input", () => {
+    expect(escapeForTelegramItalic("")).toBe("");
   });
 });
