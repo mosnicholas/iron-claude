@@ -54,15 +54,22 @@ export class TelegramBot {
   }
 
   /**
-   * Send a text message (formats text for MarkdownV2)
-   * Returns the message ID if successful
+   * Send a text message (formats text for MarkdownV2).
+   * Falls back to plain text on parse errors so a malformed entity never
+   * crashes the bot — callers can still rely on getting a message ID back.
+   * Returns the message ID if successful.
    */
   async sendMessage(
     text: string,
     parseMode: "MarkdownV2" | "HTML" = "MarkdownV2"
   ): Promise<number | undefined> {
     const formatted = parseMode === "MarkdownV2" ? formatForTelegram(text) : text;
-    return this.sendFormattedMessage(formatted, parseMode);
+    try {
+      return await this.sendFormattedMessage(formatted, parseMode);
+    } catch (error) {
+      console.log(`[telegram] sendMessage ${parseMode} failed, sending plain:`, error);
+      return this.sendPlainMessage(text);
+    }
   }
 
   /**
@@ -385,6 +392,21 @@ export function formatForTelegram(text: string): string {
 }
 
 /**
+ * Escape plain text so it can safely be wrapped in a Telegram MarkdownV2
+ * italic entity (`_..._`).
+ *
+ * Unlike `formatForTelegram`, this does NOT interpret markdown — it treats the
+ * input as literal prose and escapes every MarkdownV2 special character. Used
+ * for status / thinking placeholders like "🧠 _Using get_prs…_": without
+ * escaping the inner `_`, Telegram parses `_Using get_` as a complete italic
+ * and chokes on the trailing unmatched `_` ("can't find end of italic
+ * entity"), which previously crashed the bot.
+ */
+export function escapeForTelegramItalic(text: string): string {
+  return text.replace(/([\\_*[\]()~`>#+\-=|{}.!])/g, "\\$1");
+}
+
+/**
  * Convert markdown tables to bullet lists for Telegram
  */
 function convertTablesToLists(text: string): string {
@@ -641,8 +663,10 @@ export class ThrottledMessageEditor {
     this.dotCount = (this.dotCount % 3) + 1;
     const baseText = text.replace(/\.{3}$/, dots);
 
-    // Escape special chars for MarkdownV2
-    const escaped = formatForTelegram(baseText);
+    // Escape every MarkdownV2 special character — status text is plain prose
+    // (e.g. "Using get_prs…"), and an unescaped `_` or `*` would break the
+    // surrounding italic entity and crash the bot.
+    const escaped = escapeForTelegramItalic(baseText);
 
     // Format as: 🧠 _status message_
     const formattedText = `🧠 _${escaped}_`;
@@ -723,7 +747,10 @@ export class ThrottledMessageEditor {
     const isFirstDelta = this.thinkingBuffer.length === 0;
     this.thinkingBuffer += delta;
 
-    const escaped = formatForTelegram(this.thinkingBuffer);
+    // Reasoning text is rendered as a single italic block; escape every
+    // MarkdownV2 special character so any `_`/`*` in the model's prose doesn't
+    // break the surrounding italic entity.
+    const escaped = escapeForTelegramItalic(this.thinkingBuffer);
     const formattedText = `🧠 _${escaped}_`;
     this.currentStatusFormatted = formattedText;
 
