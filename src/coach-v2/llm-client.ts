@@ -92,7 +92,10 @@ export class AnthropicLLMClient implements LLMClient {
   }
 
   async query(req: LLMRequest): Promise<LLMResponse> {
-    const response = await this.client.messages.create({
+    // The SDK requires streaming for requests whose max_tokens could exceed the
+    // 10-minute non-streaming timeout. finalMessage() aggregates the stream into
+    // the same Message shape messages.create() returns.
+    const stream = this.client.messages.stream({
       model: req.model,
       max_tokens: MAX_OUTPUT_TOKENS,
       system: req.system,
@@ -101,6 +104,7 @@ export class AnthropicLLMClient implements LLMClient {
       messages: req.messages as unknown as Anthropic.MessageParam[],
       tools: req.tools,
     });
+    const response = await stream.finalMessage();
 
     return {
       stop_reason: response.stop_reason ?? "end_turn",
