@@ -19,6 +19,7 @@ export interface RouterContext {
   /** The (raw) message text from the user. */
   message: string;
   onStatus?: (status: string) => void;
+  onTextDelta?: (delta: string) => void;
 }
 
 export interface RoutedResult extends HarnessResult {

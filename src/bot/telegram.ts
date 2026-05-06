@@ -548,6 +548,13 @@ export function createTelegramBot(): TelegramBot {
  * Handles rate limiting by queuing updates and only sending the latest
  * state when the throttle window expires. Telegram allows ~30 edits/min.
  */
+/**
+ * Telegram's hard cap is 4096 characters per message. We cap streamed-display
+ * a bit below that to leave headroom for the trailing ellipsis and any
+ * platform-side counting differences.
+ */
+const MAX_STREAM_DISPLAY_CHARS = 3900;
+
 export class ThrottledMessageEditor {
   private bot: TelegramBot;
   private messageId: number;
@@ -556,6 +563,12 @@ export class ThrottledMessageEditor {
   private pendingText: string | null = null;
   private pendingTimeout: ReturnType<typeof setTimeout> | null = null;
   private dotCount = 1;
+  /** Accumulates streamed assistant text for the current turn. */
+  private streamBuffer = "";
+  private streamPending = false;
+  private streamTimeout: ReturnType<typeof setTimeout> | null = null;
+  /** Set once the buffer exceeds the display cap — further deltas are no-ops. */
+  private streamCapped = false;
 
   constructor(bot: TelegramBot, messageId: number, throttleMs = 2000) {
     this.bot = bot;
@@ -566,8 +579,13 @@ export class ThrottledMessageEditor {
   /**
    * Queue a status update. Respects rate limits.
    * Status messages are formatted with sparkle emoji and italics.
+   * Resets any in-progress streamed text — status indicates a new turn.
    */
   update(text: string): void {
+    // A tool-use status fires between turns; previous turn's streamed text
+    // is preamble we don't want to keep showing.
+    this.resetStream();
+
     // Add animated dots
     const dots = ".".repeat(this.dotCount);
     this.dotCount = (this.dotCount % 3) + 1;
@@ -605,6 +623,70 @@ export class ThrottledMessageEditor {
   }
 
   /**
+   * Append a streamed assistant text delta and edit the message (debounced).
+   * Streams as plain text — partial markdown can fail to parse mid-token.
+   * Once the buffer exceeds Telegram's per-message cap, further deltas are
+   * no-ops; finalize() will send the full response as a new message instead.
+   */
+  appendStreamDelta(delta: string): void {
+    if (!delta) return;
+    this.streamBuffer += delta;
+    if (this.streamCapped) return;
+    if (this.streamBuffer.length > MAX_STREAM_DISPLAY_CHARS) {
+      this.streamCapped = true;
+    }
+
+    // Streamed text takes priority over any pending status edit.
+    this.pendingText = null;
+    if (this.pendingTimeout) {
+      clearTimeout(this.pendingTimeout);
+      this.pendingTimeout = null;
+    }
+
+    const now = Date.now();
+    const timeSinceLastEdit = now - this.lastEditTime;
+
+    if (timeSinceLastEdit >= this.throttleMs) {
+      this.lastEditTime = now;
+      void this.editPlainSafe(this.streamDisplay());
+    } else if (!this.streamTimeout) {
+      const waitTime = this.throttleMs - timeSinceLastEdit;
+      this.streamTimeout = setTimeout(() => {
+        this.streamTimeout = null;
+        this.lastEditTime = Date.now();
+        void this.editPlainSafe(this.streamDisplay());
+      }, waitTime);
+    }
+  }
+
+  private streamDisplay(): string {
+    return this.streamCapped
+      ? this.streamBuffer.slice(0, MAX_STREAM_DISPLAY_CHARS) + "…"
+      : this.streamBuffer;
+  }
+
+  private resetStream(): void {
+    this.streamBuffer = "";
+    this.streamCapped = false;
+    if (this.streamTimeout) {
+      clearTimeout(this.streamTimeout);
+      this.streamTimeout = null;
+    }
+    this.streamPending = false;
+  }
+
+  private async editPlainSafe(text: string): Promise<void> {
+    if (this.streamPending) return;
+    if (!text || !text.trim()) return;
+    this.streamPending = true;
+    try {
+      await this.editPlain(text);
+    } finally {
+      this.streamPending = false;
+    }
+  }
+
+  /**
    * Final edit with no throttling. Clears any pending updates.
    * Falls back to plain text if markdown formatting fails.
    * If message is too long, sends as new message instead of edit.
@@ -616,6 +698,7 @@ export class ThrottledMessageEditor {
       this.pendingTimeout = null;
     }
     this.pendingText = null;
+    this.resetStream();
 
     // Guard against empty or whitespace-only messages (Telegram rejects these)
     if (!text || !text.trim()) {

@@ -191,10 +191,16 @@ async function processMessage(
 
     if (messageId) {
       const editor = new ThrottledMessageEditor(bot, messageId);
-      const response = await agent.chat(messageText, (status) => {
-        console.log(`[webhook] Status update: ${status}`);
-        editor.update(status);
-      });
+      const response = await agent.chat(
+        messageText,
+        (status) => {
+          console.log(`[webhook] Status update: ${status}`);
+          editor.update(status);
+        },
+        (delta) => {
+          editor.appendStreamDelta(delta);
+        }
+      );
 
       // Split on --- markers for multi-message responses
       const chunks = splitOnMessageBreaks(response.message);

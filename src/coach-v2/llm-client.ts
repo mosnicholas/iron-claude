@@ -63,11 +63,14 @@ export interface LLMRequest {
   system: SystemBlock[];
   messages: Message[];
   tools: ToolDef[];
+  /** Fires for each text delta as the assistant streams its response. */
+  onTextDelta?: (delta: string) => void;
 }
 
-// Coach replies are short (a few hundred tokens). 6K leaves plenty of headroom
-// while staying well under the SDK's non-streaming 10-minute timeout threshold.
-const MAX_OUTPUT_TOKENS = 6_000;
+// We always stream, so the SDK's non-streaming timeout doesn't constrain us.
+// 16K is well above any realistic coach reply but leaves headroom for skills
+// (planner, retro) that produce longer multi-section outputs.
+const MAX_OUTPUT_TOKENS = 16_000;
 
 export interface LLMResponse {
   stop_reason: "end_turn" | "tool_use" | "max_tokens" | "stop_sequence" | string;
@@ -92,7 +95,7 @@ export class AnthropicLLMClient implements LLMClient {
   }
 
   async query(req: LLMRequest): Promise<LLMResponse> {
-    const response = await this.client.messages.create({
+    const stream = this.client.messages.stream({
       model: req.model,
       max_tokens: MAX_OUTPUT_TOKENS,
       system: req.system,
@@ -101,6 +104,10 @@ export class AnthropicLLMClient implements LLMClient {
       messages: req.messages as unknown as Anthropic.MessageParam[],
       tools: req.tools,
     });
+    if (req.onTextDelta) {
+      stream.on("text", req.onTextDelta);
+    }
+    const response = await stream.finalMessage();
 
     return {
       stop_reason: response.stop_reason ?? "end_turn",

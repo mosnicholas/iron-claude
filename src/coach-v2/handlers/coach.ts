@@ -25,6 +25,7 @@ export interface CoachHandlerOptions {
   model?: string;
   maxTurns?: number;
   onStatus?: (status: string) => void;
+  onTextDelta?: (delta: string) => void;
 }
 
 const COACH_TOOLS = [
@@ -45,6 +46,7 @@ export async function runCoach(opts: CoachHandlerOptions): Promise<HarnessResult
     tools: COACH_TOOLS,
     ctx: { repoPath: opts.repoPath, timezone: opts.timezone, handler: "coach" },
     onStatus: opts.onStatus,
+    onTextDelta: opts.onTextDelta,
     maxTurns: opts.maxTurns ?? 30,
   });
 }
