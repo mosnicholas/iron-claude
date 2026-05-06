@@ -53,7 +53,11 @@ export class CoachAgentV2 {
   constructor(private config: CoachV2Config = {}) {}
 
   /** Conversational entry point — used by the Telegram webhook. */
-  async chat(message: string, onStatus?: (s: string) => void): Promise<CoachV2Response> {
+  async chat(
+    message: string,
+    onStatus?: (s: string) => void,
+    onTextDelta?: (delta: string) => void
+  ): Promise<CoachV2Response> {
     const repoPath = await ensureRepo(this.config);
     const timezone = this.config.timezone ?? getTimezone();
     const result: RoutedResult = await route({
@@ -61,6 +65,7 @@ export class CoachAgentV2 {
       timezone,
       message,
       onStatus,
+      onTextDelta,
     });
     return toResponse(result, result.mode);
   }

@@ -191,19 +191,21 @@ async function processMessage(
 
     if (messageId) {
       const editor = new ThrottledMessageEditor(bot, messageId);
-      const response = await agent.chat(messageText, (status) => {
-        console.log(`[webhook] Status update: ${status}`);
-        editor.update(status);
-      });
+      const response = await agent.chat(
+        messageText,
+        (status) => {
+          console.log(`[webhook] Status update: ${status}`);
+          editor.update(status);
+        },
+        (delta) => {
+          editor.appendStreamDelta(delta);
+        }
+      );
 
-      // Split on --- markers for multi-message responses
-      const chunks = splitOnMessageBreaks(response.message);
-      await editor.finalize(chunks[0]);
-
-      for (let i = 1; i < chunks.length; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 200));
-        await bot.sendMessageSafe(chunks[i]);
-      }
+      // Editor handles message-break splits and size-based rotation internally;
+      // we just hand it the full response and it edits the current placeholder
+      // (or sends additional messages if no streaming happened).
+      await editor.finalize(response.message);
 
       addMessage(response.message, false);
     } else {

@@ -29,6 +29,8 @@ export interface HarnessOptions {
   maxTurns?: number;
   /** Optional progress callback — fires when a tool is about to run. */
   onStatus?: (status: string) => void;
+  /** Optional callback for streaming assistant text deltas to the user. */
+  onTextDelta?: (delta: string) => void;
   /** Custom LLM client (used by tests / OpenRouter swap). */
   llm?: LLMClient;
 }
@@ -70,6 +72,7 @@ export async function runHarness(opts: HarnessOptions): Promise<HarnessResult> {
       system: opts.system,
       messages,
       tools: anthropicTools,
+      onTextDelta: opts.onTextDelta,
     });
 
     usage.input_tokens += response.usage.input_tokens;

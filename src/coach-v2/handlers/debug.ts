@@ -17,6 +17,7 @@ export interface DebugHandlerOptions {
   message: string;
   model?: string;
   onStatus?: (status: string) => void;
+  onTextDelta?: (delta: string) => void;
 }
 
 const DEBUG_TOOLSET = [...READ_TOOLS, ...DEBUG_TOOLS];
@@ -32,6 +33,7 @@ export async function runDebug(opts: DebugHandlerOptions): Promise<HarnessResult
     tools: DEBUG_TOOLSET,
     ctx: { repoPath: opts.repoPath, timezone: opts.timezone, handler: "debug" },
     onStatus: opts.onStatus,
+    onTextDelta: opts.onTextDelta,
     maxTurns: 15,
   });
 }
