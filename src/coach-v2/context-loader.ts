@@ -25,6 +25,8 @@ export interface CoachContext {
   weekProgress: string;
   /** Recent message history block */
   messageHistory: string;
+  /** Carry-forward summary from the nightly compaction job, or null */
+  conversationSummary: string | null;
   /** Date info */
   dateInfo: ReturnType<typeof getDateInfoTZAware>;
 }
@@ -45,13 +47,17 @@ export function loadCoachContext(repoPath: string, timezone: string): CoachConte
     ? readFileSync(todayWorkoutPath, "utf-8")
     : null;
 
+  const summaryPath = join(repoPath, "state", "conversation-summary.md");
+  const conversationSummary = existsSync(summaryPath) ? readFileSync(summaryPath, "utf-8") : null;
+
   return {
     profile,
     coachingPriorities: extractCoachingPriorities(profile),
     todayWorkout,
     currentPlan,
     weekProgress: buildWeekProgress(repoPath, week),
-    messageHistory: formatRecentMessagesForPrompt(10),
+    messageHistory: formatRecentMessagesForPrompt(50),
+    conversationSummary,
     dateInfo,
   };
 }
@@ -137,11 +143,15 @@ ${context.profile ?? "(not configured)"}
 # Coaching priorities (extracted from profile)
 ${context.coachingPriorities}`;
 
+  const summaryBlock = context.conversationSummary
+    ? `## Carry-forward from previous days\n${truncate(context.conversationSummary, 2000)}\n\n`
+    : "";
+
   const dynamic = `# Current state
 - Today: ${context.dateInfo.dayOfWeek}, ${context.dateInfo.date} (${context.dateInfo.timezone})
 - Current week: ${context.dateInfo.isoWeek}
 
-## This week's plan
+${summaryBlock}## This week's plan
 ${context.currentPlan ? truncate(context.currentPlan, 4000) : "(no plan saved for this week)"}
 
 ## Today's workout

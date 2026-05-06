@@ -13,8 +13,8 @@ interface StoredMessage {
   isFromUser: boolean; // true = user message, false = bot response
 }
 
-const MAX_MESSAGES = 20;
-const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_MESSAGES = 50;
+const MAX_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours — tides over a daily compaction window
 const HISTORY_FILE = "/tmp/iron-claude-message-history.json";
 
 // In-memory store for recent messages
@@ -124,3 +124,38 @@ ${formatted.join("\n")}
 
 Use this context to maintain conversation continuity.`;
 }
+
+/**
+ * Return every stored message (filtered by max-age) — used by the nightly
+ * compaction job to archive the day's transcript and generate a summary.
+ */
+export function getAllMessages(): StoredMessage[] {
+  ensureLoaded();
+  const now = Date.now();
+  return messageHistory.filter((msg) => now - new Date(msg.timestamp).getTime() < MAX_AGE_MS);
+}
+
+/**
+ * Render messages as a markdown transcript suitable for archiving to GitHub.
+ */
+export function formatTranscript(messages: StoredMessage[]): string {
+  return messages
+    .map((msg) => {
+      const role = msg.isFromUser ? "**User**" : "**Coach**";
+      const ts = new Date(msg.timestamp).toISOString();
+      return `### ${ts} — ${role}\n\n${msg.text}`;
+    })
+    .join("\n\n");
+}
+
+/**
+ * Clear all stored messages from memory and disk. Called after a successful
+ * compaction so each day starts fresh.
+ */
+export function clearMessages(): void {
+  ensureLoaded();
+  messageHistory = [];
+  saveToDisk();
+}
+
+export type { StoredMessage };

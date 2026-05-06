@@ -23,6 +23,7 @@ export { transcribeVoice, isVoiceTranscriptionAvailable } from "./bot/voice.js";
 // Cron
 export { runDailyReminder } from "./cron/daily-reminder.js";
 export { runWeeklyPlan, forceRegeneratePlan } from "./cron/weekly-plan.js";
+export { runDailyCompaction } from "./cron/daily-compaction.js";
 
 // Utilities
 export * from "./utils/date.js";
