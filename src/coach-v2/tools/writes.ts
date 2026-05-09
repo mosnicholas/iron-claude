@@ -13,7 +13,7 @@ import { join } from "path";
 import { z } from "zod";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { defineTool } from "../tool.js";
-import { writeAndCommit } from "../git.js";
+import { writeAndCommit, formatCommitStatus } from "../git.js";
 import {
   parseFrontmatter,
   serializeFrontmatter as serializeIntegrationFrontmatter,
@@ -133,7 +133,7 @@ export const startWorkout = defineTool({
       console.warn("[start_workout] failed to schedule timeout reminder:", err);
     }
 
-    return `Started workout: ${relative}\nstatus: in_progress, type: ${input.type}, started: ${dateInfo.time}\ncommit: ${result.commit}`;
+    return `Started workout: ${relative}\nstatus: in_progress, type: ${input.type}, started: ${dateInfo.time}\n${formatCommitStatus(result)}`;
   },
 });
 
@@ -232,7 +232,7 @@ export const logExercise = defineTool({
     if (result.noop) {
       return `No change — ${input.exercise} sets already present in file.`;
     }
-    return `Logged ${input.exercise} (${input.sets.length} set${input.sets.length === 1 ? "" : "s"}). commit: ${result.commit}`;
+    return `Logged ${input.exercise} (${input.sets.length} set${input.sets.length === 1 ? "" : "s"}). ${formatCommitStatus(result)}`;
   },
 });
 
@@ -336,7 +336,7 @@ export const completeWorkout = defineTool({
 
     return [
       `Completed workout for ${date}. duration: ${durationMinutes}m, energy: ${input.energy_level}/10.`,
-      `commit: ${result.commit}`,
+      `${formatCommitStatus(result)}`,
       ...prMessages,
     ].join("\n");
   },
@@ -424,7 +424,7 @@ export const abandonWorkout = defineTool({
       content,
       `Abandon workout for ${date}: ${input.reason}`
     );
-    return `Abandoned workout for ${date}. reason: ${input.reason}\ncommit: ${result.commit}`;
+    return `Abandoned workout for ${date}. reason: ${input.reason}\n${formatCommitStatus(result)}`;
   },
 });
 
@@ -486,7 +486,7 @@ export const savePlan = defineTool({
       input.content,
       `Save plan for ${input.week}`
     );
-    return `Saved plan for ${input.week}. commit: ${result.commit}`;
+    return `Saved plan for ${input.week}. ${formatCommitStatus(result)}`;
   },
 });
 
@@ -520,7 +520,7 @@ export const amendPlan = defineTool({
       updated,
       `Amend plan ${input.week}: ${input.amendment.slice(0, 60)}`
     );
-    return `Amended plan for ${input.week}.\ncommit: ${result.commit}`;
+    return `Amended plan for ${input.week}.\n${formatCommitStatus(result)}`;
   },
 });
 
@@ -543,7 +543,7 @@ export const saveRetro = defineTool({
       input.content,
       `Save retro for ${input.week}`
     );
-    return `Saved retro for ${input.week}. commit: ${result.commit}`;
+    return `Saved retro for ${input.week}. ${formatCommitStatus(result)}`;
   },
 });
 
@@ -609,7 +609,7 @@ export const saveLearning = defineTool({
       updated,
       `Add learning [${input.category}]`
     );
-    return `Saved learning [${input.category}]: ${input.content}\ncommit: ${result.commit}`;
+    return `Saved learning [${input.category}]: ${input.content}\n${formatCommitStatus(result)}`;
   },
 });
 

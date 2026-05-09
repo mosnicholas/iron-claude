@@ -43,6 +43,27 @@ export interface CommitResult {
   pushed: boolean;
   /** Set when nothing was actually staged (file content identical to HEAD). */
   noop?: boolean;
+  /**
+   * Reason the push failed, if any. The commit is on disk locally; tools
+   * surface this so the agent can resolve via Bash before the next write.
+   */
+  pushError?: string;
+}
+
+/**
+ * Format a commit result for inclusion in a tool's text response. On success
+ * this is just `commit: <sha>`; on push failure it's a single-line warning
+ * the agent can act on (it has Bash and can `git status` / rebase / etc.).
+ */
+export function formatCommitStatus(result: CommitResult): string {
+  if (result.pushError) {
+    return (
+      `commit: ${result.commit} ` +
+      `(LOCAL ONLY — push failed: ${result.pushError.trim()}. ` +
+      `Run \`git -C <repo> status\` and resolve before the next write.)`
+    );
+  }
+  return `commit: ${result.commit}`;
 }
 
 /**
@@ -125,12 +146,28 @@ export async function writeAndCommit(
     }
   }
   if (!pushed) {
-    // The commit landed locally — surface the push failure so the model can
-    // tell the user, but don't undo the commit. The next successful tool call
-    // will push it as a side effect.
+    // The commit landed locally — log here, but ALSO return pushError so
+    // tool result strings surface the failure to the agent. Without that,
+    // every subsequent write would silently inherit the same divergence.
     console.error(`[git] push failed after retries: ${lastErr}`);
+    return { commit: sha, pushed: false, pushError: summarizePushError(lastErr) };
   }
   return { commit: sha, pushed };
+}
+
+/**
+ * Trim git's verbose stderr down to a one-line cause the model can act on.
+ * Falls back to the first non-empty line if nothing matches.
+ */
+function summarizePushError(stderr: string): string {
+  if (isNonFastForward(stderr)) {
+    return "non-fast-forward (remote diverged and rebase failed — likely a content conflict)";
+  }
+  const lines = stderr
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !l.startsWith("hint:") && !l.startsWith("To "));
+  return lines[0] || "unknown push error";
 }
 
 function isNonFastForward(stderr: string): boolean {
