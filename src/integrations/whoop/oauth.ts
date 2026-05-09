@@ -28,13 +28,14 @@ export const WHOOP_SCOPES = [
   "read:body_measurement",
 ] as const;
 
-/** Default scopes we request for the integration */
+/** Default scopes we request for the integration.
+ *  Must match scopes registered on the Whoop developer dashboard — requesting
+ *  any scope the app isn't registered for fails with `request_forbidden`. */
 export const DEFAULT_SCOPES: string[] = [
   "read:recovery",
   "read:sleep",
   "read:workout",
   "read:profile",
-  "offline", // Required to get refresh tokens for long-lived access
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
