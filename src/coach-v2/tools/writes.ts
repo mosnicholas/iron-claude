@@ -18,22 +18,58 @@ import {
   parseFrontmatter,
   serializeFrontmatter as serializeIntegrationFrontmatter,
 } from "../../integrations/storage.js";
-import { getCurrentWeek, getDateInfoTZAware, getToday } from "../../utils/date.js";
+import { calendarInfoFor, getCurrentWeek, getDateInfoTZAware, getToday } from "../../utils/date.js";
 import { createGitHubStorage } from "../../storage/github.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function todayWorkoutPath(
+function workoutPath(
   repoPath: string,
-  timezone: string
-): { path: string; relative: string; week: string; date: string } {
+  timezone: string,
+  explicitDate?: string
+): {
+  path: string;
+  relative: string;
+  week: string;
+  date: string;
+  dayName: string;
+  isBackfill: boolean;
+} {
+  const today = getToday(timezone);
+  if (explicitDate && explicitDate !== today) {
+    const info = calendarInfoFor(explicitDate);
+    const relative = `weeks/${info.week}/${info.date}.md`;
+    return {
+      path: join(repoPath, relative),
+      relative,
+      week: info.week,
+      date: info.date,
+      dayName: info.dayName,
+      isBackfill: true,
+    };
+  }
   const week = getCurrentWeek(timezone);
-  const date = getToday(timezone);
-  const relative = `weeks/${week}/${date}.md`;
-  return { path: join(repoPath, relative), relative, week, date };
+  const dayName = getDateInfoTZAware().dayOfWeek;
+  const relative = `weeks/${week}/${today}.md`;
+  return {
+    path: join(repoPath, relative),
+    relative,
+    week,
+    date: today,
+    dayName,
+    isBackfill: false,
+  };
 }
+
+const DateOverrideSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD")
+  .optional()
+  .describe(
+    "Optional YYYY-MM-DD override for back-filling a past workout (e.g. logging Wednesday's session on Saturday). Defaults to today."
+  );
 
 function readWorkoutOrThrow(path: string, date: string): string {
   if (!existsSync(path)) {
@@ -78,9 +114,10 @@ const SetSchema = z.object({
 export const startWorkout = defineTool({
   name: "start_workout",
   description:
-    "Begin a new workout for today. Creates weeks/YYYY-WXX/YYYY-MM-DD.md with status: in_progress " +
-    "and schedules a 3-hour timeout reminder. Idempotent: if today's workout file already exists, " +
-    "this is a no-op and returns the current state.",
+    "Begin a new workout. Creates weeks/YYYY-WXX/YYYY-MM-DD.md with status: in_progress " +
+    "and schedules a 3-hour timeout reminder. Defaults to today; pass `date` (YYYY-MM-DD) " +
+    "to back-fill a past session — back-fills skip the timeout reminder and mark the file " +
+    "with back_filled: true. Idempotent: if the target file already exists, this is a no-op.",
   schema: z.object({
     type: z
       .string()
@@ -92,48 +129,58 @@ export const startWorkout = defineTool({
       .describe(
         "If this workout was planned for a different day (e.g. plan said Friday but doing it Saturday), the planned day name."
       ),
+    date: DateOverrideSchema,
   }),
   handler: async (input, ctx) => {
-    const { path, relative, week, date } = todayWorkoutPath(ctx.repoPath, ctx.timezone);
+    const { path, relative, week, date, dayName, isBackfill } = workoutPath(
+      ctx.repoPath,
+      ctx.timezone,
+      input.date
+    );
     if (existsSync(path)) {
       return `Workout file already exists at ${relative}. Use log_exercise to add sets, or get_workout to see current state.`;
     }
-    const dateInfo = getDateInfoTZAware();
+    const nowInfo = getDateInfoTZAware();
     const fm: Record<string, unknown> = {
       date,
       type: input.type,
       status: "in_progress",
-      started: dateInfo.time,
+      started: isBackfill ? "00:00" : nowInfo.time,
       plan_reference: week,
     };
     if (input.location) fm.location = input.location;
     if (input.planned_day) fm.planned_day = input.planned_day;
+    if (isBackfill) fm.back_filled = true;
 
-    const body = `# Workout — ${dateInfo.dayOfWeek}, ${date}\n\n## Exercises\n\n`;
+    const body = `# Workout — ${dayName}, ${date}\n\n## Exercises\n\n`;
     const content = buildFile(fm, body);
     const result = await writeAndCommit(
       ctx.repoPath,
       relative,
       content,
-      `Start ${input.type} workout for ${date}`
+      `Start ${input.type} workout for ${date}${isBackfill ? " (back-filled)" : ""}`
     );
 
     // Schedule the timeout reminder (best-effort, don't fail the tool).
-    try {
-      const storage = createGitHubStorage();
-      const triggerDate = date;
-      const triggerHour = (parseInt(dateInfo.time.split(":")[0], 10) + 3) % 24;
-      await storage.addReminder({
-        triggerDate,
-        triggerHour,
-        message: "Still working out? If you're done, let me know so I can close out the session.",
-        context: "workout-timeout-check",
-      });
-    } catch (err) {
-      console.warn("[start_workout] failed to schedule timeout reminder:", err);
+    // Skip on back-fills — the workout already happened.
+    if (!isBackfill) {
+      try {
+        const storage = createGitHubStorage();
+        const triggerDate = date;
+        const triggerHour = (parseInt(nowInfo.time.split(":")[0], 10) + 3) % 24;
+        await storage.addReminder({
+          triggerDate,
+          triggerHour,
+          message: "Still working out? If you're done, let me know so I can close out the session.",
+          context: "workout-timeout-check",
+        });
+      } catch (err) {
+        console.warn("[start_workout] failed to schedule timeout reminder:", err);
+      }
     }
 
-    return `Started workout: ${relative}\nstatus: in_progress, type: ${input.type}, started: ${dateInfo.time}\n${formatCommitStatus(result)}`;
+    const startedDisplay = isBackfill ? "back-filled" : nowInfo.time;
+    return `Started workout: ${relative}\nstatus: in_progress, type: ${input.type}, started: ${startedDisplay}\n${formatCommitStatus(result)}`;
   },
 });
 
@@ -144,9 +191,10 @@ export const startWorkout = defineTool({
 export const logExercise = defineTool({
   name: "log_exercise",
   description:
-    "Append one exercise's sets to today's in-progress workout file. " +
+    "Append one exercise's sets to an in-progress workout file. " +
+    "Defaults to today; pass `date` (YYYY-MM-DD) to log into a past day's file. " +
     "If the exercise section already exists, the new sets are added to it. " +
-    "If not, a new ### section is created. " +
+    "If not, a new ### section is created. If no workout file exists, one is auto-created. " +
     "ALWAYS call this when the user reports a set — never just acknowledge in text.",
   schema: z.object({
     exercise: z.string().describe("Exercise name, e.g. 'Bench Press'"),
@@ -157,13 +205,15 @@ export const logExercise = defineTool({
         "One or more sets logged for this exercise. For a single set, pass an array of length 1."
       ),
     notes: z.string().optional().describe("Optional notes, e.g. 'felt heavy on last set'"),
+    date: DateOverrideSchema,
   }),
   handler: async (input, ctx) => {
-    const { path, relative, date } = todayWorkoutPath(ctx.repoPath, ctx.timezone);
+    const { path, relative, date } = workoutPath(ctx.repoPath, ctx.timezone, input.date);
     if (!existsSync(path)) {
       // Auto-start the workout with a reasonable default rather than fail.
-      // The model can correct the type later if needed.
-      const auto = await startWorkout.handler({ type: "workout" }, ctx);
+      // The model can correct the type later if needed. Pass through `date`
+      // so a back-fill log_exercise auto-creates the back-fill file.
+      const auto = await startWorkout.handler({ type: "workout", date: input.date }, ctx);
       void auto;
     }
     const raw = readWorkoutOrThrow(path, date);
@@ -243,9 +293,11 @@ export const logExercise = defineTool({
 export const completeWorkout = defineTool({
   name: "complete_workout",
   description:
-    "Mark today's workout complete. Sets status: completed, finished time, duration, " +
+    "Mark a workout complete. Sets status: completed, finished time, duration, " +
     "energy_level, and adds a ## Summary section. ALSO records any PRs to prs.yaml. " +
-    "Deletes the workout-timeout-check reminder. " +
+    "Deletes the workout-timeout-check reminder. Defaults to today; pass `date` " +
+    "(YYYY-MM-DD) to close out a back-filled past session — duration_minutes is " +
+    "set to 0 on back-fills since the real times aren't known. " +
     "ALWAYS call this when the user says they're done — never leave a workout in_progress.",
   schema: z.object({
     summary: z
@@ -272,16 +324,23 @@ export const completeWorkout = defineTool({
       )
       .optional()
       .describe("PRs hit this session. Each entry will be recorded in prs.yaml."),
+    date: DateOverrideSchema,
   }),
   handler: async (input, ctx) => {
-    const { path, relative, date } = todayWorkoutPath(ctx.repoPath, ctx.timezone);
+    const { path, relative, date, isBackfill } = workoutPath(
+      ctx.repoPath,
+      ctx.timezone,
+      input.date
+    );
     const raw = readWorkoutOrThrow(path, date);
     const { frontmatter, content } = parseFrontmatter(raw);
 
     const dateInfo = getDateInfoTZAware();
-    const finished = dateInfo.time;
+    // For back-fills, real start/finish times are unknown, so leave finished
+    // at "00:00" and duration at 0 rather than recording a 3-day "duration".
+    const finished = isBackfill ? "00:00" : dateInfo.time;
     const started = (frontmatter.started as string | undefined) ?? finished;
-    const durationMinutes = computeDurationMinutes(started, finished);
+    const durationMinutes = isBackfill ? 0 : computeDurationMinutes(started, finished);
 
     const updatedFm: Record<string, unknown> = {
       ...(frontmatter as Record<string, unknown>),
@@ -290,6 +349,7 @@ export const completeWorkout = defineTool({
       duration_minutes: durationMinutes,
       energy_level: input.energy_level,
     };
+    if (isBackfill) updatedFm.back_filled = true;
     if (input.prs_hit?.length) {
       updatedFm.prs_hit = input.prs_hit.map((p) => ({
         exercise: p.exercise,
@@ -405,18 +465,24 @@ function estimate1RM(weight: number, reps: number): number {
 export const abandonWorkout = defineTool({
   name: "abandon_workout",
   description:
-    "Mark today's workout as abandoned (started but didn't finish). Use only when the athlete " +
+    "Mark a workout as abandoned (started but didn't finish). Defaults to today; pass " +
+    "`date` (YYYY-MM-DD) to abandon a past back-filled session. Use only when the athlete " +
     "explicitly says they're cutting it short — not for normal completions.",
   schema: z.object({
     reason: z.string().describe("Why the workout was abandoned, e.g. 'felt sick', 'time crunch'"),
+    date: DateOverrideSchema,
   }),
   handler: async (input, ctx) => {
-    const { path, relative, date } = todayWorkoutPath(ctx.repoPath, ctx.timezone);
+    const { path, relative, date, isBackfill } = workoutPath(
+      ctx.repoPath,
+      ctx.timezone,
+      input.date
+    );
     const raw = readWorkoutOrThrow(path, date);
     const { content } = updateFrontmatter(raw, {
       status: "abandoned",
       abandoned_reason: input.reason,
-      finished: getDateInfoTZAware().time,
+      finished: isBackfill ? "00:00" : getDateInfoTZAware().time,
     });
     const result = await writeAndCommit(
       ctx.repoPath,

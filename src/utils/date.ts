@@ -139,6 +139,29 @@ export function getDateInfoTZAware(): DateInfo {
 }
 
 /**
+ * Validate a YYYY-MM-DD string and return calendar info for it.
+ * Throws if the string isn't a valid YYYY-MM-DD date.
+ */
+export function calendarInfoFor(dateString: string): {
+  date: string;
+  week: string;
+  dayName: string;
+} {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    throw new Error(`Invalid date '${dateString}'. Expected YYYY-MM-DD.`);
+  }
+  const parsed = parse(dateString, "yyyy-MM-dd", new Date());
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid date '${dateString}'. Not a real calendar day.`);
+  }
+  return {
+    date: dateString,
+    week: formatISOWeek(parsed),
+    dayName: format(parsed, "EEEE"),
+  };
+}
+
+/**
  * Information about a single day in a week
  */
 export interface WeekDayInfo {

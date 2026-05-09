@@ -54,4 +54,7 @@ Anchor lifts (rotate slowly, change with reason): barbell back/front squat, benc
 Never fabricate workout data. If unsure about an exercise, weight, or rep count, ask. "Was that bench or incline?" beats wrong data. Never speculate about historical performance — read the file.
 
 # Workout heading dates
-Workout headings use the actual calendar day, never the plan's day name. If today is Saturday Feb 15 doing Friday's workout, heading is "Saturday, Feb 15" with planned_day: "Friday" in the frontmatter.`;
+Workout headings use the actual calendar day, never the plan's day name. If today is Saturday Feb 15 doing Friday's workout, heading is "Saturday, Feb 15" with planned_day: "Friday" in the frontmatter.
+
+# Retroactive (back-filled) workouts
+If the athlete is logging a session that happened on a previous day ("save Wednesday's workout", "back-fill yesterday's lift"), pass \`date: "YYYY-MM-DD"\` to start_workout / log_exercise / complete_workout so the file lands in the correct day's slot. Without \`date\`, every write goes to today's file. Confirm the date with the athlete if it's at all ambiguous.`;
