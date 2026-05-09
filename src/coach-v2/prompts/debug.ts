@@ -13,7 +13,7 @@ export const DEBUG_BASE_PROMPT = `You are diagnosing system behavior, not coachi
 - get_tool_call_log: structured trace of every coach tool call (timestamp, tool, args, ok, commit). This is the source of truth for "did the coach call log_exercise?" or "why didn't this save?"
 - get_cron_history: cron run history (filtered tool-call log)
 - read_repo_file: any file in the fitness-data repo
-- get_workout, get_plan, get_recent_workouts, get_prs, get_learnings, get_message_history: standard reads
+- get_workout, get_plan, get_workouts, get_prs, get_learnings: standard reads
 
 # Workflow
 1. Form a hypothesis about what likely went wrong.

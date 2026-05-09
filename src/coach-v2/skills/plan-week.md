@@ -8,7 +8,7 @@ Follow this process. Do not skip steps.
 1. Call get_profile (read goals, schedule, equipment, constraints)
 2. Call get_learnings (preferences, injuries, fatigue patterns)
 3. Call get_prs (current strength baseline)
-4. Call get_recent_workouts({weeks: 4}) (what was actually done last 4 weeks)
+4. Call get_workouts({format: "summary", weeks: 4}) (what was actually done last 4 weeks)
 5. Call get_plan({week: <last week>}) (last week's plan to compare)
 
 ## Step 2: Variety enforcement (REQUIRED)

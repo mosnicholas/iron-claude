@@ -15,7 +15,8 @@ import {
   startWorkout,
   logExercise,
   completeWorkout,
-  abandonWorkout,
+  removeExercise,
+  editExercise,
   savePlan,
   amendPlan,
   saveLearning,
@@ -292,22 +293,121 @@ describe("writes / retroactive (date override)", () => {
   });
 });
 
-describe("writes / abandon_workout", () => {
+describe("writes / complete_workout abandoned status", () => {
   let repo: ReturnType<typeof setupRepo>;
   beforeEach(() => (repo = setupRepo()));
   afterEach(() => repo.cleanup());
 
-  it("sets status=abandoned with a reason", async () => {
+  it("sets status=abandoned when status='abandoned' is passed", async () => {
     const ctx = makeCtx(repo.path);
     await startWorkout.handler({ type: "lower" }, ctx);
-    await abandonWorkout.handler({ reason: "felt sick" }, ctx);
+    await completeWorkout.handler(
+      {
+        status: "abandoned",
+        summary: "Felt sick after warm-up, cut it short.",
+        energy_level: 3,
+      },
+      ctx
+    );
     const raw = readFileSync(
       join(repo.path, "weeks", getCurrentWeek(), `${getToday()}.md`),
       "utf-8"
     );
     const { frontmatter } = parseFrontmatter(raw);
     expect(frontmatter.status).toBe("abandoned");
-    expect(frontmatter.abandoned_reason).toBe("felt sick");
+    expect(frontmatter.energy_level).toBe(3);
+    expect(raw).toContain("## Summary");
+  });
+
+  it("defaults status to 'completed' when omitted", async () => {
+    const ctx = makeCtx(repo.path);
+    await startWorkout.handler({ type: "upper" }, ctx);
+    await completeWorkout.handler(
+      {
+        summary: "Solid session.",
+        energy_level: 8,
+      },
+      ctx
+    );
+    const raw = readFileSync(
+      join(repo.path, "weeks", getCurrentWeek(), `${getToday()}.md`),
+      "utf-8"
+    );
+    const { frontmatter } = parseFrontmatter(raw);
+    expect(frontmatter.status).toBe("completed");
+  });
+});
+
+describe("writes / remove_exercise + edit_exercise", () => {
+  let repo: ReturnType<typeof setupRepo>;
+  beforeEach(() => (repo = setupRepo()));
+  afterEach(() => repo.cleanup());
+
+  it("remove_exercise deletes a single exercise section, leaving others intact", async () => {
+    const ctx = makeCtx(repo.path);
+    await startWorkout.handler({ type: "upper" }, ctx);
+    await logExercise.handler({ exercise: "Bench Press", sets: [{ reps: 5, weight: 175 }] }, ctx);
+    await logExercise.handler({ exercise: "Overhead Press", sets: [{ reps: 8, weight: 95 }] }, ctx);
+    await removeExercise.handler({ exercise: "Bench Press" }, ctx);
+    const raw = readFileSync(
+      join(repo.path, "weeks", getCurrentWeek(), `${getToday()}.md`),
+      "utf-8"
+    );
+    expect(raw).not.toMatch(/^### Bench Press$/m);
+    expect(raw).toMatch(/^### Overhead Press$/m);
+    expect(raw).toContain("95 x 8");
+  });
+
+  it("remove_exercise reports when the section doesn't exist", async () => {
+    const ctx = makeCtx(repo.path);
+    await startWorkout.handler({ type: "upper" }, ctx);
+    const result = await removeExercise.handler({ exercise: "Squat" }, ctx);
+    expect(result).toMatch(/No "Squat" section/);
+  });
+
+  it("edit_exercise replaces the set list of an existing section", async () => {
+    const ctx = makeCtx(repo.path);
+    await startWorkout.handler({ type: "upper" }, ctx);
+    await logExercise.handler(
+      {
+        exercise: "Bench Press",
+        sets: [
+          { reps: 5, weight: 175 },
+          { reps: 5, weight: 175 },
+          { reps: 4, weight: 175 },
+        ],
+      },
+      ctx
+    );
+    await editExercise.handler(
+      {
+        exercise: "Bench Press",
+        sets: [
+          { reps: 5, weight: 180 },
+          { reps: 5, weight: 180 },
+        ],
+        notes: "fixed: was logged at wrong weight",
+      },
+      ctx
+    );
+    const raw = readFileSync(
+      join(repo.path, "weeks", getCurrentWeek(), `${getToday()}.md`),
+      "utf-8"
+    );
+    expect(raw).toContain("180 x 5");
+    expect(raw).not.toContain("175 x 5");
+    expect(raw).not.toContain("175 x 4");
+    expect(raw).toContain("fixed: was logged at wrong weight");
+  });
+
+  it("edit_exercise errors when the section doesn't exist", async () => {
+    const ctx = makeCtx(repo.path);
+    await startWorkout.handler({ type: "upper" }, ctx);
+    const result = await editExercise.handler(
+      { exercise: "Squat", sets: [{ reps: 5, weight: 225 }] },
+      ctx
+    );
+    expect(result).toMatch(/No "Squat" section/);
   });
 });
 
