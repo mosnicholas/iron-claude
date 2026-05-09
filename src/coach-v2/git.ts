@@ -99,6 +99,27 @@ export async function writeAndCommit(
       break;
     }
     lastErr = push.stderr;
+
+    // Non-fast-forward: another instance pushed first. Rebase our commit on
+    // top of the remote tip and retry. Without this, every subsequent tool
+    // call would fail to push too — the divergence persists.
+    if (isNonFastForward(lastErr)) {
+      const recovered = await rebaseOntoRemote(repoPath, branch);
+      if (!recovered) {
+        // Conflict (or rebase otherwise failed) — abort and let the agent see
+        // the failure. Keep the local commit so work isn't lost.
+        console.error(`[git] rebase onto origin/${branch} failed; leaving commit local`);
+        break;
+      }
+      // Retry immediately after a successful rebase — no backoff needed.
+      const retry = run(["push", "-u", "origin", branch], repoPath);
+      if (retry.ok) {
+        pushed = true;
+        break;
+      }
+      lastErr = retry.stderr;
+    }
+
     if (attempt < PUSH_RETRY_DELAYS_MS.length) {
       await sleep(PUSH_RETRY_DELAYS_MS[attempt]);
     }
@@ -110,4 +131,26 @@ export async function writeAndCommit(
     console.error(`[git] push failed after retries: ${lastErr}`);
   }
   return { commit: sha, pushed };
+}
+
+function isNonFastForward(stderr: string): boolean {
+  return /non-fast-forward|\(fetch first\)|tip of your current branch is behind/i.test(stderr);
+}
+
+/**
+ * Rebase HEAD onto origin/branch after a fetch. Returns false if the rebase
+ * runs into a conflict (rebase is then aborted to leave the working tree clean).
+ */
+async function rebaseOntoRemote(repoPath: string, branch: string): Promise<boolean> {
+  const fetch = run(["fetch", "origin", branch], repoPath);
+  if (!fetch.ok) {
+    console.error(`[git] fetch failed during rebase recovery: ${fetch.stderr}`);
+    return false;
+  }
+  const rebase = run(["rebase", `origin/${branch}`], repoPath);
+  if (rebase.ok) return true;
+  // Conflict — abort to keep the tree clean. The local commit is still on a
+  // detached state? No: rebase abort returns to the original HEAD.
+  run(["rebase", "--abort"], repoPath);
+  return false;
 }
