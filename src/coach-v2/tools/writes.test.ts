@@ -207,6 +207,91 @@ describe("writes / complete_workout", () => {
   });
 });
 
+describe("writes / retroactive (date override)", () => {
+  let repo: ReturnType<typeof setupRepo>;
+  beforeEach(() => {
+    repo = setupRepo();
+  });
+  afterEach(() => repo.cleanup());
+
+  // Pick a date that's safely in the past relative to "today" no matter when
+  // the test runs — "1970-01-07" is a Wednesday in ISO week 1970-W02.
+  const PAST_DATE = "1970-01-07";
+  const PAST_WEEK = "1970-W02";
+
+  it("start_workout with `date` writes into that date's week folder, marks back_filled", async () => {
+    const ctx = makeCtx(repo.path);
+    const result = await startWorkout.handler({ type: "upper", date: PAST_DATE }, ctx);
+    expect(result).toContain("Started workout");
+    expect(result).toContain("back-filled");
+
+    const path = join(repo.path, "weeks", PAST_WEEK, `${PAST_DATE}.md`);
+    expect(existsSync(path)).toBe(true);
+
+    const raw = readFileSync(path, "utf-8");
+    const { frontmatter } = parseFrontmatter(raw);
+    expect(frontmatter.date).toBe(PAST_DATE);
+    expect(frontmatter.back_filled).toBe(true);
+    expect(frontmatter.status).toBe("in_progress");
+    // Heading uses the date's day-of-week (Wednesday for 1970-01-07), not today's.
+    expect(raw).toContain("Wednesday, 1970-01-07");
+  });
+
+  it("log_exercise with `date` auto-creates the past-day file and writes the exercise", async () => {
+    const ctx = makeCtx(repo.path);
+    const result = await logExercise.handler(
+      {
+        exercise: "Pull-up",
+        sets: [{ reps: 7, weight: "BW+25" }],
+        date: PAST_DATE,
+      },
+      ctx
+    );
+    expect(result).toContain("Logged Pull-up");
+
+    // Today's file should NOT have been created.
+    const todayPath = join(repo.path, "weeks", getCurrentWeek(), `${getToday()}.md`);
+    expect(existsSync(todayPath)).toBe(false);
+
+    // The past-date file should exist with the exercise.
+    const pastPath = join(repo.path, "weeks", PAST_WEEK, `${PAST_DATE}.md`);
+    expect(existsSync(pastPath)).toBe(true);
+    const raw = readFileSync(pastPath, "utf-8");
+    expect(raw).toContain("### Pull-up");
+    expect(raw).toContain("BW+25 x 7");
+  });
+
+  it("complete_workout with `date` closes the past file with duration=0 and back_filled=true", async () => {
+    const ctx = makeCtx(repo.path);
+    await startWorkout.handler({ type: "upper", date: PAST_DATE }, ctx);
+    await logExercise.handler(
+      { exercise: "Bench", sets: [{ reps: 5, weight: 175 }], date: PAST_DATE },
+      ctx
+    );
+    const result = await completeWorkout.handler(
+      { summary: "Back-filled session.", energy_level: 7, date: PAST_DATE },
+      ctx
+    );
+    expect(result).toContain("Completed workout");
+
+    const raw = readFileSync(join(repo.path, "weeks", PAST_WEEK, `${PAST_DATE}.md`), "utf-8");
+    const { frontmatter } = parseFrontmatter(raw);
+    expect(frontmatter.status).toBe("completed");
+    expect(frontmatter.duration_minutes).toBe(0);
+    expect(frontmatter.back_filled).toBe(true);
+    expect(frontmatter.energy_level).toBe(7);
+    expect(raw).toContain("## Summary");
+    expect(raw).toContain("Back-filled session.");
+  });
+
+  it("rejects invalid date strings", async () => {
+    const ctx = makeCtx(repo.path);
+    await expect(
+      startWorkout.handler({ type: "upper", date: "not-a-date" }, ctx)
+    ).rejects.toThrow();
+  });
+});
+
 describe("writes / abandon_workout", () => {
   let repo: ReturnType<typeof setupRepo>;
   beforeEach(() => (repo = setupRepo()));
