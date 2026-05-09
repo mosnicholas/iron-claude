@@ -86,15 +86,6 @@ function buildFile(fm: Record<string, unknown>, body: string): string {
   return `${fmBlock}${bodyClean}`;
 }
 
-function updateFrontmatter(
-  raw: string,
-  patch: Record<string, unknown>
-): { content: string; frontmatter: Record<string, unknown> } {
-  const { frontmatter, content } = parseFrontmatter(raw);
-  const merged = { ...(frontmatter as Record<string, unknown>), ...patch };
-  return { content: buildFile(merged, content), frontmatter: merged };
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Schemas
 // ─────────────────────────────────────────────────────────────────────────────
@@ -293,17 +284,19 @@ export const logExercise = defineTool({
 export const completeWorkout = defineTool({
   name: "complete_workout",
   description:
-    "Mark a workout complete. Sets status: completed, finished time, duration, " +
-    "energy_level, and adds a ## Summary section. ALSO records any PRs to prs.yaml. " +
-    "Deletes the workout-timeout-check reminder. Defaults to today; pass `date` " +
-    "(YYYY-MM-DD) to close out a back-filled past session — duration_minutes is " +
-    "set to 0 on back-fills since the real times aren't known. " +
-    "ALWAYS call this when the user says they're done — never leave a workout in_progress.",
+    "Close out a workout. Sets status (completed by default, or 'abandoned' if the athlete cut " +
+    "it short), finished time, duration, energy_level, and adds a ## Summary section. ALSO " +
+    "records any PRs to prs.yaml. Deletes the workout-timeout-check reminder. Defaults to today; " +
+    "pass `date` (YYYY-MM-DD) to close out a back-filled past session — duration_minutes is set " +
+    "to 0 on back-fills since the real times aren't known. " +
+    "ALWAYS call this when the user says they're done — never leave a workout in_progress. " +
+    "Use status='abandoned' only when the athlete explicitly says they're cutting it short.",
   schema: z.object({
     summary: z
       .string()
       .describe(
-        "2-4 sentence summary: what went well, what was hard, anything to note for next time."
+        "2-4 sentence summary: what went well, what was hard, anything to note for next time. " +
+          "For abandoned sessions, briefly note the reason."
       ),
     energy_level: z
       .number()
@@ -311,6 +304,12 @@ export const completeWorkout = defineTool({
       .min(1)
       .max(10)
       .describe("Athlete's energy/feel rating, 1-10. Ask if not mentioned."),
+    status: z
+      .enum(["completed", "abandoned"])
+      .optional()
+      .describe(
+        "Defaults to 'completed'. Pass 'abandoned' only when the athlete cut the session short."
+      ),
     prs_hit: z
       .array(
         z.object({
@@ -341,10 +340,11 @@ export const completeWorkout = defineTool({
     const finished = isBackfill ? "00:00" : dateInfo.time;
     const started = (frontmatter.started as string | undefined) ?? finished;
     const durationMinutes = isBackfill ? 0 : computeDurationMinutes(started, finished);
+    const status = input.status ?? "completed";
 
     const updatedFm: Record<string, unknown> = {
       ...(frontmatter as Record<string, unknown>),
-      status: "completed",
+      status,
       finished,
       duration_minutes: durationMinutes,
       energy_level: input.energy_level,
@@ -363,11 +363,12 @@ export const completeWorkout = defineTool({
       : content.trimEnd() + "\n\n" + summaryBlock;
 
     const final = buildFile(updatedFm, newBody);
+    const verb = status === "abandoned" ? "Abandon" : "Complete";
     const result = await writeAndCommit(
       ctx.repoPath,
       relative,
       final,
-      `Complete workout for ${date}`
+      `${verb} workout for ${date}`
     );
 
     // Update PRs (best effort — if it fails, surface in tool result).
@@ -395,7 +396,7 @@ export const completeWorkout = defineTool({
     }
 
     return [
-      `Completed workout for ${date}. duration: ${durationMinutes}m, energy: ${input.energy_level}/10.`,
+      `${status === "abandoned" ? "Abandoned" : "Completed"} workout for ${date}. duration: ${durationMinutes}m, energy: ${input.energy_level}/10.`,
       `${formatCommitStatus(result)}`,
       ...prMessages,
     ].join("\n");
@@ -459,75 +460,131 @@ function estimate1RM(weight: number, reps: number): number {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// abandon_workout
+// remove_exercise / edit_exercise — corrective edits to a workout's exercise
+// list. Use these when sets land in the wrong file or were mis-logged.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const abandonWorkout = defineTool({
-  name: "abandon_workout",
+function findExerciseSection(
+  content: string,
+  exercise: string
+): { start: number; end: number } | null {
+  const lines = content.split("\n");
+  const headerPattern = new RegExp(`^### ${escapeRegex(exercise)}\\s*$`, "i");
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (headerPattern.test(lines[i])) {
+      start = i;
+      break;
+    }
+  }
+  if (start === -1) return null;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (lines[i].startsWith("### ") || /^##\s/.test(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+  return { start, end };
+}
+
+export const removeExercise = defineTool({
+  name: "remove_exercise",
   description:
-    "Mark a workout as abandoned (started but didn't finish). Defaults to today; pass " +
-    "`date` (YYYY-MM-DD) to abandon a past back-filled session. Use only when the athlete " +
-    "explicitly says they're cutting it short — not for normal completions.",
+    "Delete an exercise's ### section from a workout file. Use when entries land in the wrong " +
+    "file (e.g. yesterday's bench got logged into today's workout) or were mis-logged. To MOVE " +
+    "an exercise to another date, log_exercise on the correct date first, then remove_exercise " +
+    "from the wrong one. Defaults to today; pass `date` to target a past session. Match is " +
+    "case-insensitive on the exact ### header text.",
   schema: z.object({
-    reason: z.string().describe("Why the workout was abandoned, e.g. 'felt sick', 'time crunch'"),
+    exercise: z
+      .string()
+      .describe("Exercise name to remove, matching the ### header (e.g. 'Bench Press')."),
     date: DateOverrideSchema,
   }),
   handler: async (input, ctx) => {
-    const { path, relative, date, isBackfill } = workoutPath(
-      ctx.repoPath,
-      ctx.timezone,
-      input.date
-    );
-    const raw = readWorkoutOrThrow(path, date);
-    const { content } = updateFrontmatter(raw, {
-      status: "abandoned",
-      abandoned_reason: input.reason,
-      finished: isBackfill ? "00:00" : getDateInfoTZAware().time,
-    });
+    const { path, relative, date } = workoutPath(ctx.repoPath, ctx.timezone, input.date);
+    if (!existsSync(path)) {
+      return `No workout file for ${date}.`;
+    }
+    const raw = readFileSync(path, "utf-8");
+    const { frontmatter, content } = parseFrontmatter(raw);
+    const range = findExerciseSection(content, input.exercise);
+    if (!range) {
+      return `No "${input.exercise}" section found in ${date}'s workout.`;
+    }
+    const lines = content.split("\n");
+    const before = lines.slice(0, range.start);
+    const after = lines.slice(range.end);
+    // Collapse adjacent blank lines at the seam.
+    while (before.length && before[before.length - 1].trim() === "") before.pop();
+    while (after.length && after[0].trim() === "") after.shift();
+    const newBody = [...before, "", ...after].join("\n").trimEnd() + "\n";
+
+    const final = buildFile(frontmatter as Record<string, unknown>, newBody);
     const result = await writeAndCommit(
       ctx.repoPath,
       relative,
-      content,
-      `Abandon workout for ${date}: ${input.reason}`
+      final,
+      `Remove ${input.exercise} from ${date}`
     );
-    return `Abandoned workout for ${date}. reason: ${input.reason}\n${formatCommitStatus(result)}`;
+    return `Removed ${input.exercise} from ${date}.\n${formatCommitStatus(result)}`;
   },
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// update_pr (standalone — for cases where complete_workout isn't called)
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const updatePR = defineTool({
-  name: "update_pr",
+export const editExercise = defineTool({
+  name: "edit_exercise",
   description:
-    "Append a PR to prs.yaml. Use ONLY when complete_workout isn't being called " +
-    "(e.g. correcting an old record, logging a PR from outside a tracked session). " +
-    "Inside a normal workout, prefer the prs_hit field of complete_workout.",
+    "Overwrite the sets of an existing exercise section. Use to fix wrong weights/reps or to " +
+    "correct a mis-logged set. Replaces the full set list; pass every set you want to keep. " +
+    "If you only want to ADD sets, use log_exercise instead. If the section doesn't exist, this " +
+    "errors — use log_exercise to create it.",
   schema: z.object({
-    exercise: z.string(),
-    weight: z.number().nonnegative(),
-    reps: z.number().int().positive(),
-    date: z
+    exercise: z.string().describe("Exercise name to edit, matching the existing ### header."),
+    sets: z
+      .array(SetSchema)
+      .min(1)
+      .describe("The full corrected set list. Replaces existing sets."),
+    notes: z
       .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "Format: YYYY-MM-DD")
-      .describe("Date the PR was set."),
-    notes: z.string().optional(),
+      .optional()
+      .describe("Optional replacement note. Pass empty string to clear an existing note."),
+    date: DateOverrideSchema,
   }),
   handler: async (input, ctx) => {
-    await applyPRsToYaml(
+    const { path, relative, date } = workoutPath(ctx.repoPath, ctx.timezone, input.date);
+    if (!existsSync(path)) {
+      return `No workout file for ${date}.`;
+    }
+    const raw = readFileSync(path, "utf-8");
+    const { frontmatter, content } = parseFrontmatter(raw);
+    const range = findExerciseSection(content, input.exercise);
+    if (!range) {
+      return `No "${input.exercise}" section found in ${date}'s workout. Use log_exercise to create it.`;
+    }
+    const lines = content.split("\n");
+    const setLines = input.sets.map((s) => {
+      const rpe = s.rpe ? ` (RPE ${s.rpe})` : "";
+      return `- ${s.weight} x ${s.reps}${rpe}`;
+    });
+    const header = lines[range.start];
+    const newSection = [header, ...setLines];
+    if (input.notes && input.notes.trim()) newSection.push(`_${input.notes}_`);
+    newSection.push("");
+    const newLines = [...lines.slice(0, range.start), ...newSection, ...lines.slice(range.end)];
+    const newBody = newLines.join("\n").trimEnd() + "\n";
+
+    const final = buildFile(frontmatter as Record<string, unknown>, newBody);
+    const result = await writeAndCommit(
       ctx.repoPath,
-      [
-        {
-          exercise: input.exercise,
-          weight: input.weight,
-          reps: input.reps,
-          achievement: input.notes || `${input.weight}x${input.reps}`,
-        },
-      ],
-      input.date
+      relative,
+      final,
+      `Edit ${input.exercise} on ${date}`
     );
-    return `Recorded PR: ${input.exercise} ${input.weight}x${input.reps} on ${input.date}.`;
+    if (result.noop) {
+      return `No change — sets already match.`;
+    }
+    return `Edited ${input.exercise} on ${date} (${input.sets.length} set${input.sets.length === 1 ? "" : "s"}).\n${formatCommitStatus(result)}`;
   },
 });
 
@@ -687,8 +744,8 @@ export const WRITE_TOOLS = [
   startWorkout,
   logExercise,
   completeWorkout,
-  abandonWorkout,
-  updatePR,
+  removeExercise,
+  editExercise,
   savePlan,
   amendPlan,
   saveRetro,

@@ -12,7 +12,6 @@ import { z } from "zod";
 import { defineTool } from "../tool.js";
 import { parseFrontmatter } from "../../integrations/storage.js";
 import { getCurrentWeek, getWeekDays } from "../../utils/date.js";
-import { formatRecentMessagesForPrompt } from "../../bot/message-history.js";
 
 function readIfExists(path: string): string | null {
   return existsSync(path) ? readFileSync(path, "utf-8") : null;
@@ -37,55 +36,11 @@ export const getLearnings = defineTool({
   name: "get_learnings",
   description:
     "Read learnings.md — accumulated patterns, preferences, and observations about the athlete. " +
-    "Call when topic touches injuries, recurring issues, exercise opinions, recovery patterns, or coaching feedback. " +
-    "Optionally filter to a single category.",
-  schema: z.object({
-    category: z
-      .enum([
-        "preference",
-        "goal",
-        "injury",
-        "schedule",
-        "feedback",
-        "insight",
-        "exercise_note",
-        "weight_note",
-        "recovery",
-        "equipment",
-      ])
-      .optional()
-      .describe("Filter to one category"),
-  }),
-  handler: async (input, ctx) => {
+    "Call when topic touches injuries, recurring issues, exercise opinions, recovery patterns, or coaching feedback.",
+  schema: z.object({}),
+  handler: async (_input, ctx) => {
     const content = readIfExists(join(ctx.repoPath, "learnings.md"));
-    if (!content) return NotFound("learnings.md");
-    if (!input.category) return content;
-    // Filter to the matching ## section.
-    const lines = content.split("\n");
-    const headerByCat: Record<string, string> = {
-      preference: "## Preferences",
-      goal: "## Goals",
-      injury: "## Injuries & Limitations",
-      schedule: "## Schedule & Availability",
-      feedback: "## Coaching Feedback",
-      insight: "## Insights",
-      exercise_note: "## Exercise Notes",
-      weight_note: "## Weight & Difficulty Notes",
-      recovery: "## Recovery & Energy",
-      equipment: "## Equipment & Gym",
-    };
-    const target = headerByCat[input.category];
-    const out: string[] = [];
-    let inSection = false;
-    for (const line of lines) {
-      if (line.startsWith("## ")) {
-        inSection = line.trim() === target;
-        if (inSection) out.push(line);
-        continue;
-      }
-      if (inSection) out.push(line);
-    }
-    return out.join("\n").trim() || `No entries under ${target}.`;
+    return content ?? NotFound("learnings.md");
   },
 });
 
@@ -166,21 +121,58 @@ function listWorkoutFiles(repoPath: string): { week: string; date: string; path:
   return out.sort((a, b) => b.date.localeCompare(a.date));
 }
 
-export const getRecentWorkouts = defineTool({
-  name: "get_recent_workouts",
+export const getWorkouts = defineTool({
+  name: "get_workouts",
   description:
-    "List recent workouts as a structured summary (date, type, status, exercise count, PRs). " +
-    "Use this for adherence and variety analysis — NOT a replacement for reading individual files when you need exercise details.",
+    "Summarize logged workouts. Two formats:\n" +
+    "- 'summary' (default): list each workout with date, type, status, exercise count, and PRs " +
+    "across the last N weeks. Use for variety analysis and progression context.\n" +
+    "- 'adherence': per-day breakdown of a single ISO week showing logged vs. no-log. " +
+    "Use for retros and 'how many days did I train this week?'.\n" +
+    "Pass `week` (e.g. 2026-W18) for adherence, or `weeks` (count) for summary.",
   schema: z.object({
+    format: z.enum(["summary", "adherence"]).default("summary"),
     weeks: z
       .number()
       .int()
       .min(1)
       .max(12)
-      .default(4)
-      .describe("How many recent weeks to scan. Default 4."),
+      .optional()
+      .describe("Lookback in weeks for format=summary. Default 4."),
+    week: z
+      .string()
+      .regex(/^\d{4}-W\d{2}$/, "Format: YYYY-Www, e.g. 2026-W18")
+      .optional()
+      .describe("ISO week for format=adherence. Defaults to current."),
   }),
   handler: async (input, ctx) => {
+    const format = input.format ?? "summary";
+    if (format === "adherence") {
+      const week = input.week || getCurrentWeek(ctx.timezone);
+      const days = getWeekDays(week);
+      const weekDir = join(ctx.repoPath, "weeks", week);
+      const logged = new Map<string, { type: string; status: string }>();
+      if (existsSync(weekDir)) {
+        for (const file of readdirSync(weekDir)) {
+          const m = file.match(/^(\d{4}-\d{2}-\d{2})\.md$/);
+          if (!m) continue;
+          const raw = readFileSync(join(weekDir, file), "utf-8");
+          const { frontmatter } = parseFrontmatter(raw);
+          logged.set(m[1], {
+            type: (frontmatter.type as string) || "unknown",
+            status: (frontmatter.status as string) || "unknown",
+          });
+        }
+      }
+      const out = days.map((d) => {
+        const entry = logged.get(d.date);
+        return entry
+          ? `- ${d.dayName} ${d.date}: ${entry.type} (${entry.status})`
+          : `- ${d.dayName} ${d.date}: no log`;
+      });
+      return `Week ${week}:\n${out.join("\n")}`;
+    }
+
     const weeks = input.weeks ?? 4;
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - weeks * 7);
@@ -273,66 +265,12 @@ export const getExerciseHistory = defineTool({
   },
 });
 
-export const getWeekProgress = defineTool({
-  name: "get_week_progress",
-  description:
-    "Show which days of a given week have workout logs vs which don't. " +
-    "Useful for adherence checks and retrospectives.",
-  schema: z.object({
-    week: z
-      .string()
-      .regex(/^\d{4}-W\d{2}$/)
-      .optional()
-      .describe("ISO week. Defaults to current."),
-  }),
-  handler: async (input, ctx) => {
-    const week = input.week || getCurrentWeek(ctx.timezone);
-    const days = getWeekDays(week);
-    const weekDir = join(ctx.repoPath, "weeks", week);
-    const logged = new Map<string, { type: string; status: string }>();
-    if (existsSync(weekDir)) {
-      for (const file of readdirSync(weekDir)) {
-        const m = file.match(/^(\d{4}-\d{2}-\d{2})\.md$/);
-        if (!m) continue;
-        const raw = readFileSync(join(weekDir, file), "utf-8");
-        const { frontmatter } = parseFrontmatter(raw);
-        logged.set(m[1], {
-          type: (frontmatter.type as string) || "unknown",
-          status: (frontmatter.status as string) || "unknown",
-        });
-      }
-    }
-    const out = days.map((d) => {
-      const entry = logged.get(d.date);
-      return entry
-        ? `- ${d.dayName} ${d.date}: ${entry.type} (${entry.status})`
-        : `- ${d.dayName} ${d.date}: no log`;
-    });
-    return `Week ${week}:\n${out.join("\n")}`;
-  },
-});
-
-export const getMessageHistory = defineTool({
-  name: "get_message_history",
-  description:
-    "Read recent Telegram messages exchanged with the athlete, oldest first. " +
-    "Useful when continuing a conversation thread or recalling what they said earlier today.",
-  schema: z.object({
-    count: z.number().int().min(1).max(50).default(20),
-  }),
-  handler: async (input) => {
-    return formatRecentMessagesForPrompt(input.count ?? 20) || "No recent messages.";
-  },
-});
-
 export const READ_TOOLS = [
   getProfile,
   getLearnings,
   getPRs,
   getPlan,
   getWorkout,
-  getRecentWorkouts,
+  getWorkouts,
   getExerciseHistory,
-  getWeekProgress,
-  getMessageHistory,
 ];

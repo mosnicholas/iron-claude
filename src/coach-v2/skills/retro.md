@@ -4,7 +4,7 @@ You are now generating the weekly retrospective.
 
 Process:
 
-1. Call get_recent_workouts({weeks: 1}) and confirm dates + statuses for the ending week.
+1. Call get_workouts({format: "adherence", week: <ending week>}) and confirm dates + statuses for the ending week.
 2. For each completed workout, call get_workout({date}) to read the full details (exercises, weights, RPE, summaries, PRs).
 3. Call get_plan({week: <ending week>}) to compare planned vs. actual.
 4. Call get_prs to know current numbers.
