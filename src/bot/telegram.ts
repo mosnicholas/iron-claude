@@ -4,7 +4,7 @@
  * Handles communication with the Telegram Bot API.
  */
 
-import type { TelegramUpdate, TelegramVoice } from "../storage/types.js";
+import type { TelegramPhotoSize, TelegramUpdate, TelegramVoice } from "../storage/types.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const MAX_MESSAGE_LENGTH = 4000; // Telegram limit is 4096, leave some buffer
@@ -524,6 +524,26 @@ export function extractMessageText(update: TelegramUpdate): string | null {
  */
 export function extractVoiceMessage(update: TelegramUpdate): TelegramVoice | null {
   return update.message?.voice || null;
+}
+
+/**
+ * Extract the largest available photo size from a Telegram update.
+ * Telegram sends multiple resolutions in the `photo` array (smallest → largest);
+ * we always want the largest for vision-quality input to the model.
+ */
+export function extractLargestPhoto(update: TelegramUpdate): TelegramPhotoSize | null {
+  const photos = update.message?.photo;
+  if (!photos || photos.length === 0) return null;
+  return photos.reduce((largest, p) =>
+    p.width * p.height > largest.width * largest.height ? p : largest
+  );
+}
+
+/**
+ * Extract a caption attached to a non-text message (photo, voice, etc.)
+ */
+export function extractCaption(update: TelegramUpdate): string | null {
+  return update.message?.caption || null;
 }
 
 /**

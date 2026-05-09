@@ -8,6 +8,8 @@ import type { Request, Response } from "express";
 import { createCoachAgentV2 } from "../coach-v2/index.js";
 import {
   createTelegramBot,
+  extractCaption,
+  extractLargestPhoto,
   extractMessageText,
   extractVoiceMessage,
   isCommand,
@@ -18,6 +20,7 @@ import {
 import { executeCommand, commandExists } from "../bot/commands.js";
 import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js";
 import { addMessage } from "../bot/message-history.js";
+import type { ImageBlock } from "../coach-v2/llm-client.js";
 import type { TelegramUpdate } from "../storage/types.js";
 
 // Simple serial queue per chat — prevents concurrent writes to the same files
@@ -134,9 +137,11 @@ async function processMessage(
 
     const agent = createCoachAgentV2();
 
-    // Extract message content (text or voice)
+    // Extract message content (text, voice, or photo)
     const voice = extractVoiceMessage(update);
+    const photo = extractLargestPhoto(update);
     let messageText: string | null = null;
+    let images: ImageBlock[] | undefined;
 
     if (voice) {
       if (!isVoiceTranscriptionAvailable()) {
@@ -155,6 +160,21 @@ async function processMessage(
         );
         return;
       }
+    } else if (photo) {
+      try {
+        const image = await downloadPhotoAsImageBlock(photo.file_id, bot);
+        images = [image];
+        // Captions on photos arrive as `caption`, not `text`. If neither is
+        // present, give the model a reasonable default prompt.
+        messageText =
+          extractCaption(update) ||
+          extractMessageText(update) ||
+          "[athlete shared a photo with no caption]";
+      } catch (err) {
+        console.error("[webhook] Failed to download photo:", err);
+        await bot.sendMessage("Couldn't download that image. Try sending it again?");
+        return;
+      }
     } else {
       messageText = extractMessageText(update);
     }
@@ -163,7 +183,7 @@ async function processMessage(
       return;
     }
 
-    // Record user message in history
+    // Record user message in history (note: image bytes aren't logged)
     addMessage(messageText, true);
 
     // Handle infrastructure commands (help / restart / reauth). /debug is a
@@ -202,7 +222,8 @@ async function processMessage(
         },
         (delta) => {
           editor.appendThinkingDelta(delta);
-        }
+        },
+        images
       );
 
       // Editor handles message-break splits and size-based rotation internally;
@@ -213,7 +234,7 @@ async function processMessage(
       addMessage(response.message, false);
     } else {
       // Fallback if we couldn't get a message ID
-      const response = await agent.chat(messageText);
+      const response = await agent.chat(messageText, undefined, undefined, undefined, images);
       const chunks = splitOnMessageBreaks(response.message);
       for (const chunk of chunks) {
         await bot.sendMessageSafe(chunk);
@@ -229,5 +250,41 @@ async function processMessage(
     } catch {
       // Ignore notification failure
     }
+  }
+}
+
+/**
+ * Fetch a Telegram photo by file_id and return it as an Anthropic ImageBlock.
+ * Telegram serves photos as JPEG; we sniff the URL extension and fall back to
+ * jpeg if unsure. The Anthropic SDK accepts the `image` block uniformly across
+ * jpeg/png/gif/webp.
+ */
+async function downloadPhotoAsImageBlock(
+  fileId: string,
+  bot: ReturnType<typeof createTelegramBot>
+): Promise<ImageBlock> {
+  const { filePath, fileUrl } = await bot.getFile(fileId);
+  const buffer = await bot.downloadFile(fileUrl);
+  const data = Buffer.from(buffer).toString("base64");
+  const mediaType = inferImageMediaType(filePath);
+  return {
+    type: "image",
+    source: { type: "base64", media_type: mediaType, data },
+  };
+}
+
+function inferImageMediaType(
+  filePath: string
+): "image/jpeg" | "image/png" | "image/gif" | "image/webp" {
+  const ext = filePath.toLowerCase().split(".").pop();
+  switch (ext) {
+    case "png":
+      return "image/png";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    default:
+      return "image/jpeg";
   }
 }

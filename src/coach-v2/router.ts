@@ -10,6 +10,7 @@ import { join } from "path";
 import type { HarnessResult } from "./harness.js";
 import { runCoach } from "./handlers/coach.js";
 import { runDebug } from "./handlers/debug.js";
+import type { ImageBlock } from "./llm-client.js";
 
 export type Mode = "coach" | "debug";
 
@@ -18,6 +19,8 @@ export interface RouterContext {
   timezone: string;
   /** The (raw) message text from the user. */
   message: string;
+  /** Optional images attached to this turn. */
+  images?: ImageBlock[];
   onStatus?: (status: string) => void;
   onTextDelta?: (delta: string) => void;
   onThinkingDelta?: (delta: string) => void;
@@ -46,10 +49,13 @@ export async function route(ctx: RouterContext): Promise<RoutedResult> {
   const mode = classifyMode(ctx.message);
 
   if (mode === "debug") {
+    // Debug is text-only — drop any attached images.
+    const { images: _images, ...debugCtx } = ctx;
+    void _images;
     const stripped =
       ctx.message.replace(/^\/debug\s*/, "").trim() ||
       "Diagnose recent system behavior. Anything unusual?";
-    const r = await runDebug({ ...ctx, message: stripped });
+    const r = await runDebug({ ...debugCtx, message: stripped });
     return { ...r, mode };
   }
 

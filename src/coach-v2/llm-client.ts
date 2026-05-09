@@ -35,7 +35,18 @@ export interface AssistantMessage {
 
 export type Message = UserMessage | AssistantMessage;
 
-export type UserContentBlock = ToolResultBlock | { type: "text"; text: string };
+export type UserContentBlock = ToolResultBlock | { type: "text"; text: string } | ImageBlock;
+
+export interface ImageBlock {
+  type: "image";
+  source:
+    | {
+        type: "base64";
+        media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+        data: string;
+      }
+    | { type: "url"; url: string };
+}
 
 export type AssistantContentBlock = TextBlock | ToolUseBlock;
 

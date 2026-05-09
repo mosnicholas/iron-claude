@@ -15,6 +15,7 @@ import {
   type SystemBlock,
   type ToolUseBlock,
   type ToolResultBlock,
+  type UserContentBlock,
 } from "./llm-client.js";
 import { logMeta, logToolCall, newTurnId } from "./observability.js";
 import { toolToAnthropic, type Tool, type ToolContext } from "./tool.js";
@@ -22,7 +23,11 @@ import { toolToAnthropic, type Tool, type ToolContext } from "./tool.js";
 export interface HarnessOptions {
   model: string;
   system: SystemBlock[];
-  userMessage: string;
+  /**
+   * Initial user turn. Can be a plain string (text-only) or an array of
+   * content blocks for multimodal input (e.g. text + image from Telegram).
+   */
+  userMessage: string | UserContentBlock[];
   tools: Tool[];
   ctx: Omit<ToolContext, "turnId">;
   /** Hard cap on tool-use rounds. Default 12. */
