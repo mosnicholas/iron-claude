@@ -82,9 +82,22 @@ interface GitHubTokenData {
 /** In-memory cache to avoid hitting GitHub API on every Whoop call */
 let cachedTokens: TokenSet | null = null;
 
+/**
+ * In-flight refresh dedupe. Whoop rotates refresh tokens — once a refresh
+ * lands, the prior token is invalid. Two concurrent webhooks each calling
+ * refreshAccessToken with the same stored token would have one succeed and
+ * the other fail with 400 ("invalid_request"). Sharing the in-flight promise
+ * means the second caller awaits the first and gets the rotated tokens.
+ *
+ * Keyed by the refresh token being used so an older token's refresh doesn't
+ * block a fresh one (e.g. if cache was bypassed).
+ */
+const refreshInFlight = new Map<string, Promise<TokenSet>>();
+
 /** Reset the in-memory token cache (for testing only) */
 export function _resetTokenCache(): void {
   cachedTokens = null;
+  refreshInFlight.clear();
 }
 
 /**
@@ -276,10 +289,23 @@ export async function exchangeCodeForTokens(code: string, redirectUri: string): 
 
 /**
  * Refresh the access token using a refresh token.
+ * Concurrent callers with the same refresh token share one in-flight request
+ * (Whoop rotates refresh tokens; without dedupe the second call 400s).
  *
  * @param refreshToken - The refresh token to use
  */
 export async function refreshAccessToken(refreshToken: string): Promise<TokenSet> {
+  const existing = refreshInFlight.get(refreshToken);
+  if (existing) return existing;
+
+  const promise = doRefreshAccessToken(refreshToken).finally(() => {
+    refreshInFlight.delete(refreshToken);
+  });
+  refreshInFlight.set(refreshToken, promise);
+  return promise;
+}
+
+async function doRefreshAccessToken(refreshToken: string): Promise<TokenSet> {
   const config = getWhoopOAuthConfig();
 
   const response = await fetch(WHOOP_TOKEN_URL, {
@@ -292,7 +318,6 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenSet
       refresh_token: refreshToken,
       client_id: config.clientId,
       client_secret: config.clientSecret,
-      scope: "offline",
     }).toString(),
   });
 

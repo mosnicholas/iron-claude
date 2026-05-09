@@ -1,4 +1,9 @@
-import { escapeForTelegramItalic, formatForTelegram } from "./telegram.js";
+import {
+  escapeForTelegramItalic,
+  formatForTelegram,
+  ThrottledMessageEditor,
+  type TelegramBot,
+} from "./telegram.js";
 
 describe("formatForTelegram", () => {
   describe("heading conversion", () => {
@@ -243,5 +248,257 @@ describe("escapeForTelegramItalic", () => {
 
   it("returns empty string for empty input", () => {
     expect(escapeForTelegramItalic("")).toBe("");
+  });
+
+  it("returns idempotent output when run twice (already-escaped input)", () => {
+    // Defensive: running escapeForTelegramItalic on its own output should be a
+    // no-op for content with no further specials. This guards against accidental
+    // re-escaping inside the editor, which used to compound with formatForTelegram.
+    const once = escapeForTelegramItalic("Using get_prs");
+    const twice = escapeForTelegramItalic(once);
+    // Once-escaped: "Using get\_prs". Re-escaping treats `\` as a special and
+    // doubles it; this is the EXPECTED corruption — the test pins the difference
+    // so callers know they must NOT re-escape.
+    expect(once).toBe("Using get\\_prs");
+    expect(twice).toBe("Using get\\\\\\_prs");
+    expect(twice).not.toBe(once);
+  });
+
+  it("double-formatting via formatForTelegram corrupts the escaped form", () => {
+    // Regression: ThrottledMessageEditor used to pass already-escaped status
+    // text (e.g. "🧠 _Using get\\_recent\\_workouts…_") through
+    // bot.editMessage / bot.sendMessage, which re-ran formatForTelegram and
+    // doubled every backslash. The result was "🧠 _Using get\\\\_recent\\\\_workouts…_",
+    // which Telegram then rejected ("Can't find end of Italic entity") and
+    // — on plain-text fallback — surfaced literal backslashes to the user.
+    //
+    // This test pins the corruption so we don't reintroduce the call path.
+    const escaped = escapeForTelegramItalic("Using get_recent_workouts");
+    const wrapped = `🧠 _${escaped}_`;
+    expect(wrapped).toBe("🧠 _Using get\\_recent\\_workouts_");
+
+    const doubleFormatted = formatForTelegram(wrapped);
+    // formatForTelegram doubles single backslashes, so the inner \_ becomes \\_
+    // — at which point the trailing _ is unmatched in MarkdownV2 parsing.
+    expect(doubleFormatted).toBe("🧠 _Using get\\\\_recent\\\\_workouts_");
+    expect(doubleFormatted).not.toBe(wrapped);
+  });
+
+  it("status with multiple underscores stays parseable when wrapped (no double-format)", () => {
+    // The screenshot showed "Using get|recent\\workouts…" — the artifact of a
+    // double-formatted status hitting the plain-text fallback. The fix is to
+    // never re-run formatForTelegram on already-escaped italic content.
+    //
+    // Sending the wrapped form directly to Telegram (without re-formatting)
+    // produces a well-formed italic entity: balanced outer underscores and
+    // every inner underscore preceded by exactly one backslash.
+    const wrapped = `🧠 _${escapeForTelegramItalic("Using get_recent_workouts…")}_`;
+    expect(wrapped).toBe("🧠 _Using get\\_recent\\_workouts…_");
+
+    // Open/close italic count: exactly two unescaped underscores (the wrappers).
+    // Anywhere else, an underscore must be preceded by a backslash.
+    const unescapedUnderscores = wrapped.match(/(?<!\\)_/g) ?? [];
+    expect(unescapedUnderscores).toHaveLength(2);
+  });
+
+  it("thinking text with markdown specials renders as a single italic block", () => {
+    // Reasoning streams from extended thinking can contain underscores,
+    // asterisks, parens, dots — anything. We escape every special then wrap,
+    // so the entire reasoning is one italic span.
+    const reasoning =
+      "Need to check user_profile.md and call get_prs(). " +
+      "Last week's plan had **5x5** at 80% — heavy.";
+    const wrapped = `🧠 _${escapeForTelegramItalic(reasoning)}_`;
+
+    // No unescaped underscores, asterisks, or parens inside the wrapper.
+    // 🧠 is a surrogate pair (2 JS chars) + space + leading "_" = 4 chars.
+    const inner = wrapped.slice(4, -1);
+    expect(inner).not.toMatch(/(?<!\\)_/);
+    expect(inner).not.toMatch(/(?<!\\)\*/);
+    expect(inner).not.toMatch(/(?<!\\)\(/);
+    expect(inner).not.toMatch(/(?<!\\)\)/);
+  });
+
+  it("ellipsis (…) is preserved without escaping (not a MarkdownV2 special)", () => {
+    // Unicode ellipsis isn't in the MarkdownV2 special set, so it should pass
+    // through untouched. ASCII "..." would each get escaped as \. \. \.
+    expect(escapeForTelegramItalic("Using get_prs…")).toBe("Using get\\_prs…");
+    expect(escapeForTelegramItalic("Using get_prs...")).toBe("Using get\\_prs\\.\\.\\.");
+  });
+
+  it("Continuing placeholder is pre-escaped and balanced", () => {
+    // The rotation paths now send a pre-escaped "Continuing..." placeholder so
+    // they can use sendFormattedMessage (no re-formatting). Verify the literal
+    // we hardcoded matches what escapeForTelegramItalic would produce.
+    const handHardcoded = "🧠 _Continuing\\.\\.\\._";
+    const programmatic = `🧠 _${escapeForTelegramItalic("Continuing...")}_`;
+    expect(handHardcoded).toBe(programmatic);
+  });
+});
+
+/**
+ * Capturing fake of TelegramBot for ThrottledMessageEditor tests.
+ * Records every send/edit so tests can assert the EXACT bytes we put on the
+ * wire — that's the layer where the double-format bug used to live.
+ */
+type SendCall =
+  | { kind: "sendFormatted"; text: string }
+  | { kind: "sendPlain"; text: string }
+  | { kind: "sendMessage"; text: string }
+  | { kind: "editFormatted"; messageId: number; text: string }
+  | { kind: "editMessage"; messageId: number; text: string };
+
+class FakeBot {
+  calls: SendCall[] = [];
+  nextId = 100;
+  /** If set, sendFormattedMessage rejects with this error to simulate parse fail. */
+  sendFormattedError: Error | null = null;
+  /** If set, editFormattedMessage rejects with this error. */
+  editFormattedError: Error | null = null;
+
+  async sendFormattedMessage(text: string): Promise<number | undefined> {
+    this.calls.push({ kind: "sendFormatted", text });
+    if (this.sendFormattedError) throw this.sendFormattedError;
+    return ++this.nextId;
+  }
+
+  async sendPlainMessage(text: string): Promise<number | undefined> {
+    this.calls.push({ kind: "sendPlain", text });
+    return ++this.nextId;
+  }
+
+  async sendMessage(text: string): Promise<number | undefined> {
+    this.calls.push({ kind: "sendMessage", text });
+    return ++this.nextId;
+  }
+
+  async editFormattedMessage(messageId: number, text: string): Promise<void> {
+    this.calls.push({ kind: "editFormatted", messageId, text });
+    if (this.editFormattedError) throw this.editFormattedError;
+  }
+
+  async editMessage(messageId: number, text: string): Promise<void> {
+    this.calls.push({ kind: "editMessage", messageId, text });
+  }
+
+  getBotToken(): string {
+    return "fake-token";
+  }
+
+  getChatId(): string {
+    return "fake-chat";
+  }
+}
+
+function asBot(fake: FakeBot): TelegramBot {
+  return fake as unknown as TelegramBot;
+}
+
+describe("ThrottledMessageEditor — pre-formatted text never re-escapes", () => {
+  // ThrottledMessageEditor.editPlain reaches outside the bot wrapper and uses
+  // global fetch directly. Stub it so streaming-edit fallbacks don't hit the
+  // real Telegram API (and don't emit "Cannot log after tests are done" noise).
+  const originalFetch = global.fetch;
+  beforeEach(() => {
+    global.fetch = async () =>
+      ({ ok: true, text: async () => "", json: async () => ({}) }) as unknown as Response;
+  });
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("locks in status with editFormattedMessage (no re-format) on first stream delta", async () => {
+    const fake = new FakeBot();
+    const editor = new ThrottledMessageEditor(asBot(fake), 42, /* throttleMs */ 0);
+
+    // 1) Status: "Using get_recent_workouts…" — should be wrapped + escaped.
+    editor.update("Using get_recent_workouts…");
+
+    // 2) First stream delta triggers rotateStatusForStream → locks in the
+    //    placeholder via editFormattedMessage, opens new placeholder via
+    //    sendFormattedMessage.
+    editor.appendStreamDelta("Hello, world.");
+
+    // Allow the async rotation to settle.
+    await new Promise((r) => setTimeout(r, 10));
+
+    // The lock-in edit must use editFormattedMessage with the SAME pre-escaped
+    // text — never editMessage (which would call formatForTelegram and double
+    // the backslashes). That's the regression.
+    const lockIn = fake.calls.find((c) => c.kind === "editFormatted");
+    expect(lockIn).toBeDefined();
+    expect(lockIn?.kind).toBe("editFormatted");
+    if (lockIn?.kind === "editFormatted") {
+      expect(lockIn.text).toBe("🧠 _Using get\\_recent\\_workouts…_");
+      // No double-backslash sequence anywhere — that would be the corruption.
+      expect(lockIn.text).not.toContain("\\\\_");
+    }
+
+    // No editMessage (re-formatting) calls during rotation.
+    const reformattedEdits = fake.calls.filter((c) => c.kind === "editMessage");
+    expect(reformattedEdits).toEqual([]);
+
+    // The new placeholder must also go through sendFormattedMessage (pre-escaped).
+    const newPlaceholder = fake.calls.find((c) => c.kind === "sendFormatted");
+    expect(newPlaceholder).toBeDefined();
+    if (newPlaceholder?.kind === "sendFormatted") {
+      // Pre-escaped "Continuing..." — dots are escaped, no other specials.
+      expect(newPlaceholder.text).toBe("🧠 _Continuing\\.\\.\\._");
+    }
+  });
+
+  it("locks in pre-escaped thinking block on status-after-thinking transition", async () => {
+    const fake = new FakeBot();
+    const editor = new ThrottledMessageEditor(asBot(fake), 42, /* throttleMs */ 0);
+
+    // Reasoning text with multiple specials.
+    editor.appendThinkingDelta("Need to check get_prs() and **5x5** plan.");
+    // Allow first thinking delta to write through.
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Status fires → rotateThinkingForStatus locks in thinking placeholder
+    // and opens a new one with the status. Both must be pre-escaped sends.
+    editor.update("Using get_prs…");
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Find the lock-in edit of the thinking message — must use editFormatted.
+    const thinkingLockIn = fake.calls.filter((c) => c.kind === "editFormatted").pop(); // the most recent one is the lock-in
+    expect(thinkingLockIn).toBeDefined();
+    if (thinkingLockIn?.kind === "editFormatted") {
+      // No double-escaped backslashes in the locked-in text.
+      expect(thinkingLockIn.text).not.toMatch(/\\\\_/);
+      // Underscore in get_prs is escaped exactly once.
+      expect(thinkingLockIn.text).toContain("get\\_prs");
+    }
+
+    // The status placeholder send for the new tool-call status — must also be
+    // pre-escaped (sendFormatted, not sendMessage which would re-format).
+    const statusSends = fake.calls.filter((c) => c.kind === "sendFormatted");
+    expect(statusSends.length).toBeGreaterThan(0);
+    const lastStatus = statusSends[statusSends.length - 1];
+    if (lastStatus.kind === "sendFormatted") {
+      expect(lastStatus.text).toBe("🧠 _Using get\\_prs…_");
+    }
+
+    // No formatting-applying send calls anywhere during rotation.
+    const reformattedSends = fake.calls.filter((c) => c.kind === "sendMessage");
+    expect(reformattedSends).toEqual([]);
+  });
+
+  it("falls back to plain text when pre-formatted send rejects (no crash)", async () => {
+    const fake = new FakeBot();
+    // Simulate Telegram rejecting the pre-formatted send (e.g. parse error
+    // surfacing through some other path). We must not crash; we should fall
+    // back to sendPlainMessage and continue.
+    fake.sendFormattedError = new Error("Bad Request: can't parse entities");
+
+    const editor = new ThrottledMessageEditor(asBot(fake), 42, /* throttleMs */ 0);
+    editor.update("Using get_prs…");
+    editor.appendStreamDelta("text");
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Plain fallback was invoked.
+    const plainCall = fake.calls.find((c) => c.kind === "sendPlain");
+    expect(plainCall).toBeDefined();
   });
 });

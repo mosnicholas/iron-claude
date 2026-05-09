@@ -848,7 +848,9 @@ export class ThrottledMessageEditor {
     }
     try {
       await this.writeFinalToCurrent(beforeText.trim());
-      const newId = await this.bot.sendMessage("🧠 _Continuing..._", "MarkdownV2");
+      // Pre-formatted: use sendFormattedMessage so formatForTelegram doesn't
+      // re-escape the backslashes already added by escapeForTelegramItalic.
+      const newId = await this.sendPreFormatted("🧠 _Continuing\\.\\.\\._");
       if (newId) {
         this.messageId = newId;
         this.lastEditTime = 0;
@@ -874,7 +876,9 @@ export class ThrottledMessageEditor {
    */
   private async rotateStatusForStream(): Promise<void> {
     await this.rotateAfterStatus({
-      newPlaceholder: "🧠 _Continuing..._",
+      // Pre-escaped (dots are MarkdownV2 specials) since rotateAfterStatus
+      // now sends without re-running formatForTelegram.
+      newPlaceholder: "🧠 _Continuing\\.\\.\\._",
       newMode: "stream",
     });
     if (!this.streamSuppressed && this.streamBuffer.length > 0) {
@@ -912,7 +916,9 @@ export class ThrottledMessageEditor {
       this.pendingText = null;
       if (finalStatus) {
         try {
-          await this.bot.editMessage(this.messageId, finalStatus);
+          // Pre-formatted: use editFormattedMessage so we don't re-escape the
+          // backslashes from escapeForTelegramItalic and break the italic entity.
+          await this.bot.editFormattedMessage(this.messageId, finalStatus);
         } catch {
           // The placeholder already shows a recent version of the status; an
           // edit failure here just means we keep what's already there.
@@ -920,7 +926,7 @@ export class ThrottledMessageEditor {
       }
       this.completedSegments += 1;
 
-      const newId = await this.bot.sendMessage(opts.newPlaceholder, "MarkdownV2");
+      const newId = await this.sendPreFormatted(opts.newPlaceholder);
       if (newId) {
         this.messageId = newId;
         this.lastEditTime = opts.newMode === "stream" ? 0 : Date.now();
@@ -962,7 +968,8 @@ export class ThrottledMessageEditor {
       this.pendingText = null;
       if (finalThinking) {
         try {
-          await this.bot.editMessage(this.messageId, finalThinking);
+          // Pre-formatted: skip re-escaping (would double-backslash and break italic).
+          await this.bot.editFormattedMessage(this.messageId, finalThinking);
         } catch {
           // Best-effort — placeholder already shows a recent thinking render.
         }
@@ -970,7 +977,7 @@ export class ThrottledMessageEditor {
       this.thinkingBuffer = "";
       this.completedSegments += 1;
 
-      const newId = await this.bot.sendMessage(formattedStatus, "MarkdownV2");
+      const newId = await this.sendPreFormatted(formattedStatus);
       if (newId) {
         this.messageId = newId;
         this.lastEditTime = Date.now();
@@ -1005,7 +1012,7 @@ export class ThrottledMessageEditor {
       await this.writeFinalToCurrent(streamed);
       this.completedSegments += 1;
 
-      const newId = await this.bot.sendMessage(formattedStatus, "MarkdownV2");
+      const newId = await this.sendPreFormatted(formattedStatus);
       if (newId) {
         this.messageId = newId;
         this.lastEditTime = Date.now();
@@ -1028,6 +1035,28 @@ export class ThrottledMessageEditor {
       this.streamTimeout = null;
     }
     this.streamPending = false;
+  }
+
+  /**
+   * Send a pre-formatted MarkdownV2 message (e.g. "🧠 _escaped status_").
+   * The text has already been through `escapeForTelegramItalic`, so we must
+   * NOT route through `bot.sendMessage` (which would re-run `formatForTelegram`
+   * and double-escape the backslashes — corrupting the italic entity).
+   * On parse failure, falls back to a plain-text send so the caller still gets
+   * a message ID and the bot keeps streaming.
+   */
+  private async sendPreFormatted(text: string): Promise<number | undefined> {
+    try {
+      return await this.bot.sendFormattedMessage(text, "MarkdownV2");
+    } catch (error) {
+      console.log(`[ThrottledEditor] Pre-formatted send failed, sending plain:`, error);
+      try {
+        return await this.bot.sendPlainMessage(text);
+      } catch (plainError) {
+        console.error(`[ThrottledEditor] Plain send also failed:`, plainError);
+        return undefined;
+      }
+    }
   }
 
   private async editPlainSafe(text: string): Promise<void> {
