@@ -10,6 +10,7 @@
  */
 
 import { runHarness, type HarnessResult } from "../harness.js";
+import type { ImageBlock } from "../llm-client.js";
 import { READ_TOOLS } from "../tools/reads.js";
 import { WRITE_TOOLS } from "../tools/writes.js";
 import { REMINDER_TOOLS } from "../tools/reminders.js";
@@ -21,6 +22,8 @@ export interface CoachHandlerOptions {
   repoPath: string;
   timezone: string;
   message: string;
+  /** Optional images attached to this turn (e.g. a Telegram photo). */
+  images?: ImageBlock[];
   model?: string;
   maxTurns?: number;
   onStatus?: (status: string) => void;
@@ -33,10 +36,16 @@ const COACH_TOOLS = [...READ_TOOLS, ...WRITE_TOOLS, ...REMINDER_TOOLS, ...SKILL_
 export async function runCoach(opts: CoachHandlerOptions): Promise<HarnessResult> {
   const ctx = loadCoachContext(opts.repoPath, opts.timezone);
   const system = buildCoachSystem(ctx, COACH_BASE_PROMPT);
+  // When images are present, build a multimodal user turn (images first so the
+  // model has the visual context before reading the caption / question).
+  const userMessage =
+    opts.images && opts.images.length > 0
+      ? [...opts.images, { type: "text" as const, text: opts.message || "" }]
+      : opts.message;
   return runHarness({
     model: opts.model ?? "claude-opus-4-7",
     system,
-    userMessage: opts.message,
+    userMessage,
     tools: COACH_TOOLS,
     ctx: { repoPath: opts.repoPath, timezone: opts.timezone, handler: "coach" },
     onStatus: opts.onStatus,

@@ -13,6 +13,7 @@ import { getTimezone } from "../utils/date.js";
 import { route, type RoutedResult } from "./router.js";
 import { runCoach } from "./handlers/coach.js";
 import type { HarnessResult } from "./harness.js";
+import type { ImageBlock } from "./llm-client.js";
 
 export interface CoachV2Config {
   /** Test override — skips GitHub sync. */
@@ -57,7 +58,8 @@ export class CoachAgentV2 {
     message: string,
     onStatus?: (s: string) => void,
     onTextDelta?: (delta: string) => void,
-    onThinkingDelta?: (delta: string) => void
+    onThinkingDelta?: (delta: string) => void,
+    images?: ImageBlock[]
   ): Promise<CoachV2Response> {
     const repoPath = await ensureRepo(this.config);
     const timezone = this.config.timezone ?? getTimezone();
@@ -65,6 +67,7 @@ export class CoachAgentV2 {
       repoPath,
       timezone,
       message,
+      images,
       onStatus,
       onTextDelta,
       onThinkingDelta,
