@@ -29,13 +29,17 @@ export const WHOOP_SCOPES = [
 ] as const;
 
 /** Default scopes we request for the integration.
- *  Must match scopes registered on the Whoop developer dashboard — requesting
- *  any scope the app isn't registered for fails with `request_forbidden`. */
+ *  `offline` is required to receive a refresh_token — per Whoop's OAuth docs:
+ *  "WHOOP provides your app with a refresh token after completing the OAuth
+ *  2.0 flow _if_ the `offline` scope is included in the authorization request."
+ *  Without it, the token response only contains an access_token (which expires
+ *  in ~1h) and the integration silently can't refresh. */
 export const DEFAULT_SCOPES: string[] = [
   "read:recovery",
   "read:sleep",
   "read:workout",
   "read:profile",
+  "offline",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -405,6 +409,7 @@ async function doRefreshAccessToken(refreshToken: string): Promise<TokenSet> {
       refresh_token: refreshToken,
       client_id: config.clientId,
       client_secret: config.clientSecret,
+      scope: "offline",
     }).toString(),
   });
 
