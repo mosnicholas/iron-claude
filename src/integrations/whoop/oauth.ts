@@ -155,22 +155,75 @@ export async function saveTokensToGitHub(tokens: TokenSet, sha?: string): Promis
 }
 
 /**
+ * SHA conflicts (409/422 from GitHub) are expected when two instances race to
+ * persist refreshed tokens — the loser's in-memory cache is still valid and
+ * the winner's tokens are now on disk. Any other error is a real failure.
+ */
+function isShaConflictError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.message.includes("409") || error.message.includes("422");
+}
+
+/**
  * Persist tokens to GitHub and update in-memory cache.
+ * Throws on real failures (auth, network, 5xx). Swallows SHA conflicts.
  */
 export async function persistTokens(tokens: TokenSet): Promise<void> {
-  // Update in-memory cache immediately
+  // Update in-memory cache immediately so the current request can proceed
+  // even if a concurrent peer wins the GitHub write race.
   cachedTokens = tokens;
 
   try {
-    // Read current SHA for optimistic locking
     const storage = createGitHubStorage();
     const existing = await storage.readFileWithSha(TOKENS_PATH);
     await saveTokensToGitHub(tokens, existing?.sha);
   } catch (error) {
-    // If SHA mismatch, another instance already wrote newer tokens.
-    // Our in-memory cache is still valid for this instance's current request.
-    console.warn("[whoop-oauth] Failed to persist tokens to GitHub (possible race):", error);
+    if (isShaConflictError(error)) {
+      console.warn(
+        "[whoop-oauth] Token persist raced with another instance; in-memory cache is authoritative"
+      );
+      return;
+    }
+    console.error("[whoop-oauth] Failed to persist tokens to GitHub:", error);
+    throw error;
   }
+}
+
+/**
+ * Diagnostic snapshot of the stored tokens file, surfacing missing fields
+ * that `getStoredTokens` would otherwise hide by returning null.
+ */
+export interface StoredTokensInspection {
+  fileExists: boolean;
+  parseable: boolean;
+  hasAccessToken: boolean;
+  hasRefreshToken: boolean;
+  expiresAt?: number;
+  updatedAt?: string;
+}
+
+export async function inspectStoredTokens(): Promise<StoredTokensInspection> {
+  const storage = createGitHubStorage();
+  const result = await storage.readFileWithSha(TOKENS_PATH);
+  if (!result) {
+    return { fileExists: false, parseable: false, hasAccessToken: false, hasRefreshToken: false };
+  }
+
+  let data: Partial<GitHubTokenData>;
+  try {
+    data = JSON.parse(result.content) as Partial<GitHubTokenData>;
+  } catch {
+    return { fileExists: true, parseable: false, hasAccessToken: false, hasRefreshToken: false };
+  }
+
+  return {
+    fileExists: true,
+    parseable: true,
+    hasAccessToken: typeof data.accessToken === "string" && data.accessToken.length > 0,
+    hasRefreshToken: typeof data.refreshToken === "string" && data.refreshToken.length > 0,
+    expiresAt: typeof data.expiresAt === "number" ? data.expiresAt : undefined,
+    updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined,
+  };
 }
 
 /**
@@ -274,17 +327,50 @@ export async function exchangeCodeForTokens(code: string, redirectUri: string): 
     throw new Error(`Failed to exchange code: ${response.status} - ${error}`);
   }
 
-  const data = (await response.json()) as {
+  const data = (await response.json()) as Partial<{
     access_token: string;
     refresh_token: string;
     expires_in: number;
     token_type: string;
-  };
+  }>;
+
+  return parseTokenResponse(data, "authorization_code");
+}
+
+/**
+ * Parse and validate a Whoop OAuth token response.
+ * Fails loudly if any required field is missing — silently writing a
+ * tokens.json without a refresh_token (Whoop omits it when the request
+ * lacks the `offline` scope) makes the integration unrecoverable on the
+ * next access-token expiry, so callers must see this immediately.
+ */
+function parseTokenResponse(
+  data: Partial<{
+    access_token: string;
+    refresh_token: string;
+    expires_in: number;
+    token_type: string;
+  }>,
+  grantType: "authorization_code" | "refresh_token"
+): TokenSet {
+  const missing: string[] = [];
+  if (!data.access_token) missing.push("access_token");
+  if (!data.refresh_token) missing.push("refresh_token");
+  if (typeof data.expires_in !== "number") missing.push("expires_in");
+
+  if (missing.length > 0) {
+    const hint = missing.includes("refresh_token")
+      ? " Whoop typically only returns refresh_token when the auth request includes the `offline` scope and your developer app is registered for it."
+      : "";
+    throw new Error(
+      `Whoop ${grantType} response missing required fields: ${missing.join(", ")}.${hint}`
+    );
+  }
 
   return {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token,
-    expiresAt: Date.now() + data.expires_in * 1000,
+    accessToken: data.access_token as string,
+    refreshToken: data.refresh_token as string,
+    expiresAt: Date.now() + (data.expires_in as number) * 1000,
   };
 }
 
@@ -327,18 +413,14 @@ async function doRefreshAccessToken(refreshToken: string): Promise<TokenSet> {
     throw new Error(`Failed to refresh token: ${response.status} - ${error}`);
   }
 
-  const data = (await response.json()) as {
+  const data = (await response.json()) as Partial<{
     access_token: string;
     refresh_token: string;
     expires_in: number;
     token_type: string;
-  };
+  }>;
 
-  return {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token,
-    expiresAt: Date.now() + data.expires_in * 1000,
-  };
+  return parseTokenResponse(data, "refresh_token");
 }
 
 /**
