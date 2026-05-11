@@ -19,6 +19,9 @@ const {
   persistTokens,
   getTokensFromGitHub,
   saveTokensToGitHub,
+  inspectStoredTokens,
+  exchangeCodeForTokens,
+  refreshAccessToken,
   _resetTokenCache,
   DEFAULT_SCOPES,
 } = await import("./oauth.js");
@@ -300,6 +303,196 @@ describe("Whoop OAuth", () => {
       const cached = await getStoredTokens();
       expect(cached?.accessToken).toBe("cached-despite-failure");
       expect(mockStorage.readFileWithSha).not.toHaveBeenCalled();
+    });
+
+    it("propagates non-SHA errors (e.g. auth failure)", async () => {
+      const mockStorage = {
+        readFileWithSha: jest
+          .fn()
+          .mockRejectedValue(new Error("GitHub API error: 401 - Bad credentials") as never),
+        writeFileWithSha: jest.fn(),
+      } as unknown as ReturnType<typeof createGitHubStorage>;
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
+
+      const tokens = {
+        accessToken: "x",
+        refreshToken: "y",
+        expiresAt: Date.now() + 60 * 60 * 1000,
+      };
+
+      await expect(persistTokens(tokens)).rejects.toThrow("401");
+    });
+
+    it("propagates non-SHA errors on write (e.g. 500)", async () => {
+      const mockStorage = {
+        readFileWithSha: jest.fn().mockResolvedValue(null as never),
+        writeFileWithSha: jest
+          .fn()
+          .mockRejectedValue(new Error("GitHub API error: 500 - Internal") as never),
+      } as unknown as ReturnType<typeof createGitHubStorage>;
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
+
+      const tokens = {
+        accessToken: "x",
+        refreshToken: "y",
+        expiresAt: Date.now() + 60 * 60 * 1000,
+      };
+
+      await expect(persistTokens(tokens)).rejects.toThrow("500");
+    });
+
+    it("swallows 422 SHA-mismatch errors too", async () => {
+      const mockStorage = {
+        readFileWithSha: jest.fn().mockResolvedValue({
+          content: JSON.stringify({
+            accessToken: "old",
+            refreshToken: "old",
+            expiresAt: 0,
+            updatedAt: "",
+          }),
+          sha: "stale-sha",
+        } as never),
+        writeFileWithSha: jest
+          .fn()
+          .mockRejectedValue(new Error("GitHub API error: 422 - sha mismatch") as never),
+      } as unknown as ReturnType<typeof createGitHubStorage>;
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
+
+      const tokens = {
+        accessToken: "x",
+        refreshToken: "y",
+        expiresAt: Date.now() + 60 * 60 * 1000,
+      };
+
+      await expect(persistTokens(tokens)).resolves.toBeUndefined();
+    });
+  });
+
+  describe("inspectStoredTokens", () => {
+    it("reports file missing", async () => {
+      const mockStorage = createMockStorage(null);
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
+
+      const result = await inspectStoredTokens();
+      expect(result).toEqual({
+        fileExists: false,
+        parseable: false,
+        hasAccessToken: false,
+        hasRefreshToken: false,
+      });
+    });
+
+    it("reports missing refresh token (the post-/reauth-without-offline state)", async () => {
+      const mockStorage = createMockStorage({
+        content: JSON.stringify({
+          accessToken: "present",
+          expiresAt: 9999999999999,
+          updatedAt: "2026-05-09T14:23:00Z",
+          // refreshToken intentionally absent
+        }),
+        sha: "sha",
+      });
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
+
+      const result = await inspectStoredTokens();
+      expect(result.fileExists).toBe(true);
+      expect(result.parseable).toBe(true);
+      expect(result.hasAccessToken).toBe(true);
+      expect(result.hasRefreshToken).toBe(false);
+      expect(result.expiresAt).toBe(9999999999999);
+      expect(result.updatedAt).toBe("2026-05-09T14:23:00Z");
+    });
+
+    it("reports unparseable JSON", async () => {
+      const mockStorage = createMockStorage({
+        content: "{ not valid json",
+        sha: "sha",
+      });
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
+
+      const result = await inspectStoredTokens();
+      expect(result).toEqual({
+        fileExists: true,
+        parseable: false,
+        hasAccessToken: false,
+        hasRefreshToken: false,
+      });
+    });
+
+    it("reports a healthy tokens file", async () => {
+      const mockStorage = createMockStorage({
+        content: JSON.stringify({
+          accessToken: "a",
+          refreshToken: "r",
+          expiresAt: 9999999999999,
+          updatedAt: "2026-05-09T14:23:00Z",
+        }),
+        sha: "sha",
+      });
+      mockCreateGitHubStorage.mockReturnValue(mockStorage);
+
+      const result = await inspectStoredTokens();
+      expect(result.hasAccessToken).toBe(true);
+      expect(result.hasRefreshToken).toBe(true);
+    });
+  });
+
+  describe("token response validation", () => {
+    const originalFetch = global.fetch;
+
+    beforeEach(() => {
+      process.env.WHOOP_CLIENT_ID = "id";
+      process.env.WHOOP_CLIENT_SECRET = "secret";
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    function mockFetchJson(status: number, body: unknown): void {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: status >= 200 && status < 300,
+        status,
+        text: async () => JSON.stringify(body),
+        json: async () => body,
+      } as never) as unknown as typeof fetch;
+    }
+
+    it("exchangeCodeForTokens throws when refresh_token is missing", async () => {
+      mockFetchJson(200, {
+        access_token: "a",
+        // refresh_token missing — what Whoop returns without `offline` scope
+        expires_in: 3600,
+        token_type: "bearer",
+      });
+
+      await expect(exchangeCodeForTokens("code", "https://x/cb")).rejects.toThrow(/refresh_token/);
+    });
+
+    it("exchangeCodeForTokens throws when access_token is missing", async () => {
+      mockFetchJson(200, { refresh_token: "r", expires_in: 3600 });
+
+      await expect(exchangeCodeForTokens("code", "https://x/cb")).rejects.toThrow(/access_token/);
+    });
+
+    it("exchangeCodeForTokens returns parsed tokens when complete", async () => {
+      mockFetchJson(200, {
+        access_token: "a",
+        refresh_token: "r",
+        expires_in: 3600,
+        token_type: "bearer",
+      });
+
+      const tokens = await exchangeCodeForTokens("code", "https://x/cb");
+      expect(tokens.accessToken).toBe("a");
+      expect(tokens.refreshToken).toBe("r");
+      expect(tokens.expiresAt).toBeGreaterThan(Date.now());
+    });
+
+    it("refreshAccessToken throws when refresh_token is missing in response", async () => {
+      mockFetchJson(200, { access_token: "a", expires_in: 3600 });
+
+      await expect(refreshAccessToken("old-refresh")).rejects.toThrow(/refresh_token/);
     });
   });
 

@@ -8,6 +8,7 @@
 import { CoachAgentV2 } from "../coach-v2/index.js";
 import { TelegramBot } from "./telegram.js";
 import { getIntegration } from "../integrations/registry.js";
+import { inspectStoredTokens, isWhoopOAuthConfigured } from "../integrations/whoop/oauth.js";
 
 type CommandHandler = (agent: CoachAgentV2, bot: TelegramBot, args: string) => Promise<string>;
 
@@ -18,6 +19,7 @@ export const COMMANDS: Record<string, CommandHandler> = {
   help: handleHelp,
   restart: handleRestart,
   reauth: handleReauth,
+  whoopstatus: handleWhoopStatus,
 };
 
 const HELP_TEXT = `**How to Use IronClaude**
@@ -51,6 +53,7 @@ Just talk to me naturally! Here's what I can help with:
 
 🛠️ **Diagnostics**
 • \`/debug why didn't the AM reminder fire yesterday?\` — read-only system inspection
+• \`/whoopstatus\` — check the on-disk state of the Whoop token file
 
 💬 **General**
 • Ask me anything about training, form, recovery
@@ -84,6 +87,76 @@ async function handleReauth(
   const authUrl = integration.getAuthUrl(redirectUri);
 
   return `Click the link below to re-authorize ${integration.name}:\n\n${authUrl}`;
+}
+
+/**
+ * /whoopstatus - Report the on-disk state of the Whoop token file.
+ *
+ * Diagnostic for "Whoop tokens not configured" errors: surfaces whether
+ * /reauth actually persisted both access and refresh tokens.
+ */
+async function handleWhoopStatus(
+  _agent: CoachAgentV2,
+  _bot: TelegramBot,
+  _args: string
+): Promise<string> {
+  const lines: string[] = ["Whoop integration status:"];
+
+  const credsConfigured = isWhoopOAuthConfigured();
+  lines.push(`${credsConfigured ? "✓" : "✗"} Client credentials configured`);
+  if (!credsConfigured) {
+    lines.push("Set WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET, then /reauth.");
+    return lines.join("\n");
+  }
+
+  let inspection;
+  try {
+    inspection = await inspectStoredTokens();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    lines.push(`✗ Failed to read tokens file: ${message}`);
+    return lines.join("\n");
+  }
+
+  if (!inspection.fileExists) {
+    lines.push("✗ state/whoop/tokens.json does not exist");
+    lines.push("Run /reauth to authorize Whoop.");
+    return lines.join("\n");
+  }
+  lines.push("✓ state/whoop/tokens.json exists");
+
+  if (!inspection.parseable) {
+    lines.push("✗ tokens.json is not valid JSON");
+    lines.push("Run /reauth to overwrite.");
+    return lines.join("\n");
+  }
+
+  lines.push(`${inspection.hasAccessToken ? "✓" : "✗"} Access token present`);
+  lines.push(`${inspection.hasRefreshToken ? "✓" : "✗"} Refresh token present`);
+
+  if (inspection.expiresAt !== undefined) {
+    const now = Date.now();
+    const deltaMs = inspection.expiresAt - now;
+    const deltaMin = Math.round(deltaMs / 60000);
+    if (deltaMs > 0) {
+      lines.push(`Access token expires in ${deltaMin} min`);
+    } else {
+      lines.push(`Access token expired ${Math.abs(deltaMin)} min ago`);
+    }
+  }
+
+  if (inspection.updatedAt) {
+    lines.push(`Last updated: ${inspection.updatedAt}`);
+  }
+
+  if (!inspection.hasRefreshToken) {
+    lines.push("");
+    lines.push(
+      "⚠ Missing refresh token. Whoop usually only returns one when the auth request has the `offline` scope and your developer app is registered for it."
+    );
+  }
+
+  return lines.join("\n");
 }
 
 async function handleRestart(
