@@ -21,8 +21,8 @@ export const SKILLS: Skill[] = [
   {
     name: "plan-week",
     description:
-      "Generate the weekly training plan. Load when the athlete asks to plan their week, " +
-      "when state/planning-pending.md is present, or when prompted by the Sunday cron to generate a plan.",
+      "Generate the weekly training plan. Load when the athlete asks to plan their week " +
+      "or when replying to the Sunday cron's planning questions.",
     file: "plan-week.md",
   },
   {
