@@ -203,9 +203,6 @@ async function processMessage(
       // Unknown commands fall through to the agent as natural language
     }
 
-    // The v2 router inspects state/planning-pending.md internally to choose
-    // the planner handler — no need to check here.
-
     // Handle natural language — send to the coach with status updates
     const messageId = await bot.sendMessage("🧠 _Thinking..._", "MarkdownV2");
 

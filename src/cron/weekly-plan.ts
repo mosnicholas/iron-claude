@@ -7,20 +7,14 @@
  *
  * Flow:
  * 1. Generate retrospective for the ending week
- * 2. Create state/planning-pending.md signal file
- * 3. Ask planning questions via the coach handler (recorded in message history)
- * 4. User responds via Telegram
- * 5. Webhook router detects signal file, dispatches to the planner handler
- * 6. Planner generates the plan and deletes the signal file
+ * 2. Ask planning questions via the coach handler (recorded in message history)
+ * 3. User responds via Telegram; coach picks up the plan-week skill from history
  */
 
-import { writeFileSync, mkdirSync, existsSync } from "fs";
-import { join } from "path";
 import { createCoachAgentV2 } from "../coach-v2/index.js";
 import { createTelegramBot } from "../bot/telegram.js";
 import { getCurrentWeek, getNextWeek, getWeekDays, getTimezone } from "../utils/date.js";
 import { runCronTask, type CronResult } from "./runner.js";
-import { REPO_DIR } from "../storage/repo-sync.js";
 
 function formatWeekDaysInfo(week: string): string {
   const days = getWeekDays(week);
@@ -58,18 +52,9 @@ export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
       await agent.runRetrospective(`Generate the retrospective for week ${endingWeek}.`);
       console.log(`[weekly-plan] Retro generated for ${endingWeek}`);
 
-      // Step 2: Create planning signal file
-      const stateDir = join(REPO_DIR, "state");
-      if (!existsSync(stateDir)) {
-        mkdirSync(stateDir, { recursive: true });
-      }
-      const signalPath = join(REPO_DIR, "state", "planning-pending.md");
-      writeFileSync(signalPath, `week: ${nextWeek}\ncreated: ${new Date().toISOString()}\n`);
-      console.log(`[weekly-plan] Created planning signal for ${nextWeek}`);
-
-      // Step 3: Ask planning questions
+      // Step 2: Ask planning questions
       const response = await agent.chat(
-        "You are starting the weekly planning flow. Ask 2-3 short coaching questions for next week — fatigue, schedule, focus areas. Do NOT generate the plan yet — wait for the athlete's response."
+        `You are starting the weekly planning flow for ${nextWeek}. Ask 2-3 short coaching questions — fatigue, schedule, focus areas. Do NOT generate the plan yet — wait for the athlete's response, then load the plan-week skill.`
       );
       await bot.sendMessageSafe(response.message);
 
