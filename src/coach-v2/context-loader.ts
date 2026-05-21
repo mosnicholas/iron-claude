@@ -27,6 +27,8 @@ export interface CoachContext {
   messageHistory: string;
   /** Carry-forward summary from the nightly compaction job, or null */
   conversationSummary: string | null;
+  /** Today's nutrition rollup — one-line summary or null if no meals logged */
+  nutritionToday: string | null;
   /** Date info */
   dateInfo: ReturnType<typeof getDateInfoTZAware>;
 }
@@ -58,8 +60,28 @@ export function loadCoachContext(repoPath: string, timezone: string): CoachConte
     weekProgress: buildWeekProgress(repoPath, week),
     messageHistory: formatRecentMessagesForPrompt(50),
     conversationSummary,
+    nutritionToday: extractNutritionRollup(todayWorkout),
     dateInfo,
   };
+}
+
+/**
+ * Pull the rolled-up daily macros out of today's file frontmatter so the
+ * coach can give "you're at X, need Y more" feedback without re-reading the
+ * full file via a tool call.
+ */
+function extractNutritionRollup(todayWorkout: string | null): string | null {
+  if (!todayWorkout) return null;
+  const { frontmatter } = parseFrontmatter(todayWorkout);
+  const protein = frontmatter.protein_g;
+  const kcal = frontmatter.kcal;
+  if (protein === undefined && kcal === undefined) return null;
+  const parts: string[] = [];
+  if (typeof protein === "number") parts.push(`${protein}g protein`);
+  if (typeof kcal === "number") parts.push(`${kcal} kcal`);
+  if (typeof frontmatter.carbs_g === "number") parts.push(`${frontmatter.carbs_g}g carbs`);
+  if (typeof frontmatter.fat_g === "number") parts.push(`${frontmatter.fat_g}g fat`);
+  return parts.join(", ");
 }
 
 /**
@@ -156,6 +178,9 @@ ${context.currentPlan ? truncate(context.currentPlan, 4000) : "(no plan saved fo
 
 ## Today's workout
 ${context.todayWorkout ? truncate(context.todayWorkout, 2000) : "(no workout file for today yet)"}
+
+## Today's nutrition rollup
+${context.nutritionToday ?? "(no meals logged today)"}
 
 ## This week's progress
 ${context.weekProgress}
