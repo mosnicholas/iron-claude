@@ -9,10 +9,14 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "./schema.js";
 
+// Tests may inject an in-memory Pool (e.g. pg-mem) by calling
+// `__setTestPool()`. When set, both `getPool()` and `getDb()` use it.
+let testPool: Pool | null = null;
 let pool: Pool | null = null;
 let cachedDb: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 export function getPool(): Pool {
+  if (testPool) return testPool;
   if (pool) return pool;
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -36,4 +40,14 @@ export async function closeDb(): Promise<void> {
     pool = null;
     cachedDb = null;
   }
+}
+
+/**
+ * Test-only: install an in-memory Pool (e.g. pg-mem) and reset the cached
+ * Drizzle client so subsequent `getDb()` calls return a client bound to it.
+ * Pass `null` to clear.
+ */
+export function __setTestPool(testPoolArg: Pool | null): void {
+  testPool = testPoolArg;
+  cachedDb = null;
 }

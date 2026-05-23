@@ -794,3 +794,12 @@ export function getStorage(): DbStorage {
   if (!cached) cached = new DbStorage();
   return cached;
 }
+
+/**
+ * Test-only: reset the cached singleton so the next `getStorage()` call returns
+ * a fresh instance bound to whatever `getDb()` returns now (e.g. an in-memory
+ * pool installed via `__setTestPool`).
+ */
+export function __resetStorageCache(): void {
+  cached = null;
+}

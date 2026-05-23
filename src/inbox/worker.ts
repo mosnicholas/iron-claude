@@ -30,7 +30,30 @@ import {
   setEventUserId,
   backoffDelayMs,
 } from "./storage.js";
-import { runAgentTurn } from "./agent-turn.js";
+import { runAgentTurn as defaultRunAgentTurn } from "./agent-turn.js";
+import type { TelegramBot } from "../bot/telegram.js";
+
+// ── Dependency injection for tests ────────────────────────────────────────────
+// Tests can swap the agent turn handler so they don't hit the real LLM. In
+// production this is the actual `runAgentTurn` from ./agent-turn.js.
+export interface RunAgentTurnFn {
+  (input: { user: User; update: TelegramUpdate; bot: TelegramBot }): Promise<void>;
+}
+
+let injectedRunAgentTurn: RunAgentTurnFn | null = null;
+let injectedCreateBot: ((chatId: string) => TelegramBot) | null = null;
+
+/** Test-only: inject a mock agent-turn handler. Pass null to reset. */
+export function __setRunAgentTurn(fn: RunAgentTurnFn | null): void {
+  injectedRunAgentTurn = fn;
+}
+
+/** Test-only: inject a bot factory (so tests don't need real Telegram creds). */
+export function __setCreateBotForChat(
+  fn: ((chatId: string) => TelegramBot) | null
+): void {
+  injectedCreateBot = fn;
+}
 
 const DEFAULT_BUSY_INTERVAL_MS = 250;
 const DEFAULT_IDLE_INTERVAL_MS = 2_000;
@@ -128,8 +151,10 @@ async function handleTelegramEvent(event: InboxEvent): Promise<void> {
   }
 
   try {
-    const bot = createTelegramBotForChat(String(chatId));
-    await runAgentTurn({ user, update, bot });
+    const botFactory = injectedCreateBot ?? createTelegramBotForChat;
+    const runTurn = injectedRunAgentTurn ?? defaultRunAgentTurn;
+    const bot = botFactory(String(chatId));
+    await runTurn({ user, update, bot });
   } finally {
     await releaseAdvisoryLock(user.id);
   }
