@@ -1,71 +1,60 @@
 /**
- * Daily Compaction Cron Job
+ * Daily compaction — per-user logic. Dispatched at 03:00 local time via
+ * pg-boss `daily-compaction.tick` → `daily-compaction.user`.
  *
- * Once a day, per user, distill the last 48h of chat down to a carry-forward
- * summary so each new day starts with a clean message buffer but doesn't lose
- * context (pains, focus areas, in-flight discussions).
+ * Distills the last 48h of chat into a carry-forward summary so each day
+ * starts with a clean message buffer without losing context (pains, focus
+ * areas, in-flight discussions). Without this, the prompt window rolls over
+ * mid-conversation and the agent contradicts itself.
  *
- * Without this, the prompt window (50 messages) eventually rolls over
- * mid-conversation — that's exactly the bug that produced the "goblet
- * squats are up next" contradiction.
- *
- * Schedule: 03:00 local time daily (well past any normal workout window).
- *
- * Multi-tenant: iterates active users; transcripts now live in the `messages`
- * table indefinitely (no archive file). After summarizing, we clear the
- * per-user message buffer.
+ * Transcripts live in the `messages` table indefinitely; we just delete
+ * messages older than the watermark we summarized to.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 import { formatTranscript, type StoredMessage } from "../bot/message-history.js";
 import { getToday } from "../utils/date.js";
-import { runCronForEachUser, type CronResult } from "./runner.js";
 import type { Message } from "../db/schema.js";
+import type { JobCtx } from "../jobs/handlers.js";
 
 const SUMMARY_MODEL = "claude-haiku-4-5";
-const COMPACTION_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
+const COMPACTION_WINDOW_MS = 48 * 60 * 60 * 1000;
 
-export async function runDailyCompaction(): Promise<CronResult> {
-  return runCronForEachUser(
-    "daily-compaction",
-    async ({ user, storage }) => {
-      const timezone = user.timezone;
-      const today = getToday(timezone);
+export async function processDailyCompactionForUser({
+  user,
+  storage,
+}: JobCtx): Promise<{ success: boolean; message?: string; error?: string }> {
+  const timezone = user.timezone;
+  const today = getToday(timezone);
 
-      const cutoff = Date.now() - COMPACTION_WINDOW_MS;
-      const rows = await storage.getMessagesSince(user.id, cutoff);
-      if (rows.length === 0) {
-        return { success: true, message: "No messages to compact" };
-      }
+  const cutoff = Date.now() - COMPACTION_WINDOW_MS;
+  const rows = await storage.getMessagesSince(user.id, cutoff);
+  if (rows.length === 0) {
+    return { success: true, message: "No messages to compact" };
+  }
 
-      // Anchor the deletion to the latest ts we summarized. Any messages
-      // added concurrently by the inbox worker between this getMessagesSince
-      // and the clearMessages below will have a newer ts and survive.
-      const watermark = rows.reduce(
-        (latest, row) => (row.ts > latest ? row.ts : latest),
-        rows[0].ts
-      );
-
-      const stored = rows.map(rowToStored);
-      const previousSummaryRow = await storage.readConversationSummary(user.id);
-      const previousSummary = previousSummaryRow?.body ?? null;
-
-      const transcript = formatTranscript(stored);
-      const summary = await summarizerImpl(transcript, previousSummary, today);
-
-      await storage.writeConversationSummary(user.id, summary, today, rows.length);
-      await storage.clearMessages(user.id, watermark);
-
-      return {
-        success: true,
-        message: `Compacted ${rows.length} messages → conversation summary (${today})`,
-      };
-    },
-    {
-      // Don't notify the user — this is a silent housekeeping job.
-      requireProfile: false,
-    }
+  // Anchor the delete to the latest ts we summarized — any message added
+  // concurrently between getMessagesSince and clearMessages will have a
+  // newer ts and survive the prune.
+  const watermark = rows.reduce(
+    (latest, row) => (row.ts > latest ? row.ts : latest),
+    rows[0].ts
   );
+
+  const stored = rows.map(rowToStored);
+  const previousSummaryRow = await storage.readConversationSummary(user.id);
+  const previousSummary = previousSummaryRow?.body ?? null;
+
+  const transcript = formatTranscript(stored);
+  const summary = await summarizerImpl(transcript, previousSummary, today);
+
+  await storage.writeConversationSummary(user.id, summary, today, rows.length);
+  await storage.clearMessages(user.id, watermark);
+
+  return {
+    success: true,
+    message: `Compacted ${rows.length} messages → conversation summary (${today})`,
+  };
 }
 
 function rowToStored(row: Message): StoredMessage {
@@ -135,10 +124,7 @@ Rules:
   return text;
 }
 
-// Test seam — `summarizerImpl` is the indirection point. Tests stub it via
-// `__setSummarizerForTests` so they don't need a real ANTHROPIC_API_KEY (and
-// to deterministically control timing for the "messages added during
-// summarization survive the clear" test).
+// Test seam — stub the LLM call in tests via `__setSummarizerForTests`.
 type Summarizer = (
   transcript: string,
   previousSummary: string | null,
@@ -150,9 +136,3 @@ let summarizerImpl: Summarizer = summarizeTranscript;
 export function __setSummarizerForTests(fn: Summarizer | null): void {
   summarizerImpl = fn ?? summarizeTranscript;
 }
-
-// Kept for any legacy import paths.
-export const __testing = {
-  summarizeTranscript,
-  formatTranscriptForTest: (msgs: StoredMessage[]): string => formatTranscript(msgs),
-};

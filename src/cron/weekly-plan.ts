@@ -1,15 +1,14 @@
 /**
- * Weekly Planning Cron Job
+ * Weekly planning — per-user logic. Dispatched Sunday 8pm via
+ * pg-boss `weekly-plan.tick` → `weekly-plan.user`.
  *
- * For each active user, initiates the weekly planning flow by generating a
- * retrospective first, then asking the user questions before generating the
- * plan.
- * Schedule: Sunday at 8:00pm (user's timezone)
- *
- * Flow:
+ * Flow per user:
  * 1. Generate retrospective for the ending week
- * 2. Ask planning questions via the coach handler (recorded in message history)
+ * 2. Ask planning questions via the coach (recorded in message history)
  * 3. User responds via Telegram; coach picks up the plan-week skill from history
+ *
+ * The tick fires at scheduled time + tz; we anchor 6h back inside this fn
+ * so a delayed Sunday→Monday run still targets the right week.
  */
 
 import { createCoachAgentV2 } from "../coach-v2/index.js";
@@ -17,7 +16,7 @@ import { getStorage } from "../storage/db.js";
 import { sendBotMessageForUser } from "../bot/telegram-for-user.js";
 import { getUserById } from "../auth/identity.js";
 import { getCurrentWeekAt, getNextWeek, getWeekDays } from "../utils/date.js";
-import { runCronForEachUser, type CronResult } from "./runner.js";
+import type { JobCtx } from "../jobs/handlers.js";
 
 function formatWeekDaysInfo(week: string): string {
   const days = getWeekDays(week);
@@ -31,59 +30,52 @@ ${lines.join("\n")}
 Use these exact dates when creating the plan. Each day in the plan should include the day name and date (e.g., "## Monday, ${days[0].dateHuman} — Push").`;
 }
 
-export type WeeklyPlanResult = CronResult & { week?: string };
-
-/**
- * Anchor the cron 6 hours back so a delayed Sunday-night run (e.g. the job is
- * queued at 20:00 but doesn't fire until 02:30 Monday) still computes the
- * same `endingWeek`. Without this, a job delayed across Sunday→Monday
- * midnight would generate a retro for the just-started week and a plan for
- * the week after — skipping the actual upcoming week entirely.
- */
 const CRON_ANCHOR_OFFSET_MS = 6 * 60 * 60 * 1000;
 
-export async function runWeeklyPlan(asOf: Date = new Date()): Promise<WeeklyPlanResult> {
-  const anchor = new Date(asOf.getTime() - CRON_ANCHOR_OFFSET_MS);
-  return runCronForEachUser(
-    "weekly-plan",
-    async ({ user, storage, sendMessage }) => {
-      const timezone = user.timezone;
-      const endingWeek = getCurrentWeekAt(anchor, timezone);
-      const nextWeek = getNextWeek(endingWeek);
+export async function processWeeklyPlanForUser({
+  user,
+  storage,
+  sendMessage,
+}: JobCtx): Promise<{ success: boolean; message?: string; error?: string }> {
+  const timezone = user.timezone;
+  const anchor = new Date(Date.now() - CRON_ANCHOR_OFFSET_MS);
+  const endingWeek = getCurrentWeekAt(anchor, timezone);
+  const nextWeek = getNextWeek(endingWeek);
 
-      const existingPlan = await storage.readWeeklyPlan(user.id, nextWeek);
-      if (existingPlan) {
-        await sendMessage(`📋 Plan for ${nextWeek} already exists — no action needed.`);
-        return { success: true, message: `Plan already exists for ${nextWeek}` };
-      }
+  const existingPlan = await storage.readWeeklyPlan(user.id, nextWeek);
+  if (existingPlan) {
+    await sendMessage(`📋 Plan for ${nextWeek} already exists — no action needed.`);
+    return { success: true, message: `Plan already exists for ${nextWeek}` };
+  }
 
-      const agent = createCoachAgentV2({ userId: user.id, timezone });
+  const agent = createCoachAgentV2({ userId: user.id, timezone });
 
-      // Step 1: Generate retrospective for the ending week
-      console.log(`[weekly-plan] user=${user.id} generating retro for ending week: ${endingWeek}`);
-      await agent.runRetrospective(`Generate the retrospective for week ${endingWeek}.`);
-      console.log(`[weekly-plan] user=${user.id} retro generated for ${endingWeek}`);
+  // Step 1: Generate retrospective for the ending week
+  console.log(`[weekly-plan] user=${user.id} generating retro for ending week: ${endingWeek}`);
+  await agent.runRetrospective(`Generate the retrospective for week ${endingWeek}.`);
+  console.log(`[weekly-plan] user=${user.id} retro generated for ${endingWeek}`);
 
-      // Step 2: Ask planning questions
-      const response = await agent.chat(
-        `You are starting the weekly planning flow for ${nextWeek}. Ask 2-3 short coaching questions — fatigue, schedule, focus areas. Do NOT generate the plan yet — wait for the athlete's response, then load the plan-week skill.`
-      );
-      await sendMessage(response.message);
-
-      return {
-        success: true,
-        message: `Generated retro for ${endingWeek}, asked planning questions for ${nextWeek}`,
-      };
-    },
-    { errorMessage: 'Had trouble starting the planning process. Say "plan my week" to try again.' }
+  // Step 2: Ask planning questions
+  const response = await agent.chat(
+    `You are starting the weekly planning flow for ${nextWeek}. Ask 2-3 short coaching questions — fatigue, schedule, focus areas. Do NOT generate the plan yet — wait for the athlete's response, then load the plan-week skill.`
   );
+  await sendMessage(response.message);
+
+  return {
+    success: true,
+    message: `Generated retro for ${endingWeek}, asked planning questions for ${nextWeek}`,
+  };
 }
 
 /**
  * Force regenerate a plan for a specific user (overwrites existing).
- * Routes through the planner.
+ * Invoked by the bot's manual replan flow, not by the cron — kept here so
+ * it can share the `formatWeekDaysInfo` helper with the planner.
  */
-export async function forceRegeneratePlan(userId: string, week: string): Promise<WeeklyPlanResult> {
+export async function forceRegeneratePlan(
+  userId: string,
+  week: string
+): Promise<{ success: boolean; week?: string; message?: string; error?: string }> {
   console.log(`[weekly-plan] user=${userId} force regenerating plan for ${week}`);
 
   try {
@@ -93,7 +85,6 @@ export async function forceRegeneratePlan(userId: string, week: string): Promise
     }
     const timezone = user.timezone;
 
-    // Touch storage to ensure the plan target user exists / catches early DB errors.
     void getStorage();
 
     const agent = createCoachAgentV2({ userId, timezone });

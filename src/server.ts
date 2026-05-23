@@ -4,17 +4,17 @@
  * Entry point for the Fly.io deployment. Boot order:
  *   1. Init Sentry (no-op without SENTRY_DSN).
  *   2. Mount middleware (json, cookies).
- *   3. Register routes (health, webhook → inbox, cron, auth, integrations).
- *   4. Register integration factories (e.g. Whoop). Per-user instances are
- *      built on demand by the webhook/OAuth/cron handlers.
+ *   3. Register HTTP routes (health, webhook → inbox, auth, integrations).
+ *   4. Register integration factories (Whoop). Per-user instances are built
+ *      on demand by the webhook/OAuth/cron handlers.
  *   5. Start the inbox worker that drains `inbox_events`.
- *   6. Listen.
+ *   6. Start pg-boss (durable job queue) — registers cron schedules + workers.
+ *   7. Listen.
  */
 
 import express from "express";
 import cookieParser from "cookie-parser";
 import { webhookHandler } from "./handlers/webhook.js";
-import { createCronHandler } from "./handlers/cron.js";
 import { authRoutes } from "./handlers/auth.js";
 import { stripeWebhookHandler } from "./handlers/stripe.js";
 import { createCheckoutSessionHandler } from "./handlers/checkout.js";
@@ -29,6 +29,8 @@ import { getWhoopIntegration } from "./integrations/whoop/integration.js";
 import { startWorker } from "./inbox/worker.js";
 import { initSentry } from "./observability/sentry.js";
 import { getBacklogCount } from "./inbox/storage.js";
+import { getBoss, stopBoss } from "./jobs/queue.js";
+import { registerJobHandlers, registerJobSchedules } from "./jobs/handlers.js";
 
 initSentry();
 
@@ -58,18 +60,6 @@ app.get("/health", async (_req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.post("/api/webhook", webhookHandler);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Cron endpoints (called by an external scheduler like cron-job.org)
-// ─────────────────────────────────────────────────────────────────────────────
-
-app.get("/api/cron/daily-reminder", createCronHandler("daily-reminder"));
-app.get("/api/cron/weekly-plan", createCronHandler("weekly-plan"));
-app.get("/api/cron/check-reminders", createCronHandler("check-reminders"));
-app.get("/api/cron/refresh-tokens", createCronHandler("refresh-tokens"));
-app.get("/api/cron/daily-compaction", createCronHandler("daily-compaction"));
-app.get("/api/cron/trial-expiry", createCronHandler("trial-expiry"));
-app.get("/api/cron/log-retention", createCronHandler("log-retention"));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth (Supabase phone OTP + sessions)
@@ -109,17 +99,27 @@ const server = app.listen(PORT, () => {
 const worker = startWorker();
 console.log("[server] inbox worker started");
 
+// Start pg-boss (durable job queue) and register schedules + handlers.
+// Errors here are fatal — if cron's broken we want to know at boot, not
+// silently miss reminders for hours.
+void (async () => {
+  try {
+    const boss = await getBoss();
+    await registerJobHandlers(boss);
+    await registerJobSchedules(boss);
+    console.log("[server] pg-boss schedules + handlers registered");
+  } catch (err) {
+    console.error("[server] pg-boss start failed:", err);
+    process.exit(1);
+  }
+})();
+
 function shutdown(signal: string): void {
   console.log(`[server] received ${signal}, shutting down`);
-  worker
-    .stop()
-    .catch(() => {
-      /* swallow */
-    })
-    .finally(() => {
-      server.close(() => process.exit(0));
-      setTimeout(() => process.exit(1), 10_000).unref();
-    });
+  Promise.allSettled([worker.stop(), stopBoss()]).finally(() => {
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 10_000).unref();
+  });
 }
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));

@@ -21,10 +21,13 @@ export { TelegramBot, createTelegramBot, createTelegramBotForChat } from "./bot/
 export { executeCommand, commandExists, COMMANDS } from "./bot/commands.js";
 export { transcribeVoice, isVoiceTranscriptionAvailable } from "./bot/voice.js";
 
-// Cron
-export { runDailyReminder } from "./cron/daily-reminder.js";
-export { runWeeklyPlan, forceRegeneratePlan } from "./cron/weekly-plan.js";
-export { runDailyCompaction } from "./cron/daily-compaction.js";
+// Cron — the per-user processors are wired to pg-boss in src/jobs/.
+// Exporting just the manual-replan entry point that the bot still calls.
+export { forceRegeneratePlan } from "./cron/weekly-plan.js";
+
+// Jobs
+export { getBoss } from "./jobs/queue.js";
+export { registerJobHandlers, registerJobSchedules } from "./jobs/handlers.js";
 
 // Auth
 export {

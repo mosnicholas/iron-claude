@@ -27,7 +27,7 @@ This guide deploys IronClaude to Fly.io with a Supabase-hosted Postgres database
          Postgres (Supabase)    Anthropic   Integrations
 ```
 
-Cron is **external** (cron-job.org or similar) — it hits `/api/cron/*` endpoints over HTTPS. The container no longer runs Supercronic.
+Cron is **in-process via pg-boss** — a durable Postgres-backed job queue that boots with the server. No external scheduler required; pg-boss handles scheduling, retries, and multi-instance dispatch off the same Supabase Postgres.
 
 ---
 
@@ -69,7 +69,6 @@ fly secrets set \
   SUPABASE_SERVICE_ROLE_KEY='eyJ...' \
   INTEGRATION_TOKEN_KEY="$(openssl rand -base64 32)" \
   SESSION_SECRET="$(openssl rand -base64 32)" \
-  CRON_SECRET="$(openssl rand -hex 32)" \
   TIMEZONE='America/New_York'
 ```
 
@@ -102,7 +101,6 @@ The `STRIPE_*` block is optional — self-hosters who don't want billing can ski
 | `SUPABASE_SERVICE_ROLE_KEY`  | Used server-side to verify OTP and manage users         |
 | `INTEGRATION_TOKEN_KEY`      | AES key for encrypting integration OAuth tokens at rest |
 | `SESSION_SECRET`             | Signs session cookies for the (forthcoming) web UI      |
-| `CRON_SECRET`                | Bearer token for `/api/cron/*` endpoints                |
 | `TIMEZONE`                   | IANA TZ name, e.g. `America/New_York`                   |
 
 Optional: `SENTRY_DSN`, `GEMINI_API_KEY`, `WHOOP_CLIENT_ID`, `WHOOP_CLIENT_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_REGULAR`, `STRIPE_PRICE_ATHLETE`.
@@ -148,27 +146,47 @@ curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
 
 ---
 
-## Step 5: Configure external cron
+## Step 5: Cron (handled by pg-boss in-process)
 
-Sign up for [cron-job.org](https://cron-job.org/) (or any HTTPS cron). Add these jobs — all with header `Authorization: Bearer $CRON_SECRET`:
+There is no external cron service to configure. The server boots `pg-boss` on startup, which:
 
-| Endpoint                          | Schedule                | Purpose                                  |
-|-----------------------------------|-------------------------|------------------------------------------|
-| `GET /api/cron/check-reminders`   | Every hour              | Fire any per-user reminders that are due |
-| `GET /api/cron/daily-reminder`    | Weekdays at 6am (local) | Morning workout nudge                    |
-| `GET /api/cron/weekly-plan`       | Sundays at 8pm (local)  | Generate next week's plan                |
-| `GET /api/cron/daily-compaction`  | Daily at 3am            | Compact agent context per user           |
-| `GET /api/cron/refresh-tokens`    | Daily                   | Refresh integration OAuth tokens         |
-| `GET /api/cron/trial-expiry`      | Daily at 9am            | Flip expired trials and notify users     |
+- Creates its own `pgboss` schema in Supabase Postgres (migrations run automatically)
+- Registers cron schedules at boot (see `src/jobs/handlers.ts::registerJobSchedules`)
+- Runs the scheduler + worker in the same Node process; multi-instance safe via Postgres locks
 
-Example:
+Current schedules (interpreted in `TIMEZONE` env var, defaults to `America/New_York`):
 
-```bash
-curl -H "Authorization: Bearer $CRON_SECRET" \
-  https://<your-app>.fly.dev/api/cron/check-reminders
+| Tick (cron-syntax)        | Job                       | Purpose                              |
+|---------------------------|---------------------------|--------------------------------------|
+| `0 6 * * 1-5`             | `daily-reminder.tick`     | Mon-Fri 6am morning workout nudge    |
+| `0 20 * * 0`              | `weekly-plan.tick`        | Sunday 8pm — generate next week      |
+| `0 * * * *`               | `check-reminders.tick`    | Hourly per-user reminder sweep       |
+| `0 3 * * 3`               | `refresh-tokens.tick`     | Wed 3am — refresh integration tokens |
+| `0 3 * * *`               | `daily-compaction.tick`   | Daily 3am — compact conversations    |
+| `0 9 * * *`               | `trial-expiry.tick`       | Daily 9am — flip expired trials      |
+| `0 4 * * *`               | `log-retention.tick`      | Daily 4am — prune tool_call_log      |
+
+Each `.tick` fans out one `*.user` job per active user, with its own retry budget (typically 2-3 attempts with exponential backoff). Failed jobs are visible in `pgboss.job` (state `failed` or `cancelled`).
+
+### Inspecting jobs
+
+```sql
+-- Recent failures by queue
+SELECT name, COUNT(*), MAX(completed_on) AS last_seen
+FROM pgboss.job
+WHERE state = 'failed' AND created_on > now() - interval '1 day'
+GROUP BY name ORDER BY last_seen DESC;
+
+-- A specific user's job history
+SELECT name, state, retry_count, output, completed_on
+FROM pgboss.job
+WHERE data->>'userId' = '<uuid>'
+ORDER BY created_on DESC LIMIT 20;
 ```
 
-cron-job.org lets you set timezones per job, so "weekdays at 6am" matches the user's local morning even though Fly's clock is UTC.
+### Changing a schedule
+
+Edit `src/jobs/handlers.ts::registerJobSchedules` and redeploy. `pg-boss` upserts schedules on boot — no migration required.
 
 ---
 
@@ -257,7 +275,7 @@ Or merge to `main` if CI deploys are enabled.
 
 **`/health` shows growing `backlog`** — worker isn't draining. Check `fly logs` for exceptions in `src/inbox/worker.ts`. A stuck advisory lock will release after `lock_expires_at`; until then that user's messages queue.
 
-**`Unauthorized` on cron endpoints** — caller didn't send `Authorization: Bearer $CRON_SECRET`, or the secret you configured in cron-job.org doesn't match what Fly has. Re-check with `fly secrets list`.
+**Cron jobs not running** — check the Fly logs for `[pg-boss] started` at boot and `[jobs] schedules registered`. If you don't see those, the worker didn't start. Query `pgboss.schedule` to confirm schedules are present.
 
 **Bot doesn't reply** — verify the webhook with `getWebhookInfo`. Then check Sentry / `fly logs` for handler errors.
 

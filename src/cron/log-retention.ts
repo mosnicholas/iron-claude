@@ -12,9 +12,14 @@
 import { lt } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { toolCallLog } from "../db/schema.js";
-import type { CronResult } from "./runner.js";
 
-export async function runLogRetention(): Promise<CronResult> {
+export interface LogRetentionResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+export async function runLogRetention(): Promise<LogRetentionResult> {
   // Not user-scoped — just prune old rows globally.
   const db = getDb();
   const cutoff30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);

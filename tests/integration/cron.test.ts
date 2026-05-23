@@ -24,10 +24,34 @@ import { createMemDb, getMemDb, seedUser } from "../helpers/pgmem.js";
 import { getDb } from "../../src/db/client.js";
 import { channelIdentities, messages } from "../../src/db/schema.js";
 import { getStorage } from "../../src/storage/db.js";
-import { runCheckReminders } from "../../src/cron/check-reminders.js";
-import { runDailyCompaction, __setSummarizerForTests } from "../../src/cron/daily-compaction.js";
-import { runWeeklyPlan } from "../../src/cron/weekly-plan.js";
+import { processCheckRemindersForUser } from "../../src/cron/check-reminders.js";
+import {
+  processDailyCompactionForUser,
+  __setSummarizerForTests,
+} from "../../src/cron/daily-compaction.js";
+import { processWeeklyPlanForUser } from "../../src/cron/weekly-plan.js";
 import { getCurrentWeekAt } from "../../src/utils/date.js";
+import { runForEachUser } from "../helpers/run-cron.js";
+
+// Test wrappers — production drives these per-user processors via pg-boss
+// fan-out (src/jobs/handlers.ts); tests want the old "iterate users" shape
+// for end-to-end assertions, so we drive them through a small helper that
+// preserves the original semantics.
+const runCheckReminders = () =>
+  runForEachUser(processCheckRemindersForUser, { requireProfile: false });
+const runDailyCompaction = () =>
+  runForEachUser(processDailyCompactionForUser, { requireProfile: false });
+const runWeeklyPlan = (asOf?: Date) => {
+  // The weekly-plan processor reads "now" via Date.now(); to simulate a
+  // delayed cron we monkey-patch the global Date for the duration of the
+  // call. Keep this localized to the test.
+  if (!asOf) return runForEachUser(processWeeklyPlanForUser);
+  const realNow = Date.now;
+  Date.now = () => asOf.getTime();
+  return runForEachUser(processWeeklyPlanForUser).finally(() => {
+    Date.now = realNow;
+  });
+};
 
 describe("cron reliability", () => {
   const ORIG_ENV = { ...process.env };

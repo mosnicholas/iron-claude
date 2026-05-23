@@ -38,8 +38,11 @@ const { getDb } = await import("../../src/db/client.js");
 const { messages } = await import("../../src/db/schema.js");
 const { getDateInfoTZAware } = await import("../../src/utils/date.js");
 const { formatRecentMessagesForPrompt } = await import("../../src/bot/message-history.js");
-const { runDailyReminder } = await import("../../src/cron/daily-reminder.js");
+const { processDailyReminderForUser } = await import("../../src/cron/daily-reminder.js");
 const { getStorage } = await import("../../src/storage/db.js");
+const { runForEachUser } = await import("../helpers/run-cron.js");
+
+const runDailyReminder = () => runForEachUser(processDailyReminderForUser);
 
 describe("per-user timezone handling", () => {
   beforeAll(() => {
