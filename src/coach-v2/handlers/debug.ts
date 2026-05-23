@@ -10,9 +10,10 @@ import { READ_TOOLS } from "../tools/reads.js";
 import { DEBUG_TOOLS } from "../tools/debug.js";
 import type { SystemBlock } from "../llm-client.js";
 import { DEBUG_BASE_PROMPT } from "../prompts/debug.js";
+import { getStorage } from "../../storage/db.js";
 
 export interface DebugHandlerOptions {
-  repoPath: string;
+  userId: string;
   timezone: string;
   message: string;
   model?: string;
@@ -32,7 +33,7 @@ export async function runDebug(opts: DebugHandlerOptions): Promise<HarnessResult
     system,
     userMessage: opts.message,
     tools: DEBUG_TOOLSET,
-    ctx: { repoPath: opts.repoPath, timezone: opts.timezone, handler: "debug" },
+    ctx: { userId: opts.userId, storage: getStorage(), timezone: opts.timezone, handler: "debug" },
     onStatus: opts.onStatus,
     onTextDelta: opts.onTextDelta,
     onThinkingDelta: opts.onThinkingDelta,

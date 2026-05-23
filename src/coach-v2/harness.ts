@@ -92,7 +92,7 @@ export async function runHarness(opts: HarnessOptions): Promise<HarnessResult> {
     usage.cache_read_input_tokens += response.usage.cache_read_input_tokens ?? 0;
     usage.cache_creation_input_tokens += response.usage.cache_creation_input_tokens ?? 0;
 
-    logMeta(ctx.repoPath, {
+    logMeta(ctx.userId, {
       ts: new Date().toISOString(),
       turn: turnId,
       handler: ctx.handler,
@@ -154,7 +154,7 @@ async function executeTool(
 
   if (!tool) {
     const error = `Unknown tool: ${block.name}`;
-    logToolCall(ctx.repoPath, {
+    logToolCall(ctx.userId, {
       ts: new Date().toISOString(),
       turn: ctx.turnId,
       handler: ctx.handler,
@@ -176,7 +176,7 @@ async function executeTool(
   const parsed = tool.schema.safeParse(block.input);
   if (!parsed.success) {
     const error = `Invalid input for ${block.name}: ${z.prettifyError(parsed.error)}`;
-    logToolCall(ctx.repoPath, {
+    logToolCall(ctx.userId, {
       ts: new Date().toISOString(),
       turn: ctx.turnId,
       handler: ctx.handler,
@@ -196,7 +196,7 @@ async function executeTool(
 
   try {
     const result = await tool.handler(parsed.data, ctx);
-    logToolCall(ctx.repoPath, {
+    logToolCall(ctx.userId, {
       ts: new Date().toISOString(),
       turn: ctx.turnId,
       handler: ctx.handler,
@@ -213,7 +213,7 @@ async function executeTool(
     };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    logToolCall(ctx.repoPath, {
+    logToolCall(ctx.userId, {
       ts: new Date().toISOString(),
       turn: ctx.turnId,
       handler: ctx.handler,

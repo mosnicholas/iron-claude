@@ -8,7 +8,6 @@
  * through the coach handler; the model loads the relevant skill via load_skill.
  */
 
-import { syncRepo } from "../storage/repo-sync.js";
 import { getTimezone } from "../utils/date.js";
 import { route, type RoutedResult } from "./router.js";
 import { runCoach } from "./handlers/coach.js";
@@ -16,8 +15,7 @@ import type { HarnessResult } from "./harness.js";
 import type { ImageBlock } from "./llm-client.js";
 
 export interface CoachV2Config {
-  /** Test override — skips GitHub sync. */
-  repoPath?: string;
+  userId: string;
   timezone?: string;
   model?: string;
   /** Hard cap on tool turns. */
@@ -31,16 +29,6 @@ export interface CoachV2Response {
   mode?: string;
 }
 
-async function ensureRepo(config: CoachV2Config): Promise<string> {
-  if (config.repoPath) return config.repoPath;
-  const repoName = process.env.DATA_REPO;
-  const token = process.env.GITHUB_TOKEN;
-  if (!repoName || !token) {
-    throw new Error("DATA_REPO and GITHUB_TOKEN must be set");
-  }
-  return syncRepo({ repoUrl: `https://github.com/${repoName}.git`, token });
-}
-
 function toResponse(r: HarnessResult, mode?: string): CoachV2Response {
   return {
     message: r.message,
@@ -51,9 +39,9 @@ function toResponse(r: HarnessResult, mode?: string): CoachV2Response {
 }
 
 export class CoachAgentV2 {
-  constructor(private config: CoachV2Config = {}) {}
+  constructor(private config: CoachV2Config) {}
 
-  /** Conversational entry point — used by the Telegram webhook. */
+  /** Conversational entry point — used by the inbox worker. */
   async chat(
     message: string,
     onStatus?: (s: string) => void,
@@ -61,10 +49,9 @@ export class CoachAgentV2 {
     onThinkingDelta?: (delta: string) => void,
     images?: ImageBlock[]
   ): Promise<CoachV2Response> {
-    const repoPath = await ensureRepo(this.config);
     const timezone = this.config.timezone ?? getTimezone();
     const result: RoutedResult = await route({
-      repoPath,
+      userId: this.config.userId,
       timezone,
       message,
       images,
@@ -94,10 +81,9 @@ export class CoachAgentV2 {
   }
 
   private async runCoachWithMode(message: string, mode: string): Promise<CoachV2Response> {
-    const repoPath = await ensureRepo(this.config);
     const timezone = this.config.timezone ?? getTimezone();
     const r = await runCoach({
-      repoPath,
+      userId: this.config.userId,
       timezone,
       message,
       model: this.config.model,
@@ -107,6 +93,6 @@ export class CoachAgentV2 {
   }
 }
 
-export function createCoachAgentV2(config?: CoachV2Config): CoachAgentV2 {
+export function createCoachAgentV2(config: CoachV2Config): CoachAgentV2 {
   return new CoachAgentV2(config);
 }

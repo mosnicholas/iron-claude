@@ -1,14 +1,17 @@
 /**
  * Cron Task Runner
  *
- * Shared boilerplate for all cron jobs: profile check, error handling,
- * result formatting, and user notification on failure.
+ * Shared boilerplate for all per-user cron jobs: iterates active users, runs
+ * the handler against each, captures errors per-user so one bad user doesn't
+ * stop the rest.
  */
 
-import { createTelegramBot } from "../bot/telegram.js";
-import { createGitHubStorage } from "../storage/github.js";
-import type { GitHubStorage } from "../storage/github.js";
-import type { TelegramBot } from "../bot/telegram.js";
+import { getStorage } from "../storage/db.js";
+import type { Storage } from "../storage/storage.js";
+import type { User } from "../db/schema.js";
+import { listActiveUsers } from "../auth/identity.js";
+import { sendBotMessageForUser } from "../bot/telegram-for-user.js";
+import { captureError } from "../observability/sentry.js";
 
 export interface CronResult {
   success: boolean;
@@ -16,51 +19,77 @@ export interface CronResult {
   error?: string;
 }
 
-export interface CronContext {
-  bot: TelegramBot;
-  storage: GitHubStorage;
+export interface PerUserCronContext {
+  user: User;
+  storage: Storage;
+  sendMessage: (text: string) => Promise<void>;
 }
 
 /**
- * Run a cron task with standard boilerplate:
- * - Initialize bot and storage
- * - Check profile exists (skip if not)
- * - Catch errors and notify user on failure
+ * Run a cron task for every active user in the DB. Each user's handler runs
+ * in isolation — a failure on one user is captured to Sentry and the loop
+ * continues.
  */
-export async function runCronTask(
+export async function runCronForEachUser(
   name: string,
-  handler: (ctx: CronContext) => Promise<CronResult>,
-  options?: { errorMessage?: string; requireProfile?: boolean }
+  handler: (ctx: PerUserCronContext) => Promise<CronResult>,
+  options?: { requireProfile?: boolean; errorMessage?: string }
 ): Promise<CronResult> {
-  const { errorMessage, requireProfile = true } = options || {};
-  console.log(`[${name}] Starting`);
+  const { requireProfile = true, errorMessage } = options ?? {};
+  console.log(`[${name}] Starting per-user cron`);
 
-  try {
-    const bot = createTelegramBot();
-    const storage = createGitHubStorage();
-
-    if (requireProfile) {
-      const profile = await storage.readProfile();
-      if (!profile) {
-        console.log(`[${name}] No profile found, skipping`);
-        return { success: true, message: "No profile configured, skipping" };
-      }
-    }
-
-    return await handler({ bot, storage });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error(`[${name}] Error:`, msg);
-
-    if (errorMessage) {
-      try {
-        const bot = createTelegramBot();
-        await bot.sendMessage(`⚠️ ${errorMessage}`);
-      } catch {
-        // Ignore notification failure
-      }
-    }
-
-    return { success: false, error: msg };
+  const storage = getStorage();
+  const users = await listActiveUsers();
+  if (users.length === 0) {
+    console.log(`[${name}] No active users; nothing to do`);
+    return { success: true, message: "No active users" };
   }
+
+  let okCount = 0;
+  let skipCount = 0;
+  let failCount = 0;
+  const failures: string[] = [];
+
+  for (const user of users) {
+    try {
+      if (requireProfile) {
+        const profile = await storage.readProfile(user.id);
+        if (!profile) {
+          console.log(`[${name}] user=${user.id} no profile, skipping`);
+          skipCount += 1;
+          continue;
+        }
+      }
+
+      const result = await handler({
+        user,
+        storage,
+        sendMessage: (text) => sendBotMessageForUser(user, text),
+      });
+      if (result.success) okCount += 1;
+      else {
+        failCount += 1;
+        failures.push(`${user.id}: ${result.error ?? "unknown"}`);
+      }
+    } catch (err) {
+      failCount += 1;
+      failures.push(`${user.id}: ${err instanceof Error ? err.message : String(err)}`);
+      captureError(err, { userId: user.id, handler: name });
+      if (errorMessage) {
+        try {
+          await sendBotMessageForUser(user, `⚠️ ${errorMessage}`);
+        } catch {
+          /* swallow */
+        }
+      }
+    }
+  }
+
+  const summary = `users=${users.length} ok=${okCount} skip=${skipCount} fail=${failCount}`;
+  console.log(`[${name}] ${summary}`);
+  return {
+    success: failCount === 0,
+    message: summary,
+    error: failures.length ? failures.join("; ") : undefined,
+  };
 }

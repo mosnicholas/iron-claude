@@ -1,106 +1,52 @@
 /**
  * Message History Store
  *
- * Stores recent Telegram messages for context when Claude responds.
- * Messages are persisted to disk so history survives restarts/deploys.
+ * Postgres-backed conversation history, scoped per user. Replaces the
+ * old /tmp JSON file store. All read/write functions are async since
+ * they hit the DB.
  */
 
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { getStorage } from "../storage/db.js";
+import type { Message } from "../db/schema.js";
 
 interface StoredMessage {
   text: string;
-  timestamp: string; // ISO string for JSON serialization
+  timestamp: string; // ISO string for backward compatibility
   isFromUser: boolean; // true = user message, false = bot response
 }
 
-const MAX_MESSAGES = 50;
-const MAX_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours — tides over a daily compaction window
-const HISTORY_FILE = "/tmp/iron-claude-message-history.json";
+const DEFAULT_RECENT_COUNT = 10;
+const DEFAULT_MAX_AGE_MS = 48 * 60 * 60 * 1000; // 48 hours — tides over a daily compaction window
 
-// In-memory store for recent messages
-let messageHistory: StoredMessage[] = [];
-let loaded = false;
-
-/**
- * Load message history from disk (lazy, once)
- */
-function ensureLoaded(): void {
-  if (loaded) return;
-  loaded = true;
-
-  try {
-    if (existsSync(HISTORY_FILE)) {
-      const data = readFileSync(HISTORY_FILE, "utf-8");
-      messageHistory = JSON.parse(data) as StoredMessage[];
-      // Filter out expired messages on load
-      const now = Date.now();
-      messageHistory = messageHistory.filter(
-        (msg) => now - new Date(msg.timestamp).getTime() < MAX_AGE_MS
-      );
-    }
-  } catch (err) {
-    console.log("[message-history] Could not load history from disk:", err);
-    messageHistory = [];
-  }
+function rowToStored(row: Message): StoredMessage {
+  return {
+    text: row.text,
+    timestamp: row.ts.toISOString(),
+    isFromUser: row.role === "user",
+  };
 }
 
 /**
- * Persist message history to disk
+ * Add a message to the history.
  */
-function saveToDisk(): void {
-  try {
-    writeFileSync(HISTORY_FILE, JSON.stringify(messageHistory), "utf-8");
-  } catch (err) {
-    console.log("[message-history] Could not save history to disk:", err);
-  }
+export async function addMessage(
+  userId: string,
+  role: "user" | "assistant",
+  text: string,
+  meta?: Record<string, unknown>
+): Promise<void> {
+  await getStorage().addMessage(userId, { role, text, meta });
 }
 
 /**
- * Add a message to the history
+ * Format recent messages for inclusion in a prompt.
  */
-export function addMessage(text: string, isFromUser: boolean): void {
-  ensureLoaded();
-
-  messageHistory.push({
-    text,
-    timestamp: new Date().toISOString(),
-    isFromUser,
-  });
-
-  // Trim to max size
-  while (messageHistory.length > MAX_MESSAGES) {
-    messageHistory.shift();
-  }
-
-  saveToDisk();
-}
-
-/**
- * Get recent messages for context
- * @param count Number of messages to return (default: 10)
- * @returns Array of recent messages, oldest first
- */
-function getRecentMessages(count = 10): StoredMessage[] {
-  ensureLoaded();
-
-  const now = Date.now();
-
-  // Filter out expired messages
-  const validMessages = messageHistory.filter(
-    (msg) => now - new Date(msg.timestamp).getTime() < MAX_AGE_MS
-  );
-
-  // Return the last N messages
-  return validMessages.slice(-count);
-}
-
-/**
- * Format recent messages for inclusion in a prompt
- * @param count Number of messages to include
- * @returns Formatted string of recent messages
- */
-export function formatRecentMessagesForPrompt(count = 10): string {
-  const messages = getRecentMessages(count);
+export async function formatRecentMessagesForPrompt(
+  userId: string,
+  count = DEFAULT_RECENT_COUNT
+): Promise<string> {
+  const rows = await getStorage().getRecentMessages(userId, count);
+  const messages = rows.map(rowToStored);
 
   if (messages.length === 0) {
     return "";
@@ -126,17 +72,22 @@ Use this context to maintain conversation continuity.`;
 }
 
 /**
- * Return every stored message (filtered by max-age) — used by the nightly
- * compaction job to archive the day's transcript and generate a summary.
+ * Return every stored message since `sinceMs` (defaults to last 48h) — used
+ * by the nightly compaction job to archive the day's transcript and generate
+ * a summary.
  */
-export function getAllMessages(): StoredMessage[] {
-  ensureLoaded();
-  const now = Date.now();
-  return messageHistory.filter((msg) => now - new Date(msg.timestamp).getTime() < MAX_AGE_MS);
+export async function getAllMessages(
+  userId: string,
+  sinceMs?: number
+): Promise<StoredMessage[]> {
+  const cutoff = sinceMs ?? Date.now() - DEFAULT_MAX_AGE_MS;
+  const rows = await getStorage().getMessagesSince(userId, cutoff);
+  return rows.map(rowToStored);
 }
 
 /**
  * Render messages as a markdown transcript suitable for archiving to GitHub.
+ * Pure function — no DB access.
  */
 export function formatTranscript(messages: StoredMessage[]): string {
   return messages
@@ -149,13 +100,11 @@ export function formatTranscript(messages: StoredMessage[]): string {
 }
 
 /**
- * Clear all stored messages from memory and disk. Called after a successful
- * compaction so each day starts fresh.
+ * Clear all stored messages for a user. Called after a successful compaction
+ * so each day starts fresh.
  */
-export function clearMessages(): void {
-  ensureLoaded();
-  messageHistory = [];
-  saveToDisk();
+export async function clearMessages(userId: string): Promise<void> {
+  await getStorage().clearMessages(userId);
 }
 
 export type { StoredMessage };

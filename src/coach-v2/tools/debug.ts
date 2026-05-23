@@ -2,17 +2,17 @@
  * Debug tools — gated to /debug mode only.
  *
  * These tools let the coach diagnose its own behavior over Telegram:
- * Fly logs, deploy history, our own structured tool-call trace, recent
- * commits in fitness-data, and an escape-hatch file reader.
+ * Fly logs, deploy history, and our own structured tool-call trace.
  *
  * Read-only by design. Debug mode never writes — it just reads and reports.
  */
 
-import { existsSync, readFileSync } from "fs";
 import { spawnSync } from "child_process";
-import { join } from "path";
 import { z } from "zod";
+import { and, desc, eq, gte } from "drizzle-orm";
 import { defineTool } from "../tool.js";
+import { getDb } from "../../db/client.js";
+import { toolCallLog } from "../../db/schema.js";
 
 const FLY_API_BASE = "https://api.machines.dev/v1";
 
@@ -153,100 +153,52 @@ export const getRecentDeploys = defineTool({
 export const getToolCallLog = defineTool({
   name: "get_tool_call_log",
   description:
-    "Read the structured tool-call trace from state/tool-calls.jsonl. " +
-    "Each line records one tool call: timestamp, handler, tool, args, duration, ok, commit. " +
+    "Query the structured tool-call trace from the database. " +
+    "Each row records one tool call: timestamp, handler, tool, args, duration, ok, error. " +
     "This is the source of truth for 'did the coach actually save my exercise?'",
   schema: z.object({
     since: z.string().optional().describe("ISO timestamp lower bound. Defaults to last 24h."),
     filter: z
       .string()
       .optional()
-      .describe("Substring filter on tool name or content (e.g. 'log_exercise')"),
+      .describe("Substring filter on tool name or args content (e.g. 'log_exercise')"),
     limit: z.number().int().min(1).max(500).default(100),
   }),
   handler: async (input, ctx) => {
-    const path = join(ctx.repoPath, "state", "tool-calls.jsonl");
-    if (!existsSync(path)) return "No tool-call log yet.";
-    const since = input.since ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const lines = readFileSync(path, "utf-8")
-      .split("\n")
-      .filter((l) => l.trim());
-    const parsed = lines.map((l) => {
-      try {
-        return JSON.parse(l) as Record<string, unknown>;
-      } catch {
-        return null;
-      }
-    });
-    let filtered = parsed.filter(
-      (e): e is Record<string, unknown> => e !== null && (e.ts as string) >= since
-    );
+    const sinceDate = input.since
+      ? new Date(input.since)
+      : new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const limit = input.limit ?? 100;
+
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(toolCallLog)
+      .where(and(eq(toolCallLog.userId, ctx.userId), gte(toolCallLog.ts, sinceDate)))
+      .orderBy(desc(toolCallLog.ts))
+      .limit(limit);
+
+    let filtered = rows;
     if (input.filter) {
       const needle = input.filter.toLowerCase();
-      filtered = filtered.filter((e) => JSON.stringify(e).toLowerCase().includes(needle));
+      filtered = rows.filter((r) => {
+        const argsStr = r.args ? JSON.stringify(r.args).toLowerCase() : "";
+        return r.tool.toLowerCase().includes(needle) || argsStr.includes(needle);
+      });
     }
-    filtered = filtered.slice(-(input.limit ?? 100));
-    if (filtered.length === 0) return `No matching tool calls since ${since}.`;
-    return filtered.map((e) => JSON.stringify(e)).join("\n");
-  },
-});
 
-export const getCronHistory = defineTool({
-  name: "get_cron_history",
-  description:
-    "Recent cron run results from the tool-call log (filtered to LLM calls in cron handlers).",
-  schema: z.object({
-    task: z.enum(["daily-reminder", "weekly-plan", "check-reminders", "refresh-tokens"]).optional(),
-    days: z.number().int().min(1).max(30).default(7),
-  }),
-  handler: async (input, ctx) => {
-    const path = join(ctx.repoPath, "state", "tool-calls.jsonl");
-    if (!existsSync(path)) return "No cron history available (tool-call log empty).";
-    const cutoff = new Date(Date.now() - (input.days ?? 7) * 24 * 60 * 60 * 1000).toISOString();
-    const lines = readFileSync(path, "utf-8")
-      .split("\n")
-      .filter((l) => l.trim());
-    const parsed = lines
-      .map((l) => {
-        try {
-          return JSON.parse(l) as Record<string, unknown>;
-        } catch {
-          return null;
-        }
+    if (filtered.length === 0) {
+      return `No matching tool calls since ${sinceDate.toISOString()}.`;
+    }
+
+    return filtered
+      .map((r) => {
+        const ts = r.ts instanceof Date ? r.ts.toISOString() : String(r.ts);
+        const base = `[${ts}] turn:${r.turnId} handler:${r.handler ?? "?"} tool:${r.tool} ok=${r.ok} ${r.ms ?? "?"}ms`;
+        return r.error ? `${base} error=${r.error}` : base;
       })
-      .filter((e): e is Record<string, unknown> => e !== null && (e.ts as string) >= cutoff);
-    const cronEntries = parsed.filter((e) => {
-      const handler = e.handler as string;
-      if (!handler?.startsWith("cron-")) return false;
-      if (input.task && !handler.includes(input.task)) return false;
-      return true;
-    });
-    if (cronEntries.length === 0) return `No cron history in the last ${input.days ?? 7} days.`;
-    return cronEntries.map((e) => JSON.stringify(e)).join("\n");
+      .join("\n");
   },
 });
 
-export const readRepoFile = defineTool({
-  name: "read_repo_file",
-  description:
-    "Escape hatch — read any file in the fitness-data repo by relative path. " +
-    "Use for arbitrary inspection during debugging.",
-  schema: z.object({
-    path: z.string().describe("Path relative to repo root, e.g. 'state/reminders.json'"),
-  }),
-  handler: async (input, ctx) => {
-    if (input.path.includes("..")) return "Refusing path traversal.";
-    const full = join(ctx.repoPath, input.path);
-    if (!existsSync(full)) return `Not found: ${input.path}`;
-    return readFileSync(full, "utf-8").slice(0, 16_000);
-  },
-});
-
-export const DEBUG_TOOLS = [
-  getFlyLogs,
-  getFlyAppStatus,
-  getRecentDeploys,
-  getToolCallLog,
-  getCronHistory,
-  readRepoFile,
-];
+export const DEBUG_TOOLS = [getFlyLogs, getFlyAppStatus, getRecentDeploys, getToolCallLog];

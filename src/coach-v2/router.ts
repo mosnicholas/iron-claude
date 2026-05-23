@@ -13,7 +13,7 @@ import type { ImageBlock } from "./llm-client.js";
 export type Mode = "coach" | "debug";
 
 export interface RouterContext {
-  repoPath: string;
+  userId: string;
   timezone: string;
   /** The (raw) message text from the user. */
   message: string;

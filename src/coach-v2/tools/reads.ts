@@ -4,18 +4,16 @@
  * The model uses these to look up profile, history, and progression data
  * on demand. PRs and learnings are NOT pre-loaded; the model calls these
  * tools when topic-relevant.
+ *
+ * All reads go through `ctx.storage` (DB-backed) — no filesystem access.
  */
 
-import { existsSync, readFileSync, readdirSync } from "fs";
-import { join } from "path";
 import { z } from "zod";
+import { stringify as stringifyYaml } from "yaml";
 import { defineTool } from "../tool.js";
-import { parseFrontmatter } from "../../integrations/storage.js";
 import { getCurrentWeek, getWeekDays } from "../../utils/date.js";
-
-function readIfExists(path: string): string | null {
-  return existsSync(path) ? readFileSync(path, "utf-8") : null;
-}
+import type { Pr } from "../../db/schema.js";
+import type { WorkoutWithDetails } from "../../storage/storage.js";
 
 const NotFound = (what: string): string =>
   `${what} not found. The athlete may not have configured this yet.`;
@@ -27,8 +25,8 @@ export const getProfile = defineTool({
     "Call this when the topic touches preferences, coaching style, schedule constraints, or equipment.",
   schema: z.object({}),
   handler: async (_input, ctx) => {
-    const content = readIfExists(join(ctx.repoPath, "profile.md"));
-    return content ?? NotFound("profile.md");
+    const profile = await ctx.storage.readProfile(ctx.userId);
+    return profile?.body ?? NotFound("profile.md");
   },
 });
 
@@ -39,10 +37,45 @@ export const getLearnings = defineTool({
     "Call when topic touches injuries, recurring issues, exercise opinions, recovery patterns, or coaching feedback.",
   schema: z.object({}),
   handler: async (_input, ctx) => {
-    const content = readIfExists(join(ctx.repoPath, "learnings.md"));
-    return content ?? NotFound("learnings.md");
+    const body = await ctx.storage.readLearnings(ctx.userId);
+    return body ?? NotFound("learnings.md");
   },
 });
+
+/**
+ * Format the PR table into a YAML-ish block the model can read.
+ * Groups by exercise: current first, then history (most recent first).
+ */
+function formatPRs(rows: Pr[]): string {
+  if (rows.length === 0) return NotFound("prs.yaml");
+  const byExercise = new Map<string, { current: Pr | null; history: Pr[] }>();
+  for (const pr of rows) {
+    const bucket = byExercise.get(pr.exercise) ?? { current: null, history: [] };
+    if (pr.isCurrent && !bucket.current) {
+      bucket.current = pr;
+    } else {
+      bucket.history.push(pr);
+    }
+    byExercise.set(pr.exercise, bucket);
+  }
+  // Render as a YAML-shaped string for readability.
+  const tree: Record<string, unknown> = {};
+  for (const [exercise, { current, history }] of byExercise.entries()) {
+    const entry: Record<string, unknown> = {};
+    if (current) {
+      const e1 = current.estimated1Rm != null ? ` (e1RM ${current.estimated1Rm})` : "";
+      entry.current = `${current.weight} x ${current.reps}${e1} on ${current.date}`;
+    }
+    if (history.length > 0) {
+      entry.history = history.map((h) => {
+        const e1 = h.estimated1Rm != null ? ` (e1RM ${h.estimated1Rm})` : "";
+        return `${h.weight} x ${h.reps}${e1} on ${h.date}`;
+      });
+    }
+    tree[exercise] = entry;
+  }
+  return stringifyYaml(tree);
+}
 
 export const getPRs = defineTool({
   name: "get_prs",
@@ -52,8 +85,8 @@ export const getPRs = defineTool({
     "when discussing strength progression. After heavy lifts, check this to detect new PRs.",
   schema: z.object({}),
   handler: async (_input, ctx) => {
-    const content = readIfExists(join(ctx.repoPath, "prs.yaml"));
-    return content ?? NotFound("prs.yaml");
+    const rows = await ctx.storage.readPRs(ctx.userId);
+    return formatPRs(rows);
   },
 });
 
@@ -70,10 +103,59 @@ export const getPlan = defineTool({
   }),
   handler: async (input, ctx) => {
     const week = input.week || getCurrentWeek(ctx.timezone);
-    const content = readIfExists(join(ctx.repoPath, "weeks", week, "plan.md"));
-    return content ?? `No plan exists for ${week}.`;
+    const plan = await ctx.storage.readWeeklyPlan(ctx.userId, week);
+    return plan?.body ?? `No plan exists for ${week}.`;
   },
 });
+
+/**
+ * Render a workout pulled from the DB back into the markdown shape the model
+ * was trained to expect: frontmatter block, # heading, ## Exercises, then per
+ * exercise `### Name` with `- weight x reps (RPE x)` lines and an optional
+ * ## Summary footer.
+ */
+function renderWorkoutMarkdown(workout: WorkoutWithDetails): string {
+  const fm: Record<string, unknown> = {
+    date: String(workout.date),
+    type: workout.type,
+    status: workout.status,
+  };
+  if (workout.startedAt) fm.started = workout.startedAt;
+  if (workout.finishedAt) fm.finished = workout.finishedAt;
+  if (workout.durationMinutes != null) fm.duration_minutes = workout.durationMinutes;
+  if (workout.energyLevel != null) fm.energy_level = workout.energyLevel;
+  if (workout.location) fm.location = workout.location;
+  if (workout.plannedDay) fm.planned_day = workout.plannedDay;
+  const snap = workout.recoverySnapshot as Record<string, unknown> | null;
+  if (snap) {
+    const rec = snap.recovery as Record<string, unknown> | undefined;
+    const sleep = snap.sleep as Record<string, unknown> | undefined;
+    if (rec?.recovery_score != null) fm.recovery_score = rec.recovery_score;
+    if (sleep?.sleep_hours != null) fm.sleep_hours = sleep.sleep_hours;
+  }
+
+  const fmBlock = `---\n${stringifyYaml(fm).trimEnd()}\n---\n`;
+  const heading = `# ${String(workout.date)}\n`;
+
+  const exerciseBlocks: string[] = [];
+  for (const ex of workout.exercises) {
+    const setLines = ex.sets.map((s) => {
+      const w = s.weight != null ? s.weight : s.weightText;
+      const rpe = s.rpe != null ? ` (RPE ${s.rpe})` : "";
+      return `- ${w} x ${s.reps}${rpe}`;
+    });
+    const notes = ex.notes ? `\n_${ex.notes}_` : "";
+    exerciseBlocks.push(`### ${ex.name}\n${setLines.join("\n")}${notes}`);
+  }
+  const exercisesSection =
+    exerciseBlocks.length > 0
+      ? `## Exercises\n\n${exerciseBlocks.join("\n\n")}\n`
+      : `## Exercises\n\n`;
+
+  const summarySection = workout.summary ? `\n## Summary\n\n${workout.summary}\n` : "";
+
+  return `${fmBlock}\n${heading}\n${exercisesSection}${summarySection}`;
+}
 
 export const getWorkout = defineTool({
   name: "get_workout",
@@ -84,41 +166,19 @@ export const getWorkout = defineTool({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Format: YYYY-MM-DD"),
   }),
   handler: async (input, ctx) => {
-    // Find which week this date belongs to by walking weeks/.
-    const weeksDir = join(ctx.repoPath, "weeks");
-    if (!existsSync(weeksDir)) return `No weeks directory yet.`;
-    for (const week of readdirSync(weeksDir)) {
-      const candidate = join(weeksDir, week, `${input.date}.md`);
-      if (existsSync(candidate)) {
-        return readFileSync(candidate, "utf-8");
-      }
-    }
-    return `No workout logged on ${input.date}.`;
+    const workout = await ctx.storage.getWorkout(ctx.userId, input.date);
+    if (!workout) return `No workout logged on ${input.date}.`;
+    return renderWorkoutMarkdown(workout);
   },
 });
 
-interface WorkoutSummary {
+interface WorkoutSummaryOut {
   date: string;
   week: string;
   type: string;
   status: string;
   exercise_count?: number;
   prs_hit?: string[];
-}
-
-function listWorkoutFiles(repoPath: string): { week: string; date: string; path: string }[] {
-  const weeksDir = join(repoPath, "weeks");
-  if (!existsSync(weeksDir)) return [];
-  const out: { week: string; date: string; path: string }[] = [];
-  for (const week of readdirSync(weeksDir)) {
-    const weekPath = join(weeksDir, week);
-    for (const file of readdirSync(weekPath)) {
-      const m = file.match(/^(\d{4}-\d{2}-\d{2})\.md$/);
-      if (!m) continue;
-      out.push({ week, date: m[1], path: join(weekPath, file) });
-    }
-  }
-  return out.sort((a, b) => b.date.localeCompare(a.date));
 }
 
 export const getWorkouts = defineTool({
@@ -150,19 +210,10 @@ export const getWorkouts = defineTool({
     if (format === "adherence") {
       const week = input.week || getCurrentWeek(ctx.timezone);
       const days = getWeekDays(week);
-      const weekDir = join(ctx.repoPath, "weeks", week);
+      const rows = await ctx.storage.listWorkouts(ctx.userId, { isoWeek: week });
       const logged = new Map<string, { type: string; status: string }>();
-      if (existsSync(weekDir)) {
-        for (const file of readdirSync(weekDir)) {
-          const m = file.match(/^(\d{4}-\d{2}-\d{2})\.md$/);
-          if (!m) continue;
-          const raw = readFileSync(join(weekDir, file), "utf-8");
-          const { frontmatter } = parseFrontmatter(raw);
-          logged.set(m[1], {
-            type: (frontmatter.type as string) || "unknown",
-            status: (frontmatter.status as string) || "unknown",
-          });
-        }
+      for (const r of rows) {
+        logged.set(r.date, { type: r.type, status: r.status });
       }
       const out = days.map((d) => {
         const entry = logged.get(d.date);
@@ -178,23 +229,17 @@ export const getWorkouts = defineTool({
     cutoff.setDate(cutoff.getDate() - weeks * 7);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-    const summaries: WorkoutSummary[] = [];
-    for (const f of listWorkoutFiles(ctx.repoPath)) {
-      if (f.date < cutoffStr) continue;
-      const raw = readFileSync(f.path, "utf-8");
-      const { frontmatter } = parseFrontmatter(raw);
-      const exerciseMatches = raw.match(/^## .+/gm) || [];
+    // Pull a generous window; the DB returns most-recent first.
+    const all = await ctx.storage.listWorkouts(ctx.userId, { limit: weeks * 8 });
+    const summaries: WorkoutSummaryOut[] = [];
+    for (const r of all) {
+      if (r.date < cutoffStr) continue;
       summaries.push({
-        date: f.date,
-        week: f.week,
-        type: (frontmatter.type as string) || "unknown",
-        status: (frontmatter.status as string) || "unknown",
-        exercise_count: exerciseMatches.filter(
-          (h) => !/^## (Summary|Exercises|Notes|Whoop|Warm-up|Cool-down|Amendments)/i.test(h)
-        ).length,
-        prs_hit: ((frontmatter.prs_hit as { exercise: string }[] | undefined) || []).map(
-          (p) => p.exercise
-        ),
+        date: r.date,
+        week: r.isoWeek,
+        type: r.type,
+        status: r.status,
+        exercise_count: r.exerciseCount,
       });
     }
     if (summaries.length === 0) return `No workouts in the last ${weeks} weeks.`;
@@ -218,46 +263,22 @@ export const getExerciseHistory = defineTool({
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - weeks * 7);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
-    const needle = input.exercise.toLowerCase();
 
-    const hits: { date: string; type: string; section: string }[] = [];
-    for (const f of listWorkoutFiles(ctx.repoPath)) {
-      if (f.date < cutoffStr) continue;
-      const raw = readFileSync(f.path, "utf-8");
-      const { frontmatter, content } = parseFrontmatter(raw);
-      // Find the relevant ## sections in body.
-      const lines = content.split("\n");
-      let buffer: string[] = [];
-      let currentHeader: string | null = null;
-      const flush = () => {
-        if (currentHeader && currentHeader.toLowerCase().includes(needle)) {
-          hits.push({
-            date: f.date,
-            type: (frontmatter.type as string) || "unknown",
-            section: [currentHeader, ...buffer].join("\n").trim(),
-          });
-        }
-      };
-      for (const line of lines) {
-        if (line.startsWith("## ")) {
-          flush();
-          currentHeader = line.replace(/^##\s+/, "");
-          buffer = [];
-        } else if (currentHeader) {
-          buffer.push(line);
-        }
-      }
-      flush();
-      // Also search exercise list rows (markdown tables and bullets).
-      const tableHits = lines.filter((l) => l.toLowerCase().includes(needle) && /[|\-*]/.test(l));
-      for (const t of tableHits) {
-        hits.push({
-          date: f.date,
-          type: (frontmatter.type as string) || "unknown",
-          section: t.trim(),
-        });
-      }
-    }
+    // Pull a generous slice (up to 4× weekly cadence) and filter client-side by
+    // date; storage only knows about row count, not weeks.
+    const history = await ctx.storage.getExerciseHistory(ctx.userId, input.exercise, weeks * 4);
+    const hits = history
+      .filter((h) => h.date >= cutoffStr)
+      .map((h) => ({
+        date: h.date,
+        type: h.type,
+        sets: h.sets.map((s) => {
+          const rpe = s.rpe != null ? ` (RPE ${s.rpe})` : "";
+          return `${s.weight} x ${s.reps}${rpe}`;
+        }),
+        notes: h.notes ?? undefined,
+      }));
+
     if (hits.length === 0) {
       return `No instances of "${input.exercise}" in the last ${weeks} weeks.`;
     }

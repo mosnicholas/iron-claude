@@ -5,12 +5,11 @@
  * date) sit below the cache breakpoint.
  */
 
-import { existsSync, readFileSync, readdirSync } from "fs";
-import { join } from "path";
 import type { SystemBlock } from "./llm-client.js";
 import { getCurrentWeek, getDateInfoTZAware, getToday, getWeekDays } from "../utils/date.js";
-import { parseFrontmatter } from "../integrations/storage.js";
 import { formatRecentMessagesForPrompt } from "../bot/message-history.js";
+import { getStorage } from "../storage/db.js";
+import type { WorkoutWithDetails } from "../storage/storage.js";
 
 export interface CoachContext {
   /** profile.md content, or null if absent */
@@ -31,35 +30,77 @@ export interface CoachContext {
   dateInfo: ReturnType<typeof getDateInfoTZAware>;
 }
 
-export function loadCoachContext(repoPath: string, timezone: string): CoachContext {
+export async function loadCoachContext(
+  userId: string,
+  timezone: string
+): Promise<CoachContext> {
   const dateInfo = getDateInfoTZAware();
   const week = getCurrentWeek(timezone);
   const today = getToday(timezone);
+  const storage = getStorage();
 
-  const profilePath = join(repoPath, "profile.md");
-  const profile = existsSync(profilePath) ? readFileSync(profilePath, "utf-8") : null;
+  const [
+    profileRow,
+    planRow,
+    todayWorkoutRow,
+    summaryRow,
+    weekProgress,
+    messageHistory,
+  ] = await Promise.all([
+    storage.readProfile(userId),
+    storage.readWeeklyPlan(userId, week),
+    storage.getWorkout(userId, today),
+    storage.readConversationSummary(userId),
+    buildWeekProgress(userId, week),
+    formatRecentMessagesForPrompt(userId, 50),
+  ]);
 
-  const planPath = join(repoPath, "weeks", week, "plan.md");
-  const currentPlan = existsSync(planPath) ? readFileSync(planPath, "utf-8") : null;
-
-  const todayWorkoutPath = join(repoPath, "weeks", week, `${today}.md`);
-  const todayWorkout = existsSync(todayWorkoutPath)
-    ? readFileSync(todayWorkoutPath, "utf-8")
-    : null;
-
-  const summaryPath = join(repoPath, "state", "conversation-summary.md");
-  const conversationSummary = existsSync(summaryPath) ? readFileSync(summaryPath, "utf-8") : null;
+  const profile = profileRow?.body ?? null;
+  const coachingPriorities =
+    profileRow?.coachingPriorities ?? extractCoachingPriorities(profile);
 
   return {
     profile,
-    coachingPriorities: extractCoachingPriorities(profile),
-    todayWorkout,
-    currentPlan,
-    weekProgress: buildWeekProgress(repoPath, week),
-    messageHistory: formatRecentMessagesForPrompt(50),
-    conversationSummary,
+    coachingPriorities,
+    todayWorkout: todayWorkoutRow ? renderWorkoutForContext(todayWorkoutRow) : null,
+    currentPlan: planRow?.body ?? null,
+    weekProgress,
+    messageHistory,
+    conversationSummary: summaryRow?.body ?? null,
     dateInfo,
   };
+}
+
+/**
+ * Render a structured workout into a compact markdown snippet for the prompt:
+ * a small header followed by each exercise and its sets.
+ */
+function renderWorkoutForContext(workout: WorkoutWithDetails): string {
+  const lines: string[] = [];
+  lines.push(`# ${workout.date} — ${workout.type} (${workout.status})`);
+  if (workout.exercises.length === 0) {
+    lines.push("");
+    lines.push("(no exercises logged yet)");
+    return lines.join("\n");
+  }
+
+  for (const ex of workout.exercises) {
+    lines.push("");
+    lines.push(`## ${ex.name}`);
+    if (ex.sets.length === 0) {
+      lines.push("(no sets yet)");
+    } else {
+      for (const s of ex.sets) {
+        const weight = s.weight !== null ? `${s.weight}` : s.weightText ?? "BW";
+        const rpe = s.rpe !== null && s.rpe !== undefined ? ` @ RPE ${s.rpe}` : "";
+        lines.push(`- ${weight} x ${s.reps}${rpe}`);
+      }
+    }
+    if (ex.notes) {
+      lines.push(`notes: ${ex.notes}`);
+    }
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -100,25 +141,13 @@ function extractCoachingPriorities(profile: string | null): string {
     : "(no explicit coaching style block in profile — call get_profile for full details)";
 }
 
-function buildWeekProgress(repoPath: string, week: string): string {
+async function buildWeekProgress(userId: string, week: string): Promise<string> {
   const days = getWeekDays(week);
-  const weekDir = join(repoPath, "weeks", week);
+  const storage = getStorage();
+  const rows = await storage.listWeekDates(userId, week);
   const logged = new Map<string, { type: string; status: string }>();
-  if (existsSync(weekDir)) {
-    for (const file of readdirSync(weekDir)) {
-      const m = file.match(/^(\d{4}-\d{2}-\d{2})\.md$/);
-      if (!m) continue;
-      try {
-        const raw = readFileSync(join(weekDir, file), "utf-8");
-        const { frontmatter } = parseFrontmatter(raw);
-        logged.set(m[1], {
-          type: (frontmatter.type as string) || "unknown",
-          status: (frontmatter.status as string) || "unknown",
-        });
-      } catch {
-        // ignore
-      }
-    }
+  for (const r of rows) {
+    logged.set(r.date, { type: r.type, status: r.status });
   }
   return days
     .map((d) => {

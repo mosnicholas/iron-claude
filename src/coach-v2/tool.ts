@@ -9,11 +9,14 @@
 
 import { z, type ZodObject, type ZodRawShape } from "zod";
 import type { ToolDef } from "./llm-client.js";
+import type { Storage } from "../storage/storage.js";
 
 export interface ToolContext {
-  /** Absolute path to the local fitness-data clone */
-  repoPath: string;
-  /** Configured timezone (e.g. "America/New_York") */
+  /** ID of the user this turn belongs to */
+  userId: string;
+  /** Storage adapter (DB-backed) */
+  storage: Storage;
+  /** Configured timezone for the user (e.g. "America/New_York") */
   timezone: string;
   /** Stable id for the conversation turn — used for observability and idempotency */
   turnId: string;

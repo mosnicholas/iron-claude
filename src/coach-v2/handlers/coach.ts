@@ -17,9 +17,10 @@ import { REMINDER_TOOLS } from "../tools/reminders.js";
 import { SKILL_TOOLS } from "../tools/skills.js";
 import { buildCoachSystem, loadCoachContext } from "../context-loader.js";
 import { COACH_BASE_PROMPT } from "../prompts/coach.js";
+import { getStorage } from "../../storage/db.js";
 
 export interface CoachHandlerOptions {
-  repoPath: string;
+  userId: string;
   timezone: string;
   message: string;
   /** Optional images attached to this turn (e.g. a Telegram photo). */
@@ -34,10 +35,9 @@ export interface CoachHandlerOptions {
 const COACH_TOOLS = [...READ_TOOLS, ...WRITE_TOOLS, ...REMINDER_TOOLS, ...SKILL_TOOLS];
 
 export async function runCoach(opts: CoachHandlerOptions): Promise<HarnessResult> {
-  const ctx = loadCoachContext(opts.repoPath, opts.timezone);
-  const system = buildCoachSystem(ctx, COACH_BASE_PROMPT);
-  // When images are present, build a multimodal user turn (images first so the
-  // model has the visual context before reading the caption / question).
+  const storage = getStorage();
+  const coachCtx = await loadCoachContext(opts.userId, opts.timezone);
+  const system = buildCoachSystem(coachCtx, COACH_BASE_PROMPT);
   const userMessage =
     opts.images && opts.images.length > 0
       ? [...opts.images, { type: "text" as const, text: opts.message || "" }]
@@ -47,7 +47,7 @@ export async function runCoach(opts: CoachHandlerOptions): Promise<HarnessResult
     system,
     userMessage,
     tools: COACH_TOOLS,
-    ctx: { repoPath: opts.repoPath, timezone: opts.timezone, handler: "coach" },
+    ctx: { userId: opts.userId, storage, timezone: opts.timezone, handler: "coach" },
     onStatus: opts.onStatus,
     onTextDelta: opts.onTextDelta,
     onThinkingDelta: opts.onThinkingDelta,

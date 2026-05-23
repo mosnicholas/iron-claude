@@ -1,15 +1,10 @@
 /**
  * Reminder tools — schedule one-shot Telegram reminders.
- * Backed by GitHubStorage's reminders.json — checked hourly by the cron.
- *
- * Only `add_reminder` is exposed to the coach. The internal cleanup paths
- * (workout-timeout-check after complete_workout, hourly cron sweep) call
- * `storage.getReminders` / `storage.deleteReminder` directly.
+ * Stored in the `reminders` table; the hourly check-reminders cron sweeps it.
  */
 
 import { z } from "zod";
 import { defineTool } from "../tool.js";
-import { createGitHubStorage } from "../../storage/github.js";
 
 export const addReminder = defineTool({
   name: "add_reminder",
@@ -29,9 +24,13 @@ export const addReminder = defineTool({
       .optional()
       .describe("Why this reminder exists, e.g. 'workout-timeout-check'"),
   }),
-  handler: async (input) => {
-    const storage = createGitHubStorage();
-    const r = await storage.addReminder(input);
+  handler: async (input, ctx) => {
+    const r = await ctx.storage.addReminder(ctx.userId, {
+      triggerDate: input.triggerDate,
+      triggerHour: input.triggerHour,
+      message: input.message,
+      context: input.context ?? null,
+    });
     return `Scheduled reminder ${r.id} for ${r.triggerDate} ${r.triggerHour}:00.`;
   },
 });
