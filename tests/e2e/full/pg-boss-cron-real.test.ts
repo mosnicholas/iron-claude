@@ -1,5 +1,5 @@
 /**
- * Full e2e — real pg-boss fan-out, the part that pg-mem couldn't cover.
+ * Full e2e — real pg-boss fan-out against the testcontainers Postgres.
  *
  * Verifies the tick → user fan-out actually creates per-user jobs in the
  * `pgboss.job` table. Five users get seeded; we send check-reminders.tick

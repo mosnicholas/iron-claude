@@ -1,17 +1,17 @@
 /**
  * Test Environment Setup
  *
- * Spins up an in-memory Postgres via pg-mem, seeds a user with the canonical
- * fixture data, and returns a `TestEnv` the scenario tests use to drive the
- * real `CoachAgentV2` (Haiku model) without touching the filesystem or
- * GitHub.
+ * Reuses the testcontainers Postgres booted by jest-global-setup.ts, seeds a
+ * user with the canonical fixture data, and returns a `TestEnv` the scenario
+ * tests use to drive the real `CoachAgentV2` (Haiku model) without touching
+ * the filesystem.
  *
  * Scenario tests run against the real LLM (`claude-haiku-4-5`) — but every
  * persistence call goes through `DbStorage`, so the test asserts on DB rows
  * rather than file side effects.
  */
 
-import { createMemDb, seedUser, getMemDb } from "../helpers/pgmem.js";
+import { createMemDb, seedUser, getMemDb } from "../helpers/realpg.js";
 import { getStorage } from "../../src/storage/db.js";
 import { getCurrentWeek, getToday } from "../../src/utils/date.js";
 import { PROFILE, PRS, LEARNINGS, buildWeeklyPlan } from "./fixtures.js";
@@ -58,16 +58,16 @@ export interface TestEnv {
 let envInitialized = false;
 
 /**
- * Build a fresh test environment. Re-uses one pg-mem instance across calls
- * (creating a new instance per test would be slow); the `reset()` step rolls
- * the schema back to its post-migration state.
+ * Build a fresh test environment. Re-uses one Postgres pool across calls
+ * (creating a new container per test would be slow); the async `reset()` step
+ * TRUNCATEs every app table back to empty.
  */
 export async function setupTestEnv(options: TestEnvOptions = {}): Promise<TestEnv> {
   if (!envInitialized) {
     createMemDb();
     envInitialized = true;
   }
-  getMemDb().reset();
+  await getMemDb().reset();
   const userId = await seedUser({ displayName: "Test Athlete" });
   const currentWeek = getCurrentWeek();
   const today = getToday();

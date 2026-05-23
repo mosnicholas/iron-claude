@@ -9,7 +9,7 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "./schema.js";
 
-// Tests may inject an in-memory Pool (e.g. pg-mem) by calling
+// Tests inject a Pool pointed at the testcontainers Postgres via
 // `__setTestPool()`. When set, both `getPool()` and `getDb()` use it.
 let testPool: Pool | null = null;
 let pool: Pool | null = null;
@@ -43,9 +43,9 @@ export async function closeDb(): Promise<void> {
 }
 
 /**
- * Test-only: install an in-memory Pool (e.g. pg-mem) and reset the cached
- * Drizzle client so subsequent `getDb()` calls return a client bound to it.
- * Pass `null` to clear.
+ * Test-only: install a Pool (typically the testcontainers PG from
+ * `tests/helpers/realpg.ts`) and reset the cached Drizzle client so subsequent
+ * `getDb()` calls return a client bound to it. Pass `null` to clear.
  */
 export function __setTestPool(testPoolArg: Pool | null): void {
   testPool = testPoolArg;

@@ -8,7 +8,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "@jest/globals";
 import { eq } from "drizzle-orm";
-import { createMemDb, getMemDb } from "../helpers/pgmem.js";
+import { createMemDb, getMemDb } from "../helpers/realpg.js";
 import { getDb } from "../../src/db/client.js";
 import { meals, mealItems } from "../../src/db/schema.js";
 import { getStorage } from "../../src/storage/db.js";
@@ -21,11 +21,11 @@ describe("nutrition", () => {
   beforeAll(() => {
     createMemDb();
   });
-  afterAll(() => {
-    getMemDb().close();
+  afterAll(async () => {
+    await getMemDb().close();
   });
   beforeEach(async () => {
-    getMemDb().reset();
+    await getMemDb().reset();
     const user = await findOrCreateUserByChannel("telegram", "555-nutrition");
     userId = user.id;
   });

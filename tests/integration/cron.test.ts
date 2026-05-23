@@ -16,11 +16,12 @@
  *      targets the just-ending Sunday-of-last-week (via the `asOf` parameter
  *      defaulting to `now - 6h`).
  *
- * Hits the real `DbStorage` over the pg-mem in-memory Postgres.
+ * Hits the real `DbStorage` over the testcontainers Postgres booted in
+ * `tests/helpers/jest-global-setup.ts`.
  */
 
 import { eq } from "drizzle-orm";
-import { createMemDb, getMemDb, seedUser } from "../helpers/pgmem.js";
+import { createMemDb, getMemDb, seedUser } from "../helpers/realpg.js";
 import { getDb } from "../../src/db/client.js";
 import { channelIdentities, messages } from "../../src/db/schema.js";
 import { getStorage } from "../../src/storage/db.js";
@@ -59,13 +60,13 @@ describe("cron reliability", () => {
   beforeAll(() => {
     createMemDb();
   });
-  afterAll(() => {
+  afterAll(async () => {
     process.env = ORIG_ENV;
-    getMemDb().close();
+    await getMemDb().close();
   });
 
-  beforeEach(() => {
-    getMemDb().reset();
+  beforeEach(async () => {
+    await getMemDb().reset();
     // Tests don't need real LLM / Telegram. Strip the env vars and
     // sendBotMessageForUser will short-circuit on missing channel bindings.
     process.env = { ...ORIG_ENV };

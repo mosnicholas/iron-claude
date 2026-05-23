@@ -4,7 +4,7 @@
  * Seed canonical data, run each read tool, and assert on the rendered output.
  */
 
-import { createMemDb, seedUser, getMemDb } from "../helpers/pgmem.js";
+import { createMemDb, seedUser, getMemDb } from "../helpers/realpg.js";
 import { getStorage } from "../../src/storage/db.js";
 import { createTestContext } from "./setup.js";
 import { getCurrentWeek, getToday } from "../../src/utils/date.js";
@@ -30,11 +30,11 @@ describe("read tools", () => {
   beforeAll(() => {
     createMemDb();
   });
-  afterAll(() => {
-    getMemDb().close();
+  afterAll(async () => {
+    await getMemDb().close();
   });
   beforeEach(async () => {
-    getMemDb().reset();
+    await getMemDb().reset();
     userId = await seedUser({ displayName: "Athlete" });
   });
 
@@ -166,24 +166,16 @@ describe("read tools", () => {
       expect(r).toMatch(/No workouts/);
     });
 
-    // pg-mem's correlated subquery support is incomplete — the SQL inside
-    // `listWorkouts` doesn't propagate the outer row correctly so the
-    // exercise/set counts come back as a phantom null row. The same logic is
-    // exercised end-to-end against real Postgres by the scenario tests; here
-    // we rely on listWeekDates (plain SELECT) for week-level coverage.
-    it.skip(
-      "adherence returns per-day breakdown (pg-mem correlated-subquery limitation)",
-      async () => {
-        const ctx = createTestContext(userId);
-        await startWorkout.handler({ type: "upper" }, ctx);
-        const r = await getWorkouts.handler(
-          { format: "adherence", week: currentWeek },
-          ctx
-        );
-        expect(r).toMatch(/no log/);
-        expect(r).toMatch(/upper/);
-      }
-    );
+    it("adherence returns per-day breakdown", async () => {
+      const ctx = createTestContext(userId);
+      await startWorkout.handler({ type: "upper" }, ctx);
+      const r = await getWorkouts.handler(
+        { format: "adherence", week: currentWeek },
+        ctx
+      );
+      expect(r).toMatch(/no log/);
+      expect(r).toMatch(/upper/);
+    });
   });
 
   // ── get_exercise_history ───────────────────────────────────────────────────

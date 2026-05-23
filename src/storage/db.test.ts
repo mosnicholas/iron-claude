@@ -1,12 +1,13 @@
 /**
- * DbStorage unit tests — run against an in-memory Postgres (pg-mem) with the
- * real Drizzle migration applied.
+ * DbStorage unit tests — run against a real Postgres (testcontainers, booted
+ * once per jest run in jest-global-setup.ts) with the Drizzle migrations
+ * applied.
  *
  * Goal: every method on DbStorage is exercised, and user-scoping is verified
  * end to end (user A's writes never appear under user B).
  */
 
-import { createMemDb, seedUser, getMemDb } from "../../tests/helpers/pgmem.js";
+import { createMemDb, seedUser, getMemDb } from "../../tests/helpers/realpg.js";
 import { getStorage, DbStorage } from "./db.js";
 
 describe("DbStorage", () => {
@@ -18,12 +19,12 @@ describe("DbStorage", () => {
     createMemDb();
   });
 
-  afterAll(() => {
-    getMemDb().close();
+  afterAll(async () => {
+    await getMemDb().close();
   });
 
   beforeEach(async () => {
-    getMemDb().reset();
+    await getMemDb().reset();
     storage = getStorage();
     alice = await seedUser({ displayName: "Alice" });
     bob = await seedUser({ displayName: "Bob" });
@@ -315,10 +316,7 @@ describe("DbStorage", () => {
       expect(got!.exercises[0].sets.map((s) => s.weight)).toEqual([175, 180]);
     });
 
-    // pg-mem's correlated subquery support is incomplete; the SQL inside
-    // `listWorkouts` returns a phantom null row regardless of the WHERE
-    // filter. Verified against real Postgres in scenario tests instead.
-    it.skip("listWorkouts filters by iso week (pg-mem correlated-subquery limitation)", async () => {
+    it("listWorkouts filters by iso week", async () => {
       await storage.startWorkout(alice, startInput);
       await storage.startWorkout(alice, {
         ...startInput,
@@ -347,9 +345,7 @@ describe("DbStorage", () => {
     it("scopes workouts by userId", async () => {
       await storage.startWorkout(alice, startInput);
       expect(await storage.getWorkout(bob, startInput.date)).toBeNull();
-      // listWorkouts uses correlated subqueries that pg-mem treats slightly
-      // differently than Postgres — we verify scoping via the listWeekDates
-      // method (which uses a plain SELECT) instead.
+      expect(await storage.listWorkouts(bob, { isoWeek: "2026-W21" })).toEqual([]);
       expect(await storage.listWeekDates(bob, "2026-W21")).toEqual([]);
     });
   });
@@ -552,15 +548,7 @@ describe("DbStorage", () => {
       expect((snap?.recovery as { recovery_score: number }).recovery_score).toBe(78);
     });
 
-    // Note: pg-mem doesn't enforce real Postgres MVCC / row-locking semantics
-    // (SELECT ... FOR UPDATE doesn't actually serialize concurrent
-    // transactions in pg-mem). This test verifies the call SHAPE doesn't
-    // error and both metric rows persist after a concurrent invocation. The
-    // *real* concurrency guarantee — that `SELECT ... FOR UPDATE` inside a
-    // transaction serializes two racing transactions so neither lost-updates
-    // `recoverySnapshot` — is exercised by deployment against real Postgres,
-    // not pg-mem.
-    it("concurrent upsertIntegrationMetric (sleep + recovery, same date) both persist without erroring", async () => {
+    it("concurrent upsertIntegrationMetric (sleep + recovery, same date) both persist with SELECT FOR UPDATE serialization", async () => {
       await storage.startWorkout(alice, {
         date: "2026-05-20",
         isoWeek: "2026-W21",
@@ -580,19 +568,18 @@ describe("DbStorage", () => {
         ])
       ).resolves.toBeDefined();
 
-      // Both source-of-truth rows in integration_metrics must be present —
-      // the JSON-snapshot mirror in workouts.recoverySnapshot can be racy on
-      // pg-mem but the per-kind row is authoritative.
+      // Both source-of-truth rows in integration_metrics must be present.
       const rows = await storage.getIntegrationMetrics(alice, "2026-05-20");
       const kinds = rows.map((r) => r.kind).sort();
       expect(kinds).toEqual(["recovery", "sleep"]);
 
-      // recoverySnapshot must at minimum contain one of the kinds (real PG
-      // would contain both; pg-mem may show only the last writer).
+      // SELECT FOR UPDATE serializes the two transactions so the recovery
+      // snapshot on the workout row contains both kinds (no lost update).
       const w = await storage.getWorkout(alice, "2026-05-20");
       const snap = w?.recoverySnapshot as Record<string, unknown> | null;
       expect(snap).not.toBeNull();
-      expect(snap?.sleep !== undefined || snap?.recovery !== undefined).toBe(true);
+      expect(snap?.sleep).toBeDefined();
+      expect(snap?.recovery).toBeDefined();
     });
   });
 

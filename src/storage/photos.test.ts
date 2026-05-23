@@ -7,7 +7,7 @@
  * would require either a live Supabase project or a Storage mock harness.
  */
 
-import { createMemDb, getMemDb, seedUser } from "../../tests/helpers/pgmem.js";
+import { createMemDb, getMemDb, seedUser } from "../../tests/helpers/realpg.js";
 import { getDb } from "../db/client.js";
 import { photos } from "../db/schema.js";
 import { getPhoto, listUserPhotos } from "./photos.js";
@@ -20,12 +20,12 @@ describe("photo metadata storage (DB layer)", () => {
     createMemDb();
   });
 
-  afterAll(() => {
-    getMemDb().close();
+  afterAll(async () => {
+    await getMemDb().close();
   });
 
   beforeEach(async () => {
-    getMemDb().reset();
+    await getMemDb().reset();
     alice = await seedUser({ displayName: "Alice" });
     bob = await seedUser({ displayName: "Bob" });
   });

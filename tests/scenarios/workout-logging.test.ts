@@ -2,8 +2,9 @@
  * Scenario: Workout Logging
  *
  * Verifies the agent persists exercise data through the real `log_exercise`
- * tool — not just acknowledging in chat. Storage is in-memory Postgres
- * (pg-mem) so the test only depends on `claude-haiku-4-5` for the LLM call.
+ * tool — not just acknowledging in chat. Storage is a real Postgres
+ * (testcontainers, shared via jest globalSetup) so the test only depends on
+ * `claude-haiku-4-5` for the LLM call.
  */
 
 import { createCoachAgentV2 } from "../../src/coach-v2/index.js";

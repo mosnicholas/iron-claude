@@ -33,7 +33,7 @@ jest.unstable_mockModule("../../src/bot/telegram-for-user.js", () => ({
   getTelegramChatId: async () => "12345",
 }));
 
-const { createMemDb, getMemDb, seedUser } = await import("../helpers/pgmem.js");
+const { createMemDb, getMemDb, seedUser } = await import("../helpers/realpg.js");
 const { getDb } = await import("../../src/db/client.js");
 const { messages } = await import("../../src/db/schema.js");
 const { getDateInfoTZAware } = await import("../../src/utils/date.js");
@@ -48,11 +48,11 @@ describe("per-user timezone handling", () => {
   beforeAll(() => {
     createMemDb();
   });
-  afterAll(() => {
-    getMemDb().close();
+  afterAll(async () => {
+    await getMemDb().close();
   });
-  beforeEach(() => {
-    getMemDb().reset();
+  beforeEach(async () => {
+    await getMemDb().reset();
     reminderCalls.length = 0;
     sentMessages.length = 0;
   });

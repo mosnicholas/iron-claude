@@ -39,23 +39,11 @@ jobs:
       - run: npm run typecheck
 
   unit:
-    name: Unit tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm test
-
-  db-tests:
-    name: DB & integration tests
+    name: Unit + integration tests
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: ironclaude
           POSTGRES_PASSWORD: ironclaude
@@ -76,15 +64,7 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - name: Run migrations
-        run: npm run db:migrate
-      - name: Run DB & integration tests
-        run: |
-          if npm run 2>/dev/null | grep -qE '^[[:space:]]+test:db$'; then
-            npm run test:db
-          else
-            NODE_OPTIONS='--experimental-vm-modules' npx jest --testPathPatterns='src/storage|tests/integration'
-          fi
+      - run: npm test
 
   migration-check:
     name: Drizzle migration drift

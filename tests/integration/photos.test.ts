@@ -1,7 +1,7 @@
 /**
  * Integration test for the `get_progress_photo` read tool.
  *
- * Seeds three photo rows in pg-mem, mocks the signed-URL generator so we don't
+ * Seeds three photo rows in the shared testcontainers PG, mocks the signed-URL generator so we don't
  * need a live Supabase project, and exercises:
  *   - default (most-recent) selection
  *   - explicit index
@@ -36,7 +36,7 @@ jest.unstable_mockModule("../../src/auth/supabase.js", () => {
 });
 
 // Dynamic imports so the mock above takes effect.
-const { createMemDb, getMemDb, seedUser } = await import("../helpers/pgmem.js");
+const { createMemDb, getMemDb, seedUser } = await import("../helpers/realpg.js");
 const { getDb } = await import("../../src/db/client.js");
 const { photos } = await import("../../src/db/schema.js");
 const { getProgressPhoto } = await import("../../src/coach-v2/tools/reads.js");
@@ -52,12 +52,12 @@ describe("get_progress_photo tool", () => {
     createMemDb();
   });
 
-  afterAll(() => {
-    getMemDb().close();
+  afterAll(async () => {
+    await getMemDb().close();
   });
 
   beforeEach(async () => {
-    getMemDb().reset();
+    await getMemDb().reset();
     userId = await seedUser({ displayName: "Athlete" });
     signedUrls.clear();
 

@@ -2,7 +2,7 @@
  * Identity / channel-binding integration tests.
  */
 
-import { createMemDb, getMemDb } from "../helpers/pgmem.js";
+import { createMemDb, getMemDb } from "../helpers/realpg.js";
 import {
   findOrCreateUserByChannel,
   findOrCreateUserByPhone,
@@ -15,11 +15,11 @@ describe("identity", () => {
   beforeAll(() => {
     createMemDb();
   });
-  afterAll(() => {
-    getMemDb().close();
+  afterAll(async () => {
+    await getMemDb().close();
   });
-  beforeEach(() => {
-    getMemDb().reset();
+  beforeEach(async () => {
+    await getMemDb().reset();
   });
 
   describe("findOrCreateUserByChannel", () => {
@@ -51,12 +51,6 @@ describe("identity", () => {
       expect(a.id).not.toBe(b.id);
     });
 
-    // Note: pg-mem doesn't enforce real Postgres MVCC / unique-index races the
-    // same way real Postgres does (Promise.all on a single-threaded JS runtime
-    // serializes anyway). This test verifies the call SHAPE doesn't error and
-    // that the end state is exactly one user + one channel binding. Real-PG
-    // concurrency (two Fly instances racing on the same chat_id) is exercised
-    // by deployment, not pg-mem.
     it("races two concurrent findOrCreateUserByChannel calls for the same chat_id without duplicates", async () => {
       const [a, b] = await Promise.all([
         findOrCreateUserByChannel("telegram", "12345"),

@@ -11,7 +11,7 @@
 import { eq } from "drizzle-orm";
 import type { Request } from "express";
 import type Stripe from "stripe";
-import { createMemDb, getMemDb, seedUser } from "../helpers/pgmem.js";
+import { createMemDb, getMemDb, seedUser } from "../helpers/realpg.js";
 import { getDb } from "../../src/db/client.js";
 import { users } from "../../src/db/schema.js";
 import {
@@ -57,14 +57,14 @@ describe("POST /api/stripe/webhook", () => {
   beforeAll(() => {
     createMemDb();
   });
-  afterAll(() => {
+  afterAll(async () => {
     process.env = ORIG_ENV;
     __resetStripeCache();
-    getMemDb().close();
+    await getMemDb().close();
   });
 
-  beforeEach(() => {
-    getMemDb().reset();
+  beforeEach(async () => {
+    await getMemDb().reset();
     __resetStripeCache();
     delete process.env.STRIPE_SECRET_KEY;
     delete process.env.STRIPE_WEBHOOK_SECRET;

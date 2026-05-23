@@ -11,8 +11,7 @@
  * agent runs could finish in any order and the timestamps would have no
  * causal relation to the input order.)
  *
- * This is the test pg-mem could not host — real Postgres advisory locks
- * are required.
+ * Exercises real Postgres advisory locks against the testcontainers PG.
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "@jest/globals";
