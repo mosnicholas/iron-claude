@@ -158,6 +158,56 @@ export const workouts = pgTable(
   })
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Nutrition
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Meals (and their food items) logged on a date. Replaces main's
+ * `## Nutrition` section inside the per-day workout markdown file — meals
+ * now have their own table and are independent of workouts.
+ *
+ * Rollup queries (`getDailyNutritionRollup`) sum across `meal_items` for a
+ * `(user_id, date)` pair.
+ */
+export const meals = pgTable(
+  "meals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    isoWeek: varchar("iso_week", { length: 8 }).notNull(),
+    label: text("label").notNull(),
+    loggedAt: varchar("logged_at", { length: 8 }), // HH:MM local
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userDateIdx: index("meals_user_date_idx").on(t.userId, t.date),
+  })
+);
+
+export const mealItems = pgTable(
+  "meal_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    mealId: uuid("meal_id")
+      .notNull()
+      .references(() => meals.id, { onDelete: "cascade" }),
+    idx: integer("idx").notNull(),
+    food: text("food").notNull(),
+    proteinG: real("protein_g").notNull(),
+    kcal: real("kcal").notNull(),
+    carbsG: real("carbs_g"),
+    fatG: real("fat_g"),
+  },
+  (t) => ({
+    mealIdx: index("meal_items_meal_idx").on(t.mealId),
+  })
+);
+
 export const workoutExercises = pgTable(
   "workout_exercises",
   {
@@ -484,3 +534,7 @@ export type NewStripeEvent = typeof stripeEvents.$inferInsert;
 export type ToolCallLogEntry = typeof toolCallLog.$inferSelect;
 export type Photo = typeof photos.$inferSelect;
 export type NewPhoto = typeof photos.$inferInsert;
+export type Meal = typeof meals.$inferSelect;
+export type NewMeal = typeof meals.$inferInsert;
+export type MealItem = typeof mealItems.$inferSelect;
+export type NewMealItem = typeof mealItems.$inferInsert;

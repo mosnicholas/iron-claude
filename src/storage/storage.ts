@@ -143,13 +143,41 @@ export interface Storage {
     workoutId: string,
     input: {
       summary: string;
-      energyLevel: number;
+      energyLevel?: number;
       status: "completed" | "abandoned";
       finishedAt: string;
       durationMinutes: number;
       prs?: PrInput[];
     }
   ): Promise<Workout>;
+
+  // ── Nutrition ────────────────────────────────────────────────────────────
+  logMeal(
+    userId: UserId,
+    input: {
+      date: string;
+      isoWeek: string;
+      label: string;
+      loggedAt?: string;
+      notes?: string;
+      items: Array<{
+        food: string;
+        proteinG: number;
+        kcal: number;
+        carbsG?: number;
+        fatG?: number;
+      }>;
+    }
+  ): Promise<{ mealId: string }>;
+  getDailyNutritionRollup(
+    userId: UserId,
+    date: string
+  ): Promise<{
+    protein_g: number;
+    kcal: number;
+    carbs_g: number | null;
+    fat_g: number | null;
+  } | null>;
 
   // ── Messages ─────────────────────────────────────────────────────────────
   addMessage(userId: UserId, msg: MessageInput): Promise<Message>;

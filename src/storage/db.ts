@@ -14,6 +14,8 @@ import {
   integrationMetrics,
   integrationTokens,
   learnings,
+  mealItems,
+  meals,
   messages,
   photos,
   prs,
@@ -538,7 +540,7 @@ export class DbStorage implements Storage {
     workoutId: string,
     input: {
       summary: string;
-      energyLevel: number;
+      energyLevel?: number;
       status: "completed" | "abandoned";
       finishedAt: string;
       durationMinutes: number;
@@ -552,7 +554,7 @@ export class DbStorage implements Storage {
           status: input.status,
           finishedAt: input.finishedAt,
           durationMinutes: input.durationMinutes,
-          energyLevel: input.energyLevel,
+          energyLevel: input.energyLevel ?? null,
           summary: input.summary,
           updatedAt: new Date(),
         })
@@ -581,6 +583,85 @@ export class DbStorage implements Storage {
 
       return updated;
     });
+  }
+
+  // ── Nutrition ────────────────────────────────────────────────────────────
+
+  async logMeal(
+    userId: UserId,
+    input: {
+      date: string;
+      isoWeek: string;
+      label: string;
+      loggedAt?: string;
+      notes?: string;
+      items: Array<{
+        food: string;
+        proteinG: number;
+        kcal: number;
+        carbsG?: number;
+        fatG?: number;
+      }>;
+    }
+  ): Promise<{ mealId: string }> {
+    return this.db.transaction(async (tx) => {
+      const [meal] = await tx
+        .insert(meals)
+        .values({
+          userId,
+          date: input.date,
+          isoWeek: input.isoWeek,
+          label: input.label,
+          loggedAt: input.loggedAt ?? null,
+          notes: input.notes ?? null,
+        })
+        .returning();
+      if (input.items.length > 0) {
+        await tx.insert(mealItems).values(
+          input.items.map((it, i) => ({
+            mealId: meal.id,
+            idx: i,
+            food: it.food,
+            proteinG: it.proteinG,
+            kcal: it.kcal,
+            carbsG: it.carbsG ?? null,
+            fatG: it.fatG ?? null,
+          }))
+        );
+      }
+      return { mealId: meal.id };
+    });
+  }
+
+  async getDailyNutritionRollup(
+    userId: UserId,
+    date: string
+  ): Promise<{
+    protein_g: number;
+    kcal: number;
+    carbs_g: number | null;
+    fat_g: number | null;
+  } | null> {
+    // Sum all meal_items for the day by joining through meals scoped to user.
+    const [row] = await this.db
+      .select({
+        protein: sql<number | null>`coalesce(sum(${mealItems.proteinG}), 0)::float`,
+        kcal: sql<number | null>`coalesce(sum(${mealItems.kcal}), 0)::float`,
+        carbs: sql<number | null>`sum(${mealItems.carbsG})::float`,
+        fat: sql<number | null>`sum(${mealItems.fatG})::float`,
+        anyMeal: sql<number>`count(${meals.id})::int`,
+      })
+      .from(meals)
+      .leftJoin(mealItems, eq(mealItems.mealId, meals.id))
+      .where(and(eq(meals.userId, userId), eq(meals.date, date)));
+    if (!row || row.anyMeal === 0) return null;
+    const round1 = (n: number | null) => (n === null ? null : Math.round(n * 10) / 10);
+    return {
+      protein_g: round1(row.protein) ?? 0,
+      kcal: Math.round(row.kcal ?? 0),
+      carbs_g: row.carbs !== null ? round1(row.carbs) : null,
+      fat_g: row.fat !== null ? round1(row.fat) : null,
+    };
   }
 
   // ── Messages ─────────────────────────────────────────────────────────────

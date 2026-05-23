@@ -218,4 +218,149 @@ describe("POST /api/stripe/webhook", () => {
     // Comped status preserved despite the cancellation event.
     expect(after[0].tier).toBe("comped");
   });
+
+  it("dedupes a duplicate event_id (replayed delivery is a no-op)", async () => {
+    process.env.STRIPE_SECRET_KEY = "sk_test_x";
+    process.env.STRIPE_WEBHOOK_SECRET = "whsec_x";
+    process.env.STRIPE_PRICE_REGULAR = "price_reg_xyz";
+    process.env.STRIPE_PRICE_ATHLETE = "price_ath_xyz";
+
+    const userId = await seedUser({ phoneE164: "+15555550175" });
+    const db = getDb();
+    await db
+      .update(users)
+      .set({ stripeCustomerId: "cus_dup_1" })
+      .where(eq(users.id, userId));
+
+    // First event: regular tier at epoch 1_700_000_000.
+    const firstEvent = {
+      id: "evt_dup_1",
+      created: 1_700_000_000,
+      type: "customer.subscription.created",
+      data: {
+        object: {
+          id: "sub_dup_1",
+          customer: "cus_dup_1",
+          status: "active",
+          items: { data: [{ price: { id: "price_reg_xyz" } }] },
+        },
+      },
+    } as unknown as Stripe.Event;
+
+    __setStripeForTests({
+      webhooks: { constructEvent: () => firstEvent },
+    } as unknown as Stripe);
+
+    let res = mkRes();
+    await call(
+      {
+        headers: { "stripe-signature": "t=0,v1=fake" },
+        body: Buffer.from("{}"),
+      } as Partial<Request>,
+      res
+    );
+    expect(res.statusCode).toBe(200);
+    const afterFirst = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    expect(afterFirst[0].tier).toBe("regular");
+    expect(afterFirst[0].stripeLastEventEpoch).toBe(1_700_000_000);
+
+    // Manually flip the tier to "athlete" so we can detect if a replay
+    // overwrites it. The replay should NOT touch this row.
+    await db.update(users).set({ tier: "athlete" }).where(eq(users.id, userId));
+
+    // Replay the SAME event id (Stripe's at-least-once delivery semantics).
+    res = mkRes();
+    await call(
+      {
+        headers: { "stripe-signature": "t=0,v1=fake" },
+        body: Buffer.from("{}"),
+      } as Partial<Request>,
+      res
+    );
+    expect(res.statusCode).toBe(200);
+    const afterReplay = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    // Our hand-set "athlete" tier survives — the replay short-circuited on
+    // the stripe_events idempotency table and never reran applyTierFromStripe.
+    expect(afterReplay[0].tier).toBe("athlete");
+  });
+
+  it("ignores an out-of-order 'deleted' that arrives before a newer 'created'", async () => {
+    process.env.STRIPE_SECRET_KEY = "sk_test_x";
+    process.env.STRIPE_WEBHOOK_SECRET = "whsec_x";
+    process.env.STRIPE_PRICE_REGULAR = "price_reg_xyz";
+
+    const userId = await seedUser({ phoneE164: "+15555550188" });
+    const db = getDb();
+    await db
+      .update(users)
+      .set({ stripeCustomerId: "cus_reorder_1" })
+      .where(eq(users.id, userId));
+
+    // Process the newer "created" first (epoch 2_000_000_000) — user is paid.
+    const createdEvent = {
+      id: "evt_reorder_created",
+      created: 2_000_000_000,
+      type: "customer.subscription.created",
+      data: {
+        object: {
+          id: "sub_reorder_1",
+          customer: "cus_reorder_1",
+          status: "active",
+          items: { data: [{ price: { id: "price_reg_xyz" } }] },
+        },
+      },
+    } as unknown as Stripe.Event;
+
+    __setStripeForTests({
+      webhooks: { constructEvent: () => createdEvent },
+    } as unknown as Stripe);
+
+    let res = mkRes();
+    await call(
+      {
+        headers: { "stripe-signature": "t=0,v1=fake" },
+        body: Buffer.from("{}"),
+      } as Partial<Request>,
+      res
+    );
+    expect(res.statusCode).toBe(200);
+    const afterCreated = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    expect(afterCreated[0].tier).toBe("regular");
+
+    // Now an older "deleted" arrives late (epoch 1_999_999_000 — earlier than
+    // the created we already applied). This is the exact bug we're guarding
+    // against: a delayed cancellation must NOT downgrade the paying user.
+    const lateDeletedEvent = {
+      id: "evt_reorder_deleted",
+      created: 1_999_999_000,
+      type: "customer.subscription.deleted",
+      data: {
+        object: {
+          id: "sub_reorder_old",
+          customer: "cus_reorder_1",
+          status: "canceled",
+          items: { data: [] },
+        },
+      },
+    } as unknown as Stripe.Event;
+
+    __setStripeForTests({
+      webhooks: { constructEvent: () => lateDeletedEvent },
+    } as unknown as Stripe);
+
+    res = mkRes();
+    await call(
+      {
+        headers: { "stripe-signature": "t=0,v1=fake" },
+        body: Buffer.from("{}"),
+      } as Partial<Request>,
+      res
+    );
+    expect(res.statusCode).toBe(200);
+    const afterLateDelete = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    // Tier still "regular" — the older event was rejected by the reorder
+    // guard. stripe_last_event_epoch should still match the created event.
+    expect(afterLateDelete[0].tier).toBe("regular");
+    expect(afterLateDelete[0].stripeLastEventEpoch).toBe(2_000_000_000);
+  });
 });

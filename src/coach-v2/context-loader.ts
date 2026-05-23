@@ -26,6 +26,8 @@ export interface CoachContext {
   messageHistory: string;
   /** Carry-forward summary from the nightly compaction job, or null */
   conversationSummary: string | null;
+  /** Today's nutrition rollup — one-line summary or null if no meals logged */
+  nutritionToday: string | null;
   /** Date info */
   dateInfo: ReturnType<typeof getDateInfoTZAware>;
 }
@@ -49,6 +51,9 @@ export async function loadCoachContext(userId: string, timezone: string): Promis
   const profile = profileRow?.body ?? null;
   const coachingPriorities = profileRow?.coachingPriorities ?? extractCoachingPriorities(profile);
 
+  // Build the nutrition rollup off the DB-backed `meals` rows for today.
+  const nutritionToday = await buildNutritionRollup(userId, today);
+
   return {
     profile,
     coachingPriorities,
@@ -57,6 +62,7 @@ export async function loadCoachContext(userId: string, timezone: string): Promis
     weekProgress,
     messageHistory,
     conversationSummary: summaryRow?.body ?? null,
+    nutritionToday,
     dateInfo,
   };
 }
@@ -91,6 +97,26 @@ function renderWorkoutForContext(workout: WorkoutWithDetails): string {
     }
   }
   return lines.join("\n");
+}
+
+/**
+ * Compute today's nutrition rollup directly from the DB-backed `meals` rows.
+ * Replaces main's `extractNutritionRollup(todayWorkout)` which parsed the
+ * macros out of the per-day workout markdown's frontmatter — that file no
+ * longer exists in the DB-backed flow.
+ *
+ * Returns a one-line summary the coach uses for "you're at X, need Y more"
+ * feedback without an extra tool call. Returns null when no meals are logged.
+ */
+async function buildNutritionRollup(userId: string, date: string): Promise<string | null> {
+  const totals = await getStorage().getDailyNutritionRollup(userId, date);
+  if (!totals || (totals.protein_g === 0 && totals.kcal === 0)) return null;
+  const parts: string[] = [];
+  if (totals.protein_g) parts.push(`${totals.protein_g}g protein`);
+  if (totals.kcal) parts.push(`${totals.kcal} kcal`);
+  if (totals.carbs_g) parts.push(`${totals.carbs_g}g carbs`);
+  if (totals.fat_g) parts.push(`${totals.fat_g}g fat`);
+  return parts.join(", ");
 }
 
 /**
@@ -180,6 +206,9 @@ ${context.currentPlan ? truncate(context.currentPlan, 4000) : "(no plan saved fo
 
 ## Today's workout
 ${context.todayWorkout ? truncate(context.todayWorkout, 2000) : "(no workout file for today yet)"}
+
+## Today's nutrition rollup
+${context.nutritionToday ?? "(no meals logged today)"}
 
 ## This week's progress
 ${context.weekProgress}

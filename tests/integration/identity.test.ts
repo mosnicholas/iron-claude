@@ -50,6 +50,46 @@ describe("identity", () => {
       const b = await findOrCreateUserByChannel("telegram", "222");
       expect(a.id).not.toBe(b.id);
     });
+
+    // Note: pg-mem doesn't enforce real Postgres MVCC / unique-index races the
+    // same way real Postgres does (Promise.all on a single-threaded JS runtime
+    // serializes anyway). This test verifies the call SHAPE doesn't error and
+    // that the end state is exactly one user + one channel binding. Real-PG
+    // concurrency (two Fly instances racing on the same chat_id) is exercised
+    // by deployment, not pg-mem.
+    it("races two concurrent findOrCreateUserByChannel calls for the same chat_id without duplicates", async () => {
+      const [a, b] = await Promise.all([
+        findOrCreateUserByChannel("telegram", "12345"),
+        findOrCreateUserByChannel("telegram", "12345"),
+      ]);
+
+      // Both racers must converge to the same user.
+      expect(a.id).toBe(b.id);
+
+      // Exactly one user row.
+      const { getDb } = await import("../../src/db/client.js");
+      const { users, channelIdentities } = await import("../../src/db/schema.js");
+      const { eq, and } = await import("drizzle-orm");
+
+      const userRows = await getDb()
+        .select()
+        .from(users)
+        .where(eq(users.phoneE164, "+pending:telegram:12345"));
+      expect(userRows).toHaveLength(1);
+
+      // Exactly one channel_identities row.
+      const bindingRows = await getDb()
+        .select()
+        .from(channelIdentities)
+        .where(
+          and(
+            eq(channelIdentities.channel, "telegram"),
+            eq(channelIdentities.externalId, "12345")
+          )
+        );
+      expect(bindingRows).toHaveLength(1);
+      expect(bindingRows[0].userId).toBe(a.id);
+    });
   });
 
   describe("resolveUserByChannel + getUserById", () => {

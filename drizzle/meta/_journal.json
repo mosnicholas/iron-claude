@@ -29,6 +29,13 @@
       "when": 1779550620727,
       "tag": "0003_empty_banshee",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779551225668,
+      "tag": "0004_chubby_metal_master",
+      "breakpoints": true
     }
   ]
 }
