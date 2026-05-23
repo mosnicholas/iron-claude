@@ -56,7 +56,8 @@ function requireSupabase(): ReturnType<typeof getSupabaseAdmin> {
 }
 
 function extensionFor(contentType: string): string {
-  switch (contentType.toLowerCase()) {
+  const ct = contentType.toLowerCase();
+  switch (ct) {
     case "image/jpeg":
     case "image/jpg":
       return "jpg";
@@ -68,10 +69,11 @@ function extensionFor(contentType: string): string {
       return "gif";
     case "image/heic":
       return "heic";
-    default:
+    default: {
       // Fall back to the subtype if it looks reasonable, else .bin.
-      const m = /^image\/([a-z0-9]+)/i.exec(contentType);
-      return m ? m[1].toLowerCase() : "bin";
+      const m = /^image\/([a-z0-9]+)/i.exec(ct);
+      return m ? m[1] : "bin";
+    }
   }
 }
 

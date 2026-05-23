@@ -11,6 +11,7 @@
 import { getStorage } from "../../src/storage/db.js";
 import type { TestEnv } from "./setup.js";
 import type { CoachV2Response as CoachResponse } from "../../src/coach-v2/index.js";
+import type { WorkoutWithDetails } from "../../src/storage/storage.js";
 
 // ============================================================================
 // Workout existence
@@ -42,7 +43,7 @@ export async function expectNoWorkout(
 export async function readWorkout(
   env: TestEnv,
   date: string = env.today
-): Promise<NonNullable<Awaited<ReturnType<typeof getStorage>["getWorkout"]>>> {
+): Promise<WorkoutWithDetails> {
   const w = await getStorage().getWorkout(env.userId, date);
   if (!w) {
     throw new Error(`No workout for ${date}`);
