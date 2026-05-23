@@ -355,7 +355,11 @@ export const messages = pgTable(
     turnMs: integer("turn_ms"),
     /** Tool names invoked during this turn. */
     toolsUsed: jsonb("tools_used"), // string[]
-    ts: timestamp("ts", { withTimezone: true }).notNull().defaultNow(),
+    // precision: 3 → millisecond precision, matching JS Date. Without this,
+    // PG defaults to microseconds, and a watermark Date read back from JS
+    // (millisecond-truncated) fails to match rows with sub-ms precision in
+    // a `<=` comparison — silently leaking rows in compaction.
+    ts: timestamp("ts", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
   },
   (t) => ({
     userTsIdx: index("messages_user_ts_idx").on(t.userId, t.ts),
@@ -540,7 +544,7 @@ export const toolCallLog = pgTable(
     ms: integer("ms"),
     resultPreview: text("result_preview"),
     error: text("error"),
-    ts: timestamp("ts", { withTimezone: true }).notNull().defaultNow(),
+    ts: timestamp("ts", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
   },
   (t) => ({
     userTsIdx: index("tool_call_log_user_ts_idx").on(t.userId, t.ts),

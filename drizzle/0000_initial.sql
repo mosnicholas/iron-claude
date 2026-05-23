@@ -95,7 +95,7 @@ CREATE TABLE "messages" (
 	"cache_creation_tokens" integer,
 	"turn_ms" integer,
 	"tools_used" jsonb,
-	"ts" timestamp with time zone DEFAULT now() NOT NULL
+	"ts" timestamp (3) with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "photos" (
@@ -165,7 +165,7 @@ CREATE TABLE "tool_call_log" (
 	"ms" integer,
 	"result_preview" text,
 	"error" text,
-	"ts" timestamp with time zone DEFAULT now() NOT NULL
+	"ts" timestamp (3) with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "users" (

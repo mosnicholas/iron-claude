@@ -1,5 +1,5 @@
 {
-  "id": "fdac61a8-ad5c-4a70-84ae-45fc28ed26dc",
+  "id": "696da8c3-1f71-49bf-8190-27adbb6b29da",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -872,7 +872,7 @@
         },
         "ts": {
           "name": "ts",
-          "type": "timestamp with time zone",
+          "type": "timestamp (3) with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
@@ -1565,7 +1565,7 @@
         },
         "ts": {
           "name": "ts",
-          "type": "timestamp with time zone",
+          "type": "timestamp (3) with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"

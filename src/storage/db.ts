@@ -7,7 +7,7 @@
  * worker's advisory lock — Storage doesn't lock on its own.
  */
 
-import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import {
   conversationSummaries,
@@ -201,7 +201,7 @@ export class DbStorage implements Storage {
       const allSets = await this.db
         .select()
         .from(workoutSets)
-        .where(sql`${workoutSets.exerciseId} = ANY(${exIds})`)
+        .where(inArray(workoutSets.exerciseId, exIds))
         .orderBy(asc(workoutSets.exerciseId), asc(workoutSets.idx));
       for (const s of allSets) {
         (setsByExercise[s.exerciseId] ??= []).push(s);
