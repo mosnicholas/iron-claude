@@ -1,1 +1,0 @@
-ALTER TABLE "stripe_events" ADD COLUMN "processed" boolean DEFAULT false NOT NULL;

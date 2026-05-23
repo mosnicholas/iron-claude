@@ -150,11 +150,7 @@ export async function findOrCreateUserByPhone(
       .limit(1);
     if (bySupabase[0]) return bySupabase[0];
 
-    const byPhone = await tx
-      .select()
-      .from(users)
-      .where(eq(users.phoneE164, phoneE164))
-      .limit(1);
+    const byPhone = await tx.select().from(users).where(eq(users.phoneE164, phoneE164)).limit(1);
     if (byPhone[0]) {
       if (!byPhone[0].supabaseUserId) {
         const [updated] = await tx

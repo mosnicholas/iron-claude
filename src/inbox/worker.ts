@@ -173,10 +173,9 @@ async function handleTelegramEvent(event: InboxEvent): Promise<void> {
 }
 
 async function tryAdvisoryLock(client: PoolClient, key: string): Promise<boolean> {
-  const result = await client.query(
-    `SELECT pg_try_advisory_lock(hashtext($1)::bigint) AS locked`,
-    [key]
-  );
+  const result = await client.query(`SELECT pg_try_advisory_lock(hashtext($1)::bigint) AS locked`, [
+    key,
+  ]);
   const row = (result.rows ?? [])[0] as { locked?: boolean } | undefined;
   return row?.locked === true;
 }

@@ -24,7 +24,10 @@ const DateOverrideSchema = z
     "Optional YYYY-MM-DD override for back-filling a past meal (e.g. logging yesterday's dinner). Defaults to today."
   );
 
-function dateInfoFor(timezone: string, explicitDate?: string): {
+function dateInfoFor(
+  timezone: string,
+  explicitDate?: string
+): {
   date: string;
   isoWeek: string;
   isBackfill: boolean;

@@ -27,7 +27,8 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
     // Fail closed: every inbound webhook must present a matching secret.
     // `verifyTelegramSecret` requires TELEGRAM_WEBHOOK_SECRET to be set; if it
     // isn't, the endpoint refuses all traffic rather than trusting the body.
-    const secretHeader = (req.headers["x-telegram-bot-api-secret-token"] as string | undefined) ?? null;
+    const secretHeader =
+      (req.headers["x-telegram-bot-api-secret-token"] as string | undefined) ?? null;
     if (!verifyTelegramSecret(secretHeader)) {
       console.log("[webhook] Rejected: webhook secret mismatch or unconfigured");
       res.status(401).json({ error: "Unauthorized" });

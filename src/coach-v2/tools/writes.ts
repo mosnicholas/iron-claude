@@ -515,11 +515,7 @@ export const saveProfile = defineTool({
     "Subsequent edits should also go through this tool — pass the full updated " +
     "markdown, not a diff.",
   schema: z.object({
-    body: z
-      .string()
-      .min(50)
-      .max(8000)
-      .describe("Full markdown profile, typically 200-2000 chars."),
+    body: z.string().min(50).max(8000).describe("Full markdown profile, typically 200-2000 chars."),
   }),
   handler: async (input, ctx) => {
     await ctx.storage.writeProfile(ctx.userId, input.body);

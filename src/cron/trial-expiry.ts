@@ -22,8 +22,7 @@ export async function processTrialExpiryForUser({
   if (user.tier !== "trial") {
     return { success: true, message: `tier=${user.tier} skip` };
   }
-  const endsAt =
-    user.trialEndsAt instanceof Date ? user.trialEndsAt : new Date(user.trialEndsAt);
+  const endsAt = user.trialEndsAt instanceof Date ? user.trialEndsAt : new Date(user.trialEndsAt);
   if (!Number.isFinite(endsAt.getTime()) || endsAt.getTime() >= Date.now()) {
     return { success: true, message: "trial still active" };
   }
@@ -34,13 +33,7 @@ export async function processTrialExpiryForUser({
   const updated = await getDb()
     .update(users)
     .set({ tier: "expired", updatedAt: new Date() })
-    .where(
-      and(
-        eq(users.id, user.id),
-        eq(users.tier, "trial"),
-        lt(users.trialEndsAt, new Date())
-      )
-    )
+    .where(and(eq(users.id, user.id), eq(users.tier, "trial"), lt(users.trialEndsAt, new Date())))
     .returning({ id: users.id });
 
   if (updated.length === 0) {

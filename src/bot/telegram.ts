@@ -7,7 +7,12 @@
 import { timingSafeEqual } from "crypto";
 import type { TelegramPhotoSize, TelegramUpdate, TelegramVoice } from "../storage/types.js";
 
-const TELEGRAM_API_BASE = "https://api.telegram.org";
+// Overridable for tests: TELEGRAM_API_BASE_URL env var points the bot at a
+// fake server (see tests/e2e/harness/fake-telegram.ts). Read per-call so
+// jest's beforeAll() can set the env var after this module is imported.
+function telegramApiBase(): string {
+  return process.env.TELEGRAM_API_BASE_URL ?? "https://api.telegram.org";
+}
 const MAX_MESSAGE_LENGTH = 4000; // Telegram limit is 4096, leave some buffer
 
 export interface TelegramConfig {
@@ -80,7 +85,7 @@ export class TelegramBot {
     text: string,
     parseMode: "MarkdownV2" | "HTML" = "MarkdownV2"
   ): Promise<number | undefined> {
-    const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/sendMessage`;
+    const url = `${telegramApiBase()}/bot${this.config.botToken}/sendMessage`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -154,7 +159,7 @@ export class TelegramBot {
    * Returns the message ID if successful
    */
   async sendPlainMessage(text: string): Promise<number | undefined> {
-    const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/sendMessage`;
+    const url = `${telegramApiBase()}/bot${this.config.botToken}/sendMessage`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -194,7 +199,7 @@ export class TelegramBot {
     text: string,
     parseMode: "MarkdownV2" | "HTML" = "MarkdownV2"
   ): Promise<void> {
-    const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/editMessageText`;
+    const url = `${telegramApiBase()}/bot${this.config.botToken}/editMessageText`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -241,7 +246,7 @@ export class TelegramBot {
    * Send a typing indicator
    */
   async sendTypingAction(): Promise<void> {
-    const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/sendChatAction`;
+    const url = `${telegramApiBase()}/bot${this.config.botToken}/sendChatAction`;
 
     await fetch(url, {
       method: "POST",
@@ -257,7 +262,7 @@ export class TelegramBot {
    * Get a file from Telegram (for voice messages)
    */
   async getFile(fileId: string): Promise<{ filePath: string; fileUrl: string }> {
-    const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/getFile`;
+    const url = `${telegramApiBase()}/bot${this.config.botToken}/getFile`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -271,7 +276,7 @@ export class TelegramBot {
 
     const data = (await response.json()) as { result: { file_path: string } };
     const filePath = data.result.file_path;
-    const fileUrl = `${TELEGRAM_API_BASE}/file/bot${this.config.botToken}/${filePath}`;
+    const fileUrl = `${telegramApiBase()}/file/bot${this.config.botToken}/${filePath}`;
 
     return { filePath, fileUrl };
   }
@@ -291,7 +296,7 @@ export class TelegramBot {
    * Set the webhook URL
    */
   async setWebhook(webhookUrl: string): Promise<void> {
-    const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/setWebhook`;
+    const url = `${telegramApiBase()}/bot${this.config.botToken}/setWebhook`;
 
     const body: Record<string, unknown> = { url: webhookUrl };
 
@@ -315,7 +320,7 @@ export class TelegramBot {
    * Delete the webhook
    */
   async deleteWebhook(): Promise<void> {
-    const url = `${TELEGRAM_API_BASE}/bot${this.config.botToken}/deleteWebhook`;
+    const url = `${telegramApiBase()}/bot${this.config.botToken}/deleteWebhook`;
 
     const response = await fetch(url, { method: "POST" });
 

@@ -389,4 +389,3 @@ async function doRefreshAccessToken(refreshToken: string): Promise<TokenSet> {
 
   return parseTokenResponse(data, "refresh_token");
 }
-

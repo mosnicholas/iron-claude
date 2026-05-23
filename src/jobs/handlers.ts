@@ -34,7 +34,9 @@ export interface JobCtx {
   sendMessage: (text: string) => Promise<void>;
 }
 
-type PerUserJobFn = (ctx: JobCtx) => Promise<{ success: boolean; message?: string; error?: string }>;
+type PerUserJobFn = (
+  ctx: JobCtx
+) => Promise<{ success: boolean; message?: string; error?: string }>;
 
 interface JobSpec {
   /** Name pg-boss sees, e.g. "daily-reminder.user". */
@@ -191,15 +193,11 @@ export async function registerJobHandlers(boss: PgBoss): Promise<void> {
     // pg-boss v12 hands the worker a BATCH (Job[]); we process them in order.
     // localConcurrency=5 allows up to 5 of these batches to run in parallel
     // per Fly instance.
-    await boss.work(
-      spec.name,
-      { localConcurrency: 5 },
-      async (jobs: Job<{ userId: string }>[]) => {
-        for (const job of jobs) {
-          await runUserJob(spec, job.data);
-        }
+    await boss.work(spec.name, { localConcurrency: 5 }, async (jobs: Job<{ userId: string }>[]) => {
+      for (const job of jobs) {
+        await runUserJob(spec, job.data);
       }
-    );
+    });
   }
 
   // Global (non-per-user) jobs.

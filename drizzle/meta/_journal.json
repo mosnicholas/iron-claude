@@ -5,43 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1779545868704,
-      "tag": "0000_mature_sir_ram",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1779548287114,
-      "tag": "0001_odd_prism",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1779548343645,
-      "tag": "0002_groovy_madelyne_pryor",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1779550620727,
-      "tag": "0003_empty_banshee",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1779551225668,
-      "tag": "0004_chubby_metal_master",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1779552886984,
-      "tag": "0005_rich_sentry",
+      "when": 1779572278443,
+      "tag": "0000_initial",
       "breakpoints": true
     }
   ]

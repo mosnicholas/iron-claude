@@ -36,10 +36,7 @@ export async function processDailyCompactionForUser({
   // Anchor the delete to the latest ts we summarized — any message added
   // concurrently between getMessagesSince and clearMessages will have a
   // newer ts and survive the prune.
-  const watermark = rows.reduce(
-    (latest, row) => (row.ts > latest ? row.ts : latest),
-    rows[0].ts
-  );
+  const watermark = rows.reduce((latest, row) => (row.ts > latest ? row.ts : latest), rows[0].ts);
 
   const stored = rows.map(rowToStored);
   const previousSummaryRow = await storage.readConversationSummary(user.id);

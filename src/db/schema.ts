@@ -222,6 +222,16 @@ export const workoutExercises = pgTable(
   (t) => ({
     workoutIdx: index("workout_exercises_workout_idx").on(t.workoutId),
     workoutOrderIdx: uniqueIndex("workout_exercises_workout_idx_unique").on(t.workoutId, t.idx),
+    /**
+     * Case-insensitive uniqueness on exercise name within a workout. Backs
+     * the race-safe find-or-create in `appendExerciseSets`: two concurrent
+     * log_exercise calls for the same exercise name (any casing) both go
+     * through ON CONFLICT DO NOTHING; the loser re-fetches.
+     */
+    workoutNameIdx: uniqueIndex("workout_exercises_workout_name_idx").on(
+      t.workoutId,
+      sql`lower(${t.name})`
+    ),
   })
 );
 
@@ -263,6 +273,15 @@ export const prs = pgTable(
   (t) => ({
     userExerciseIdx: index("prs_user_exercise_idx").on(t.userId, t.exercise),
     userCurrentIdx: index("prs_user_current_idx").on(t.userId, t.exercise, t.isCurrent),
+    /**
+     * At most one current PR per (user, exercise). The race-guarded
+     * upsertPR catches the unique-violation when two transactions both pass
+     * the "mark old non-current" step and both try to insert; the loser
+     * re-fetches the winner's row instead of throwing.
+     */
+    oneCurrentPerExercise: uniqueIndex("prs_one_current_per_exercise")
+      .on(t.userId, t.exercise)
+      .where(sql`${t.isCurrent} = true`),
   })
 );
 
@@ -462,6 +481,13 @@ export const stripeEvents = pgTable(
     id: varchar("id", { length: 64 }).primaryKey(), // Stripe's event.id ("evt_...")
     type: varchar("type", { length: 64 }).notNull(),
     createdEpoch: integer("created_epoch").notNull(), // event.created (unix seconds)
+    /**
+     * Two-phase idempotency: row is inserted with processed=false before
+     * business logic runs. If the handler throws, the row stays unprocessed
+     * and Stripe's retry re-runs it. Only flipped to true after the tier
+     * write succeeds.
+     */
+    processed: boolean("processed").notNull().default(false),
     processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

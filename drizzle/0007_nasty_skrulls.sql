@@ -1,2 +1,0 @@
-CREATE UNIQUE INDEX "prs_one_current_per_exercise" ON "prs" USING btree ("user_id","exercise") WHERE "prs"."is_current" = true;--> statement-breakpoint
-CREATE UNIQUE INDEX "workout_exercises_workout_name_idx" ON "workout_exercises" USING btree ("workout_id",lower("name"));
