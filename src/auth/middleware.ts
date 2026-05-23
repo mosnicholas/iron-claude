@@ -76,29 +76,3 @@ export async function requireSession(
     res.status(401).json({ ok: false, error: "auth failed" });
   }
 }
-
-export async function optionalSession(
-  req: Request,
-  _res: Response,
-  next: NextFunction
-): Promise<void> {
-  req.user = null;
-  if (!isSupabaseConfigured()) {
-    next();
-    return;
-  }
-  const jwt = extractJwt(req);
-  if (!jwt) {
-    next();
-    return;
-  }
-  try {
-    const resolved = await resolveUserFromJwt(jwt);
-    if (resolved?.user) {
-      req.user = resolved.user;
-    }
-  } catch (err) {
-    console.error("[auth] optionalSession error:", err);
-  }
-  next();
-}

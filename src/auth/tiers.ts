@@ -86,22 +86,3 @@ export function tierAllows(tier: Tier, feature: Feature): boolean {
  * not in the allowed set. Assumes `requireSession` has already populated
  * `req.user`.
  */
-import type { NextFunction, Request, Response } from "express";
-
-export function requireTier(
-  ...allowed: Tier[]
-): (req: Request, res: Response, next: NextFunction) => void {
-  return (req, res, next) => {
-    const user = req.user;
-    if (!user) {
-      res.status(401).json({ ok: false, error: "not authenticated" });
-      return;
-    }
-    const tier = effectiveTier(user);
-    if (!allowed.includes(tier)) {
-      res.status(402).json({ ok: false, error: "subscription required", tier });
-      return;
-    }
-    next();
-  };
-}

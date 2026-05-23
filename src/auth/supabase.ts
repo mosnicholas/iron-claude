@@ -46,7 +46,7 @@ export function getSupabaseAdmin(): SupabaseClient {
   return cachedAdmin;
 }
 
-export function getSupabasePublic(): SupabaseClient {
+function getSupabasePublic(): SupabaseClient {
   if (cachedPublic) return cachedPublic;
   const url = requireEnv("SUPABASE_URL");
   const anonKey = requireEnv("SUPABASE_ANON_KEY");

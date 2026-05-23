@@ -139,7 +139,7 @@ interface PaginatedResponse<T> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Map Whoop sport IDs to human-readable names */
-export const SPORT_NAMES: Record<number, string> = {
+const SPORT_NAMES: Record<number, string> = {
   [-1]: "Activity",
   0: "Running",
   1: "Cycling",

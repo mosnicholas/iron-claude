@@ -374,10 +374,3 @@ export async function setupWhoop(deployUrl?: string): Promise<WhoopSetupResult> 
   }
 }
 
-/**
- * Run setup as standalone script.
- */
-export async function runStandaloneSetup(): Promise<void> {
-  const result = await setupWhoop();
-  process.exit(result.success ? 0 : 1);
-}

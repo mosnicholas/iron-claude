@@ -21,16 +21,6 @@ const WHOOP_AUTH_URL = "https://api.prod.whoop.com/oauth/oauth2/auth";
 const WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token";
 const PROVIDER = "whoop";
 
-/** Available OAuth scopes for Whoop API */
-export const WHOOP_SCOPES = [
-  "read:recovery",
-  "read:sleep",
-  "read:workout",
-  "read:profile",
-  "read:cycles",
-  "read:body_measurement",
-] as const;
-
 /** Default scopes we request for the integration.
  *  `offline` is required to receive a refresh_token — per Whoop's OAuth docs:
  *  "WHOOP provides your app with a refresh token after completing the OAuth
@@ -58,7 +48,7 @@ export interface WhoopOAuthConfig {
  * Get Whoop OAuth configuration from environment variables.
  * Throws if not configured.
  */
-export function getWhoopOAuthConfig(): WhoopOAuthConfig {
+function getWhoopOAuthConfig(): WhoopOAuthConfig {
   const clientId = process.env.WHOOP_CLIENT_ID;
   const clientSecret = process.env.WHOOP_CLIENT_SECRET;
 
@@ -95,12 +85,6 @@ const cachedTokens = new Map<string, TokenSet>();
  */
 const refreshInFlight = new Map<string, Promise<TokenSet>>();
 
-/** Reset the in-memory token cache (for testing only) */
-export function _resetTokenCache(): void {
-  cachedTokens.clear();
-  refreshInFlight.clear();
-}
-
 /**
  * Read tokens from the DB for a given user, decrypting the at-rest ciphertext.
  * The legacy GitHub-backed implementation returned a `sha` for optimistic
@@ -133,7 +117,7 @@ export async function getTokensFromDb(
  * which replaces the SHA-based optimistic locking the GitHub implementation
  * needed.
  */
-export async function saveTokensToDb(
+async function saveTokensToDb(
   userId: string,
   tokens: TokenSet,
   externalUserId?: string | null
@@ -406,29 +390,3 @@ async function doRefreshAccessToken(refreshToken: string): Promise<TokenSet> {
   return parseTokenResponse(data, "refresh_token");
 }
 
-/**
- * Revoke a token (logout).
- *
- * @param token - The access or refresh token to revoke
- */
-export async function revokeToken(token: string): Promise<void> {
-  const config = getWhoopOAuthConfig();
-
-  // Whoop requires JSON body format for token requests
-  const response = await fetch("https://api.prod.whoop.com/oauth/oauth2/revoke", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      token,
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to revoke token: ${response.status} - ${error}`);
-  }
-}

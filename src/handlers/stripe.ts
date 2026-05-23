@@ -56,7 +56,7 @@ export function __setStripeForTests(client: Stripe | null): void {
  * Map a Stripe price_id to our local tier. Unknown prices return `null` so the
  * caller can decide whether to ignore or log.
  */
-export function tierFromPriceId(priceId: string | null | undefined): Tier | null {
+function tierFromPriceId(priceId: string | null | undefined): Tier | null {
   if (!priceId) return null;
   if (priceId === process.env.STRIPE_PRICE_REGULAR) return "regular";
   if (priceId === process.env.STRIPE_PRICE_ATHLETE) return "athlete";

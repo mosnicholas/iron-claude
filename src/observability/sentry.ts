@@ -50,14 +50,3 @@ export function captureError(err: unknown, context: ErrorContext = {}): void {
     Sentry.captureException(err);
   });
 }
-
-export function captureMessage(message: string, context: ErrorContext = {}): void {
-  console.log(`[notice] ${message}`, context);
-  if (!process.env.SENTRY_DSN) return;
-  Sentry.withScope((scope) => {
-    if (context.userId) scope.setUser({ id: context.userId });
-    if (context.channel) scope.setTag("channel", context.channel);
-    if (context.extra) scope.setContext("extra", context.extra);
-    Sentry.captureMessage(message);
-  });
-}

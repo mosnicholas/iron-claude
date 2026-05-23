@@ -28,7 +28,7 @@ export interface RoutedResult extends HarnessResult {
   mode: Mode;
 }
 
-export function classifyMode(message: string): Mode {
+function classifyMode(message: string): Mode {
   return message.trim().startsWith("/debug") ? "debug" : "coach";
 }
 

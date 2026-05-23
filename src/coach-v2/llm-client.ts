@@ -103,7 +103,7 @@ export interface LLMClient {
   query(req: LLMRequest): Promise<LLMResponse>;
 }
 
-export class AnthropicLLMClient implements LLMClient {
+class AnthropicLLMClient implements LLMClient {
   private client: Anthropic;
 
   constructor(apiKey?: string) {
