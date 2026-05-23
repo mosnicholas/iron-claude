@@ -1,68 +1,48 @@
 /**
  * Scenario: Workout Logging
  *
- * Tests that the agent correctly creates and updates workout files
- * when the user sends exercise data.
- *
- * Requires ANTHROPIC_API_KEY to run (calls the real model).
+ * Verifies the agent persists exercise data through the real `log_exercise`
+ * tool — not just acknowledging in chat. Storage is in-memory Postgres
+ * (pg-mem) so the test only depends on `claude-haiku-4-5` for the LLM call.
  */
 
-import { existsSync, readdirSync } from "fs";
-import { join } from "path";
 import { createCoachAgentV2 } from "../../src/coach-v2/index.js";
-import { setupTestRepo, type TestRepo } from "./setup.js";
+import { setupTestEnv, type TestEnv } from "./setup.js";
 import {
-  expectWorkoutContains,
-  readWorkoutFile,
+  expectExerciseLogged,
+  expectWorkoutExists,
+  readWorkout,
 } from "./assertions.js";
 
 const SKIP_REASON = "ANTHROPIC_API_KEY not set — skipping scenario tests";
 const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
-
 const describeWithApi = hasApiKey ? describe : describe.skip;
 
 describeWithApi("Scenario: Workout Logging", () => {
-  let repo: TestRepo;
+  let env: TestEnv;
 
   afterEach(() => {
-    repo?.cleanup();
+    env?.cleanup();
   });
 
   it(
-    "creates a workout file when user sends first exercise",
+    "creates a workout row when user sends first exercise",
     async () => {
-      repo = setupTestRepo();
+      env = await setupTestEnv();
 
       const agent = createCoachAgentV2({
+        userId: env.userId,
+        timezone: "America/New_York",
         model: "claude-haiku-4-5",
-
-        repoPath: repo.repoPath,
+        maxTurns: 15,
       });
 
-      const response = await agent.runCoach(
+      await agent.runCoach(
         "Just finished bench press: 175 x 5 x 3 sets. RPE 7, all sets felt good. Please log this workout."
       );
 
-      // Diagnostic: if the file wasn't created, log what the agent actually did
-      const weekDir = join(repo.repoPath, "weeks", repo.currentWeek);
-      const filesInWeek = existsSync(weekDir)
-        ? readdirSync(weekDir)
-        : [];
-
-      // Core assertion: a workout file should exist for today
-      expect({
-        fileExists: existsSync(join(weekDir, `${repo.today}.md`)),
-        filesInWeekDir: filesInWeek,
-        turnsUsed: response.turnsUsed,
-        toolsUsed: response.toolsUsed,
-        responsePreview: response.message.slice(0, 200),
-      }).toEqual(
-        expect.objectContaining({ fileExists: true })
-      );
-
-      // The file should contain the exercise data
-      expectWorkoutContains(repo.repoPath, repo.currentWeek, repo.today, "175");
-      expectWorkoutContains(repo.repoPath, repo.currentWeek, repo.today, "bench");
+      await expectWorkoutExists(env);
+      await expectExerciseLogged(env, { exercise: "bench", weight: 175 });
     },
     180_000
   );
@@ -70,85 +50,60 @@ describeWithApi("Scenario: Workout Logging", () => {
   it(
     "appends to existing workout when logging additional exercises",
     async () => {
-      // Pre-seed a workout file with one exercise already logged
-      const existingWorkout = `---
-date: "${new Date().toISOString().split("T")[0]}"
-type: upper
-status: in_progress
----
-# Workout
-
-## Bench Press
-- 175 x 5 x 3 (RPE 7)
-`;
-
-      repo = setupTestRepo({ existingWorkout });
-
-      const agent = createCoachAgentV2({
-        model: "claude-haiku-4-5",
-
-        repoPath: repo.repoPath,
+      env = await setupTestEnv({
+        existingWorkout: {
+          type: "upper",
+          exercises: [
+            {
+              name: "Bench Press",
+              sets: [{ reps: 5, weight: 175, rpe: 7 }],
+            },
+          ],
+        },
       });
 
-      const response = await agent.runCoach("OHP 105x5x3 RPE 7");
+      const agent = createCoachAgentV2({
+        userId: env.userId,
+        timezone: "America/New_York",
+        model: "claude-haiku-4-5",
+        maxTurns: 15,
+      });
 
-      // Workout file should now contain both exercises
-      const content = readWorkoutFile(repo.repoPath, repo.currentWeek, repo.today);
-      expect(content.toLowerCase()).toContain("bench");
-      expect(content.toLowerCase()).toContain("105");
+      await agent.runCoach("OHP 105x5x3 RPE 7");
 
-      expect(response.message.length).toBeGreaterThan(0);
+      const w = await readWorkout(env);
+      const names = w.exercises.map((e) => e.name.toLowerCase());
+      // Both bench and OHP must be present.
+      expect(names.some((n) => n.includes("bench"))).toBe(true);
+      expect(names.some((n) => n.includes("ohp") || n.includes("overhead"))).toBe(
+        true
+      );
     },
     180_000
   );
+
   it(
-    "persists multiple exercises across separate messages to the file",
+    "persists multiple exercises across separate messages",
     async () => {
-      // This catches the production bug where the agent acknowledged
-      // exercises in text but never wrote them to the workout file.
-      // Only the initial "Start workout" commit appeared in git.
-      const existingWorkout = `---
-date: "${new Date().toISOString().split("T")[0]}"
-type: upper
-status: in_progress
-started: "10:00"
----
-# Workout
-
-## Exercises
-`;
-
-      repo = setupTestRepo({ existingWorkout });
-
-      const agent = createCoachAgentV2({
-        model: "claude-haiku-4-5",
-
-        repoPath: repo.repoPath,
+      env = await setupTestEnv({
+        existingWorkout: { type: "upper" },
       });
 
-      // Simulate two separate Telegram messages (separate runQuery calls)
+      const agent = createCoachAgentV2({
+        userId: env.userId,
+        timezone: "America/New_York",
+        model: "claude-haiku-4-5",
+        maxTurns: 15,
+      });
+
       await agent.runCoach("bench 175x5x3 RPE 7");
       await agent.runCoach("OHP 105x5x3 RPE 7");
 
-      // BOTH exercises must appear in the workout file, not just in chat
-      const content = readWorkoutFile(repo.repoPath, repo.currentWeek, repo.today);
-      const contentLower = content.toLowerCase();
-
-      const hasBenchInFile = contentLower.includes("bench") && contentLower.includes("175");
-      const hasOhpInFile =
-        (contentLower.includes("ohp") || contentLower.includes("overhead")) &&
-        contentLower.includes("105");
-
-      expect({
-        benchWrittenToFile: hasBenchInFile,
-        ohpWrittenToFile: hasOhpInFile,
-        note: "Both exercises must be in the workout FILE, not just acknowledged in chat",
-        filePreview: content.slice(0, 500),
-      }).toEqual(
-        expect.objectContaining({
-          benchWrittenToFile: true,
-          ohpWrittenToFile: true,
-        })
+      const w = await readWorkout(env);
+      const names = w.exercises.map((e) => e.name.toLowerCase());
+      expect(names.some((n) => n.includes("bench"))).toBe(true);
+      expect(names.some((n) => n.includes("ohp") || n.includes("overhead"))).toBe(
+        true
       );
     },
     240_000

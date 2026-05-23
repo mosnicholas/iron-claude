@@ -55,6 +55,7 @@ export function createCronHandler(task: CronTask) {
         "check-reminders": runCheckReminders,
         "refresh-tokens": runRefreshTokens,
         "daily-compaction": runDailyCompaction,
+        "trial-expiry": runTrialExpiry,
       };
 
       const result = await runners[task]();

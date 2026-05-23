@@ -28,7 +28,8 @@ export async function runTrialExpiry(): Promise<CronResult> {
       if (user.tier !== "trial") {
         return { success: true, message: `user=${user.id} tier=${user.tier} skip` };
       }
-      const endsAt = user.trialEndsAt instanceof Date ? user.trialEndsAt : new Date(user.trialEndsAt);
+      const endsAt =
+        user.trialEndsAt instanceof Date ? user.trialEndsAt : new Date(user.trialEndsAt);
       if (!Number.isFinite(endsAt.getTime()) || endsAt.getTime() >= Date.now()) {
         return { success: true, message: `user=${user.id} trial still active` };
       }

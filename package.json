@@ -19,12 +19,14 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.ts\"",
     "test": "NODE_OPTIONS='--experimental-vm-modules' jest --testPathIgnorePatterns='/node_modules/' --testPathIgnorePatterns='/dist/' --testPathIgnorePatterns='tests/scenarios'",
     "test:all": "NODE_OPTIONS='--experimental-vm-modules' jest",
+    "test:db": "NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns='src/storage|tests/integration'",
     "test:scenarios": "NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns='tests/scenarios' --verbose",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "import": "tsx scripts/import-fitness-data.ts"
+    "import": "tsx scripts/import-fitness-data.ts",
+    "grant-tier": "tsx scripts/grant-tier.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.37",

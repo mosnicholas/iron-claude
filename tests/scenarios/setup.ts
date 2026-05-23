@@ -1,97 +1,113 @@
 /**
- * Test Repo Setup
+ * Test Environment Setup
  *
- * Creates an isolated temp directory with fixture data and git init.
- * The CoachAgent sees a real git repo with realistic data — it just
- * didn't come from GitHub.
+ * Spins up an in-memory Postgres via pg-mem, seeds a user with the canonical
+ * fixture data, and returns a `TestEnv` the scenario tests use to drive the
+ * real `CoachAgentV2` (Haiku model) without touching the filesystem or
+ * GitHub.
+ *
+ * Scenario tests run against the real LLM (`claude-haiku-4-5`) — but every
+ * persistence call goes through `DbStorage`, so the test asserts on DB rows
+ * rather than file side effects.
  */
 
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
-import { execSync } from "child_process";
+import { createMemDb, seedUser, getMemDb } from "../helpers/pgmem.js";
+import { getStorage } from "../../src/storage/db.js";
 import { getCurrentWeek, getToday } from "../../src/utils/date.js";
-import { PROFILE, PRS_YAML, LEARNINGS, buildWeeklyPlan } from "./fixtures.js";
+import { PROFILE, PRS, LEARNINGS, buildWeeklyPlan } from "./fixtures.js";
 
-export interface TestRepoOptions {
-  /** Override profile.md content */
+export interface TestEnvOptions {
+  /** Override profile body */
   profile?: string;
-  /** Override prs.yaml content */
-  prs?: string;
-  /** Override learnings.md content */
+  /** Override the seeded PRs */
+  prs?: Array<{
+    exercise: string;
+    weight: number;
+    reps: number;
+    date: string;
+    estimated1Rm?: number;
+  }>;
+  /** Override learnings body */
   learnings?: string;
-  /** Override weekly plan content */
+  /** Override weekly plan body */
   plan?: string;
-  /** Pre-seed an existing workout file for today */
-  existingWorkout?: string;
+  /** Pre-seed an existing in-progress workout for today */
+  existingWorkout?: {
+    type?: string;
+    location?: string;
+    exercises?: Array<{
+      name: string;
+      sets: Array<{ reps: number; weight: number | string; rpe?: number }>;
+    }>;
+  };
   /** Skip creating a weekly plan */
   noPlan?: boolean;
 }
 
-export interface TestRepo {
-  /** Absolute path to the test repo */
-  repoPath: string;
-  /** Current ISO week string (e.g., "2026-W08") */
+export interface TestEnv {
+  /** Seeded user id */
+  userId: string;
+  /** Current ISO week (e.g., "2026-W21") */
   currentWeek: string;
-  /** Today's date string (e.g., "2026-02-22") */
+  /** Today's date string (YYYY-MM-DD) */
   today: string;
-  /** Clean up the temp directory */
-  cleanup: () => void;
+  /** Tear down the in-memory DB */
+  cleanup(): void;
 }
 
+let envInitialized = false;
+
 /**
- * Create an isolated test repo with fixture data.
- *
- * Sets up:
- * - git init with a valid initial commit
- * - profile.md, prs.yaml, learnings.md
- * - weeks/{currentWeek}/plan.md
- * - Optionally: today's workout file
+ * Build a fresh test environment. Re-uses one pg-mem instance across calls
+ * (creating a new instance per test would be slow); the `reset()` step rolls
+ * the schema back to its post-migration state.
  */
-export function setupTestRepo(options: TestRepoOptions = {}): TestRepo {
-  const repoPath = mkdtempSync(join(tmpdir(), "iron-claude-test-"));
+export async function setupTestEnv(options: TestEnvOptions = {}): Promise<TestEnv> {
+  if (!envInitialized) {
+    createMemDb();
+    envInitialized = true;
+  }
+  getMemDb().reset();
+  const userId = await seedUser({ displayName: "Test Athlete" });
   const currentWeek = getCurrentWeek();
   const today = getToday();
+  const storage = getStorage();
 
-  // Initialize git (disable signing — test repos don't need it)
-  execSync("git init", { cwd: repoPath, stdio: "pipe" });
-  execSync('git config user.email "test@iron-claude.dev"', { cwd: repoPath, stdio: "pipe" });
-  execSync('git config user.name "IronClaude Test"', { cwd: repoPath, stdio: "pipe" });
-  execSync("git config commit.gpgsign false", { cwd: repoPath, stdio: "pipe" });
+  await storage.writeProfile(userId, options.profile ?? PROFILE);
+  await storage.writeLearnings(userId, options.learnings ?? LEARNINGS);
 
-  // Write base fixture files
-  writeFileSync(join(repoPath, "profile.md"), options.profile || PROFILE);
-  writeFileSync(join(repoPath, "prs.yaml"), options.prs || PRS_YAML);
-  writeFileSync(join(repoPath, "learnings.md"), options.learnings || LEARNINGS);
-
-  // Create week directory and plan
-  const weekDir = join(repoPath, "weeks", currentWeek);
-  mkdirSync(weekDir, { recursive: true });
+  for (const pr of options.prs ?? PRS) {
+    await storage.upsertPR(userId, { ...pr, date: pr.date });
+  }
 
   if (!options.noPlan) {
-    const planContent = options.plan || buildWeeklyPlan(currentWeek);
-    writeFileSync(join(weekDir, "plan.md"), planContent);
+    await storage.writeWeeklyPlan(
+      userId,
+      currentWeek,
+      options.plan ?? buildWeeklyPlan(currentWeek)
+    );
   }
 
-  // Optional: pre-seed today's workout
   if (options.existingWorkout) {
-    writeFileSync(join(weekDir, `${today}.md`), options.existingWorkout);
+    const w = await storage.startWorkout(userId, {
+      date: today,
+      isoWeek: currentWeek,
+      type: options.existingWorkout.type ?? "upper",
+      location: options.existingWorkout.location,
+      backFilled: false,
+      startedAt: "10:00",
+    });
+    for (const ex of options.existingWorkout.exercises ?? []) {
+      await storage.appendExerciseSets(userId, w.id, ex.name, ex.sets);
+    }
   }
-
-  // Create initial commit so git is in a valid state
-  execSync("git add -A", { cwd: repoPath, stdio: "pipe" });
-  execSync('git commit -m "Initial test fixtures"', { cwd: repoPath, stdio: "pipe" });
 
   return {
-    repoPath,
+    userId,
     currentWeek,
     today,
-    cleanup: () => {
-      try {
-        rmSync(repoPath, { recursive: true, force: true });
-      } catch {
-        // Best effort cleanup
-      }
+    cleanup(): void {
+      // The next setupTestEnv call will reset; no per-test cleanup needed.
     },
   };
 }

@@ -1,18 +1,17 @@
 /**
  * Scenario: Session Flow
  *
- * Tests the full workout session lifecycle:
- * - Starting a workout (file created with status: in_progress)
- * - Ending a workout (status → completed)
- * - General chat (no file mutations)
+ * Pre-seed an active workout, ask the agent to wrap it up, verify the row's
+ * status flips from in_progress → completed. Also: general chat shouldn't
+ * spawn a workout row.
  */
 
 import { createCoachAgentV2 } from "../../src/coach-v2/index.js";
-import { setupTestRepo, type TestRepo } from "./setup.js";
+import { setupTestEnv, type TestEnv } from "./setup.js";
 import {
-  expectWorkoutFileExists,
-  expectNoWorkoutFile,
-  readWorkoutFile,
+  expectNoWorkout,
+  expectWorkoutExists,
+  expectWorkoutStatus,
 } from "./assertions.js";
 
 const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
@@ -25,85 +24,61 @@ if (!hasApiKey) {
 }
 
 describeWithApi("Scenario: Session Flow", () => {
-  let repo: TestRepo;
+  let env: TestEnv;
 
   afterEach(() => {
-    repo?.cleanup();
+    env?.cleanup();
   });
 
   it(
     "completes a workout and sets status to completed",
     async () => {
-      // Pre-seed: active workout with exercises logged
-      const existingWorkout = `---
-date: "${new Date().toISOString().split("T")[0]}"
-type: upper
-status: in_progress
----
-# Workout
-
-## Bench Press
-- 175 x 5 x 3 (RPE 7)
-
-## Overhead Press
-- 105 x 5 x 3 (RPE 7)
-
-## Barbell Row
-- 155 x 8 x 3 (RPE 7)
-`;
-
-      repo = setupTestRepo({ existingWorkout });
+      env = await setupTestEnv({
+        existingWorkout: {
+          type: "upper",
+          exercises: [
+            { name: "Bench Press", sets: [{ reps: 5, weight: 175, rpe: 7 }] },
+            { name: "Overhead Press", sets: [{ reps: 5, weight: 105, rpe: 7 }] },
+            { name: "Barbell Row", sets: [{ reps: 8, weight: 155, rpe: 7 }] },
+          ],
+        },
+      });
 
       const agent = createCoachAgentV2({
+        userId: env.userId,
+        timezone: "America/New_York",
         model: "claude-haiku-4-5",
-
-        repoPath: repo.repoPath,
+        maxTurns: 15,
       });
 
       const response = await agent.runCoach(
         "that's it for today, skipping accessories. Felt good overall!"
       );
 
-      // Workout file should still exist
-      expectWorkoutFileExists(repo.repoPath, repo.currentWeek, repo.today);
-
-      // The agent MUST have updated the frontmatter status to "completed"
-      // This is the bug we saw in production: workouts left as in_progress
-      // after the user said they were done, making them invisible to retros
-      const content = readWorkoutFile(repo.repoPath, repo.currentWeek, repo.today);
-      const statusMatch = content.match(/status:\s*(\S+)/);
-      expect({
-        frontmatterStatus: statusMatch?.[1],
-        note: "Workout must have status: completed in frontmatter after user says done",
-      }).toEqual(
-        expect.objectContaining({ frontmatterStatus: "completed" })
-      );
-
-      // Response should acknowledge the workout ending
+      await expectWorkoutExists(env);
+      await expectWorkoutStatus(env, "completed");
       expect(response.message.length).toBeGreaterThan(0);
     },
     180_000
   );
 
   it(
-    "general chat does not create workout files",
+    "general chat does not create a workout row",
     async () => {
-      repo = setupTestRepo();
+      env = await setupTestEnv();
 
       const agent = createCoachAgentV2({
+        userId: env.userId,
+        timezone: "America/New_York",
         model: "claude-haiku-4-5",
-
-        repoPath: repo.repoPath,
+        maxTurns: 15,
       });
 
       const response = await agent.runCoach(
         "How's my progress looking this week? Any suggestions?"
       );
 
-      // Should NOT create a workout file
-      expectNoWorkoutFile(repo.repoPath, repo.currentWeek, repo.today);
-
-      // Response should be substantive
+      await expectNoWorkout(env);
       expect(response.message.length).toBeGreaterThan(20);
     },
     180_000

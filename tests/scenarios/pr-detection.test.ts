@@ -1,16 +1,13 @@
 /**
  * Scenario: PR Detection
  *
- * Tests that the agent detects personal records when the user
- * logs a weight that exceeds their existing PR.
- *
- * Fixture setup: PR for bench is 170x5. Plan calls for 175x5.
- * If user sends "bench 175x5", that's a new PR.
+ * Bench PR is fixture-seeded at 170x5; if the user logs 175x5 the agent
+ * should either record it as a PR or call it out in chat.
  */
 
 import { createCoachAgentV2 } from "../../src/coach-v2/index.js";
-import { setupTestRepo, type TestRepo } from "./setup.js";
-import { readPRsFile } from "./assertions.js";
+import { setupTestEnv, type TestEnv } from "./setup.js";
+import { getStorage } from "../../src/storage/db.js";
 
 const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
 const describeWithApi = hasApiKey ? describe : describe.skip;
@@ -22,40 +19,41 @@ if (!hasApiKey) {
 }
 
 describeWithApi("Scenario: PR Detection", () => {
-  let repo: TestRepo;
+  let env: TestEnv;
 
   afterEach(() => {
-    repo?.cleanup();
+    env?.cleanup();
   });
 
   it(
     "detects and celebrates a new bench press PR",
     async () => {
-      repo = setupTestRepo();
+      env = await setupTestEnv();
 
       const agent = createCoachAgentV2({
+        userId: env.userId,
+        timezone: "America/New_York",
         model: "claude-haiku-4-5",
-
-        repoPath: repo.repoPath,
+        maxTurns: 15,
       });
 
-      // Bench PR is 170x5. Sending 175x5 should trigger PR detection.
       const response = await agent.runCoach(
         "Just finished bench press: 175 x 5 x 3, all sets. Felt strong today! Please log this workout."
       );
 
-      // Check if prs.yaml was updated with the new weight
-      const prs = readPRsFile(repo.repoPath);
-      // The agent should have updated bench_press to 175
-      // (or at minimum, the response should mention the PR)
-      const prUpdated = prs.includes("175");
+      // Either (a) the agent updated the PR row to 175, or (b) called it out
+      // in chat — both are acceptable signals.
+      const prs = await getStorage().readPRs(env.userId);
+      const benchCurrent = prs.find(
+        (p) => p.isCurrent && p.exercise.toLowerCase().includes("bench")
+      );
+      const prUpdated = benchCurrent?.weight === 175;
       const responseMentionsPR =
         response.message.toLowerCase().includes("pr") ||
         response.message.toLowerCase().includes("personal record") ||
         response.message.toLowerCase().includes("record") ||
         response.message.toLowerCase().includes("new best");
 
-      // At least one of these should be true
       expect(prUpdated || responseMentionsPR).toBe(true);
     },
     180_000
@@ -64,23 +62,24 @@ describeWithApi("Scenario: PR Detection", () => {
   it(
     "does NOT flag a PR when weight is below existing record",
     async () => {
-      repo = setupTestRepo();
+      env = await setupTestEnv();
 
       const agent = createCoachAgentV2({
+        userId: env.userId,
+        timezone: "America/New_York",
         model: "claude-haiku-4-5",
-
-        repoPath: repo.repoPath,
+        maxTurns: 15,
       });
 
       // Bench PR is 170x5. Sending 155x8 is a volume day, not a PR.
       await agent.runCoach("bench 155x8x3 RPE 7, volume day");
 
-      // prs.yaml should NOT have been modified
-      const prs = readPRsFile(repo.repoPath);
-      expect(prs).not.toContain("155");
-
-      // The bench PR should still be 170
-      expect(prs).toContain("170");
+      const prs = await getStorage().readPRs(env.userId);
+      const benchCurrent = prs.find(
+        (p) => p.isCurrent && p.exercise.toLowerCase().includes("bench")
+      );
+      // Current PR should still be the fixture's 170x5.
+      expect(benchCurrent?.weight).toBe(170);
     },
     180_000
   );

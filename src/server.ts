@@ -16,6 +16,8 @@ import cookieParser from "cookie-parser";
 import { webhookHandler } from "./handlers/webhook.js";
 import { createCronHandler } from "./handlers/cron.js";
 import { authRoutes } from "./handlers/auth.js";
+import { stripeWebhookHandler } from "./handlers/stripe.js";
+import { createCheckoutSessionHandler } from "./handlers/checkout.js";
 import {
   integrationWebhookHandler,
   integrationOAuthAuthHandler,
@@ -31,6 +33,10 @@ import { getBacklogCount } from "./inbox/storage.js";
 initSentry();
 
 const app = express();
+// Stripe needs the raw request body to verify signatures, so the raw-body
+// middleware must be mounted on the webhook path BEFORE the global JSON
+// parser. Other routes still get parsed JSON.
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), stripeWebhookHandler);
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
@@ -62,6 +68,7 @@ app.get("/api/cron/weekly-plan", createCronHandler("weekly-plan"));
 app.get("/api/cron/check-reminders", createCronHandler("check-reminders"));
 app.get("/api/cron/refresh-tokens", createCronHandler("refresh-tokens"));
 app.get("/api/cron/daily-compaction", createCronHandler("daily-compaction"));
+app.get("/api/cron/trial-expiry", createCronHandler("trial-expiry"));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth (Supabase phone OTP + sessions)
@@ -71,6 +78,12 @@ app.post("/api/auth/otp/request", authRoutes.otpRequest);
 app.post("/api/auth/otp/verify", authRoutes.otpVerify);
 app.post("/api/auth/signout", authRoutes.signout);
 app.get("/api/me", authRoutes.requireSession, authRoutes.me);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stripe Checkout (session-gated)
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post("/api/checkout/create-session", authRoutes.requireSession, createCheckoutSessionHandler);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Device Integrations

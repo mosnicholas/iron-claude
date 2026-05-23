@@ -1,181 +1,156 @@
 /**
  * Scenario Test Assertions
  *
- * Helpers that inspect file side effects in the test repo.
- * Assert on deterministic outcomes (file exists, content matches)
- * rather than model text output.
+ * The pre-DB version of these helpers inspected files in a temp git repo.
+ * Since the migration to Postgres-backed storage, they now query the DB
+ * through the same `DbStorage` instance the agent uses. The contracts
+ * (workout exists for date X, exercise Y was logged, PR was updated) are
+ * identical — only the substrate changed.
  */
 
-import { existsSync, readFileSync, readdirSync } from "fs";
-import { join } from "path";
+import { getStorage } from "../../src/storage/db.js";
+import type { TestEnv } from "./setup.js";
 import type { CoachV2Response as CoachResponse } from "../../src/coach-v2/index.js";
 
 // ============================================================================
-// File Existence
+// Workout existence
 // ============================================================================
 
-/** Assert a workout file exists for the given date */
-export function expectWorkoutFileExists(repoPath: string, week: string, date: string): void {
-  const filePath = join(repoPath, "weeks", week, `${date}.md`);
-  expect(existsSync(filePath)).toBe(true);
+/** Assert a workout row exists for the given date. */
+export async function expectWorkoutExists(
+  env: TestEnv,
+  date: string = env.today
+): Promise<void> {
+  const w = await getStorage().getWorkout(env.userId, date);
+  expect(w).not.toBeNull();
 }
 
-/** Assert a workout file does NOT exist for the given date */
-export function expectNoWorkoutFile(repoPath: string, week: string, date: string): void {
-  const filePath = join(repoPath, "weeks", week, `${date}.md`);
-  expect(existsSync(filePath)).toBe(false);
+/** Assert no workout row exists for the given date. */
+export async function expectNoWorkout(
+  env: TestEnv,
+  date: string = env.today
+): Promise<void> {
+  const w = await getStorage().getWorkout(env.userId, date);
+  expect(w).toBeNull();
 }
 
 // ============================================================================
-// Workout File Content
+// Workout content
 // ============================================================================
 
-/** Read a workout file and return its content */
-export function readWorkoutFile(repoPath: string, week: string, date: string): string {
-  const filePath = join(repoPath, "weeks", week, `${date}.md`);
-  if (!existsSync(filePath)) {
-    throw new Error(`Workout file not found: ${filePath}`);
+/** Read a workout and return it (throws if missing). */
+export async function readWorkout(
+  env: TestEnv,
+  date: string = env.today
+): Promise<NonNullable<Awaited<ReturnType<typeof getStorage>["getWorkout"]>>> {
+  const w = await getStorage().getWorkout(env.userId, date);
+  if (!w) {
+    throw new Error(`No workout for ${date}`);
   }
-  return readFileSync(filePath, "utf-8");
+  return w;
 }
 
-/** Assert the workout file contains a substring (case-insensitive) */
-export function expectWorkoutContains(
-  repoPath: string,
-  week: string,
-  date: string,
-  substring: string
-): void {
-  const content = readWorkoutFile(repoPath, week, date);
-  expect(content.toLowerCase()).toContain(substring.toLowerCase());
+/**
+ * Assert the workout for `date` contains an exercise whose name matches the
+ * given substring (case-insensitive) AND has at least one set with the given
+ * weight. The old file-based assertion did exact substring matching against
+ * the rendered markdown; we approximate the same intent against structured
+ * rows.
+ */
+export async function expectExerciseLogged(
+  env: TestEnv,
+  args: {
+    date?: string;
+    exercise: string;
+    weight?: number | string;
+  }
+): Promise<void> {
+  const w = await readWorkout(env, args.date ?? env.today);
+  const ex = w.exercises.find((e) =>
+    e.name.toLowerCase().includes(args.exercise.toLowerCase())
+  );
+  expect(ex).toBeDefined();
+  if (args.weight !== undefined) {
+    const wantNum = typeof args.weight === "number" ? args.weight : null;
+    const wantStr = typeof args.weight === "string" ? args.weight : null;
+    const match = ex!.sets.find((s) => {
+      if (wantNum !== null) return s.weight === wantNum;
+      if (wantStr !== null) return s.weightText === wantStr;
+      return false;
+    });
+    expect(match).toBeDefined();
+  }
 }
 
-/** Assert the workout frontmatter has a specific status */
-export function expectWorkoutStatus(
-  repoPath: string,
-  week: string,
-  date: string,
-  status: string
-): void {
-  const content = readWorkoutFile(repoPath, week, date);
-  // Match frontmatter status field
-  const statusMatch = content.match(/status:\s*(\w+)/);
-  expect(statusMatch).not.toBeNull();
-  expect(statusMatch![1]).toBe(status);
+/** Assert workout status (in_progress | completed | abandoned). */
+export async function expectWorkoutStatus(
+  env: TestEnv,
+  expected: "in_progress" | "completed" | "abandoned",
+  date: string = env.today
+): Promise<void> {
+  const w = await readWorkout(env, date);
+  expect(w.status).toBe(expected);
 }
 
 // ============================================================================
 // PRs
 // ============================================================================
 
-/** Read prs.yaml content from the test repo */
-export function readPRsFile(repoPath: string): string {
-  const filePath = join(repoPath, "prs.yaml");
-  if (!existsSync(filePath)) return "";
-  return readFileSync(filePath, "utf-8");
+/** Assert the current PR for an exercise (case-insensitive substring match). */
+export async function expectCurrentPR(
+  env: TestEnv,
+  exercise: string,
+  weight: number
+): Promise<void> {
+  const prs = await getStorage().readPRs(env.userId);
+  const matching = prs.filter(
+    (p) => p.isCurrent && p.exercise.toLowerCase().includes(exercise.toLowerCase())
+  );
+  const found = matching.find((p) => p.weight === weight);
+  expect(found).toBeDefined();
 }
 
-/** Assert prs.yaml contains a specific weight for an exercise */
-export function expectPRWeight(repoPath: string, exercise: string, weight: number): void {
-  const prs = readPRsFile(repoPath);
-  // Simple check: the exercise section should contain the weight
-  const exerciseSection = extractYamlSection(prs, exercise);
-  expect(exerciseSection).toContain(`weight: ${weight}`);
-}
-
-// ============================================================================
-// Learnings
-// ============================================================================
-
-/** Read learnings.md content from the test repo */
-export function readLearningsFile(repoPath: string): string {
-  const filePath = join(repoPath, "learnings.md");
-  if (!existsSync(filePath)) return "";
-  return readFileSync(filePath, "utf-8");
-}
-
-/** Assert learnings.md contains a substring */
-export function expectLearningsContains(repoPath: string, substring: string): void {
-  const content = readLearningsFile(repoPath);
-  expect(content.toLowerCase()).toContain(substring.toLowerCase());
-}
-
-// ============================================================================
-// Plan File
-// ============================================================================
-
-/** Read plan.md content from the test repo */
-export function readPlanFile(repoPath: string, week: string): string {
-  const filePath = join(repoPath, "weeks", week, "plan.md");
-  if (!existsSync(filePath)) return "";
-  return readFileSync(filePath, "utf-8");
+/**
+ * Assert the current PR for an exercise is *unchanged* — i.e. the existing
+ * record still wins. Useful for "did NOT trigger a PR" cases.
+ */
+export async function expectCurrentPRUnchanged(
+  env: TestEnv,
+  exercise: string,
+  expectedWeight: number
+): Promise<void> {
+  const prs = await getStorage().readPRs(env.userId);
+  const current = prs.find(
+    (p) =>
+      p.isCurrent && p.exercise.toLowerCase().includes(exercise.toLowerCase())
+  );
+  expect(current?.weight).toBe(expectedWeight);
 }
 
 // ============================================================================
-// Response Assertions
+// Plan
 // ============================================================================
 
-/** Assert the response used a specific tool */
+/** Read the current plan body (returns empty string if missing). */
+export async function readPlanBody(
+  env: TestEnv,
+  week: string = env.currentWeek
+): Promise<string> {
+  const p = await getStorage().readWeeklyPlan(env.userId, week);
+  return p?.body ?? "";
+}
+
+// ============================================================================
+// Response assertions
+// ============================================================================
+
 export function expectToolUsed(response: CoachResponse, toolName: string): void {
   expect(response.toolsUsed).toContain(toolName);
 }
 
-/** Assert the response text mentions something (case-insensitive) */
-export function expectResponseMentions(response: CoachResponse, substring: string): void {
+export function expectResponseMentions(
+  response: CoachResponse,
+  substring: string
+): void {
   expect(response.message.toLowerCase()).toContain(substring.toLowerCase());
-}
-
-// ============================================================================
-// File Change Detection
-// ============================================================================
-
-/** List all files that changed since the initial commit */
-export function getChangedFiles(repoPath: string): string[] {
-  const { execSync } = require("child_process");
-  const output = execSync("git diff --name-only HEAD", {
-    cwd: repoPath,
-    encoding: "utf-8",
-  });
-  // Also check untracked files
-  const untracked = execSync("git ls-files --others --exclude-standard", {
-    cwd: repoPath,
-    encoding: "utf-8",
-  });
-  const all = [...output.trim().split("\n"), ...untracked.trim().split("\n")].filter(Boolean);
-  return [...new Set(all)];
-}
-
-/** List all files in a directory */
-export function listFiles(repoPath: string, subdir: string): string[] {
-  const dir = join(repoPath, subdir);
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir);
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/** Extract a YAML section by key (simple parser for prs.yaml format) */
-function extractYamlSection(yaml: string, key: string): string {
-  const lines = yaml.split("\n");
-  let inSection = false;
-  const sectionLines: string[] = [];
-
-  for (const line of lines) {
-    if (line.startsWith(`${key}:`) || line.startsWith(`${key} :`)) {
-      inSection = true;
-      sectionLines.push(line);
-      continue;
-    }
-    if (inSection) {
-      if (line.match(/^\S/) && !line.startsWith(" ")) {
-        // New top-level key, end of section
-        break;
-      }
-      sectionLines.push(line);
-    }
-  }
-
-  return sectionLines.join("\n");
 }

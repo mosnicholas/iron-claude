@@ -60,6 +60,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error(pc.red(`setup-storage failed: ${err instanceof Error ? err.message : String(err)}`));
+  console.error(
+    pc.red(`setup-storage failed: ${err instanceof Error ? err.message : String(err)}`)
+  );
   process.exit(1);
 });

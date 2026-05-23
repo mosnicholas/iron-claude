@@ -1,11 +1,15 @@
 /**
- * Test Fixtures
+ * Scenario Test Fixtures
  *
- * Minimal, realistic data for scenario tests.
- * Known values so we can write deterministic assertions:
- * - Plan says Bench 175x5 → if user sends "bench 175x5", it matches plan
- * - PR for bench is 170 → 175x5 should trigger PR detection
- * - Profile establishes the athlete context
+ * Canonical seed data for the scenario tests. The text strings (PROFILE,
+ * LEARNINGS, the plan body) get stored directly in their text columns; PRs
+ * are converted from the legacy yaml shape into rows the storage layer can
+ * upsert.
+ *
+ * Known fixture values that drive the scenarios:
+ * - Plan calls for bench 175x5 — matches `bench 175x5` user input.
+ * - Bench PR is 170x5 — `bench 175x5` should be detected as a PR.
+ * - Profile establishes the athlete context.
  */
 
 export const PROFILE = `# Athlete Profile
@@ -29,28 +33,40 @@ export const PROFILE = `# Athlete Profile
 - Mild lower back tightness — avoid heavy good mornings
 `;
 
-export const PRS_YAML = `# Personal Records
-bench_press:
-  weight: 170
-  reps: 5
-  date: "2026-02-15"
-  estimated_1rm: 197
-squat:
-  weight: 225
-  reps: 5
-  date: "2026-02-10"
-  estimated_1rm: 261
-deadlift:
-  weight: 275
-  reps: 5
-  date: "2026-02-08"
-  estimated_1rm: 319
-overhead_press:
-  weight: 105
-  reps: 5
-  date: "2026-02-12"
-  estimated_1rm: 122
-`;
+/**
+ * Structured PR data — stored as rows in the `prs` table. Mirrors the old
+ * `prs.yaml` fixture so the scenario assertions keep their identity.
+ */
+export const PRS = [
+  {
+    exercise: "Bench Press",
+    weight: 170,
+    reps: 5,
+    date: "2026-02-15",
+    estimated1Rm: 197,
+  },
+  {
+    exercise: "Squat",
+    weight: 225,
+    reps: 5,
+    date: "2026-02-10",
+    estimated1Rm: 261,
+  },
+  {
+    exercise: "Deadlift",
+    weight: 275,
+    reps: 5,
+    date: "2026-02-08",
+    estimated1Rm: 319,
+  },
+  {
+    exercise: "Overhead Press",
+    weight: 105,
+    reps: 5,
+    date: "2026-02-12",
+    estimated1Rm: 122,
+  },
+];
 
 export const LEARNINGS = `# Learnings
 
@@ -68,8 +84,8 @@ export const LEARNINGS = `# Learnings
 `;
 
 /**
- * Build a weekly plan for the current week.
- * Uses day names so the plan works regardless of actual dates.
+ * Build a weekly plan body for the given ISO week string. Uses day names so
+ * the plan text doesn't depend on the actual dates.
  */
 export function buildWeeklyPlan(weekString: string): string {
   return `# Training Plan — ${weekString}
