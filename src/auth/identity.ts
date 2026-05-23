@@ -43,6 +43,11 @@ export async function findOrCreateUserByChannel(
   // overwritten if/when they bind a real phone via OTP.
   const placeholderPhone = hint?.phoneE164 ?? `+pending:${channel}:${externalId}`;
 
+  // Set trialEndsAt explicitly in JS in case the SQL default isn't evaluated
+  // (e.g. some test harnesses, or Drizzle versions that strip column defaults
+  // when the column is omitted from `values()`).
+  const trialEndsAt = thirtyDaysFromNow();
+
   return db.transaction(async (tx) => {
     const [user] = await tx
       .insert(users)
@@ -50,6 +55,7 @@ export async function findOrCreateUserByChannel(
         phoneE164: placeholderPhone,
         displayName: hint?.displayName,
         timezone: hint?.timezone ?? getTimezone(),
+        trialEndsAt,
       })
       .returning();
     await tx.insert(channelIdentities).values({
@@ -59,6 +65,12 @@ export async function findOrCreateUserByChannel(
     });
     return user;
   });
+}
+
+function thirtyDaysFromNow(): Date {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + 30);
+  return d;
 }
 
 export async function bindChannelToUser(

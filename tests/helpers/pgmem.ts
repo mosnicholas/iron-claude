@@ -31,16 +31,19 @@ function createAdvisoryLocks() {
   const held = new Set<number>();
   return {
     tryLock(key: number): boolean {
+      console.error("[locks.tryLock]", key, "held:", [...held]);
       if (held.has(key)) return false;
       held.add(key);
       return true;
     },
     unlock(key: number): boolean {
+      console.error("[locks.unlock]", key);
       if (!held.has(key)) return false;
       held.delete(key);
       return true;
     },
     clear(): void {
+      console.error("[locks.clear]");
       held.clear();
     },
   };

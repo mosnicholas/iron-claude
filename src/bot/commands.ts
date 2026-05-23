@@ -31,6 +31,8 @@ export const COMMANDS: Record<string, CommandHandler> = {
 
 const HELP_TEXT = `**How to Use IronClaude**
 
+**First time?** Just say hi. I'll ask about your goals and we'll go from there — no forms.
+
 Just talk to me naturally! Here's what I can help with:
 
 📋 **Planning & Schedule**

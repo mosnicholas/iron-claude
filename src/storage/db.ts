@@ -7,7 +7,7 @@
  * worker's advisory lock — Storage doesn't lock on its own.
  */
 
-import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import {
   conversationSummaries,
@@ -15,6 +15,7 @@ import {
   integrationTokens,
   learnings,
   messages,
+  photos,
   prs,
   profiles,
   reminders,
@@ -34,6 +35,7 @@ import {
   type IntegrationToken,
   type NewIntegrationToken,
   type IntegrationMetric,
+  type Photo,
 } from "../db/schema.js";
 import type {
   LoggedSetInput,
@@ -785,6 +787,24 @@ export class DbStorage implements Storage {
       .select()
       .from(integrationMetrics)
       .where(and(eq(integrationMetrics.userId, userId), eq(integrationMetrics.date, date)));
+  }
+
+  // ── Photos ───────────────────────────────────────────────────────────────
+
+  async listPhotos(
+    userId: UserId,
+    opts: { since?: string; until?: string; limit?: number } = {}
+  ): Promise<Photo[]> {
+    const conditions = [eq(photos.userId, userId)];
+    if (opts.since) conditions.push(gte(photos.takenAt, new Date(opts.since)));
+    if (opts.until) conditions.push(lte(photos.takenAt, new Date(opts.until)));
+
+    return this.db
+      .select()
+      .from(photos)
+      .where(and(...conditions))
+      .orderBy(desc(photos.takenAt))
+      .limit(opts.limit ?? 50);
   }
 }
 

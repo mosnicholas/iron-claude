@@ -166,10 +166,15 @@ ${context.coachingPriorities}`;
     ? `## Carry-forward from previous days\n${truncate(context.conversationSummary, 2000)}\n\n`
     : "";
 
+  const onboardingDirective =
+    context.profile === null
+      ? `\n**This is the athlete's first session.** Load the \`onboarding\` skill via the \`load_skill\` tool before continuing. Don't skip — without a profile, every future turn will be blind.\n`
+      : "";
+
   const dynamic = `# Current state
 - Today: ${context.dateInfo.dayOfWeek}, ${context.dateInfo.date} (${context.dateInfo.timezone})
 - Current week: ${context.dateInfo.isoWeek}
-
+${onboardingDirective}
 ${summaryBlock}## This week's plan
 ${context.currentPlan ? truncate(context.currentPlan, 4000) : "(no plan saved for this week)"}
 

@@ -19,6 +19,13 @@ export interface Skill {
 
 export const SKILLS: Skill[] = [
   {
+    name: "onboarding",
+    description:
+      "First-session flow for a brand-new athlete with no profile, no learnings, no plan. " +
+      "Load when the empty-profile signal is present in the system prompt.",
+    file: "onboarding.md",
+  },
+  {
     name: "plan-week",
     description:
       "Generate the weekly training plan. Load when the athlete asks to plan their week " +

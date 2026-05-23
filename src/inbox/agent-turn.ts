@@ -30,6 +30,8 @@ import {
 import { executeCommand, commandExists } from "../bot/commands.js";
 import { transcribeVoice, isVoiceTranscriptionAvailable } from "../bot/voice.js";
 import { addMessage } from "../bot/message-history.js";
+import { uploadPhoto } from "../storage/photos.js";
+import { isSupabaseConfigured } from "../auth/supabase.js";
 import type { ImageBlock } from "../coach-v2/llm-client.js";
 import type { TelegramUpdate } from "../storage/types.js";
 import type { User } from "../db/schema.js";

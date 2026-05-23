@@ -21,6 +21,7 @@ import type {
   IntegrationToken,
   NewIntegrationToken,
   IntegrationMetric,
+  Photo,
 } from "../db/schema.js";
 
 export type UserId = string; // uuid
@@ -193,4 +194,10 @@ export interface Storage {
     payload: Record<string, unknown>
   ): Promise<void>;
   getIntegrationMetrics(userId: UserId, date: string): Promise<IntegrationMetric[]>;
+
+  // ── Photos ───────────────────────────────────────────────────────────────
+  listPhotos(
+    userId: UserId,
+    opts?: { since?: string; until?: string; limit?: number }
+  ): Promise<Photo[]>;
 }
