@@ -10,6 +10,12 @@ IronClaude pairs the Claude Agent SDK with a fitness data model in Postgres. It 
 
 Prerequisites: Node.js 20+, Docker, a Supabase project (free tier OK), a Telegram bot, and an Anthropic API key.
 
+Create a Supabase project. You get three things from it:
+
+- **Postgres** — connection string for `DATABASE_URL` in production
+- **Auth** — phone OTP (configure Twilio in Supabase's dashboard)
+- **Storage** — progress-photo bucket
+
 ```bash
 # 1. Clone and install
 git clone https://github.com/your-fork/iron-claude.git
@@ -20,9 +26,11 @@ npm install
 docker compose up -d postgres
 ```
 
+The local Postgres in `docker-compose.yml` is for development only. In production, point `DATABASE_URL` at Supabase's connection pooler (Project Settings > Database > Connection String).
+
 ### 3. Create a Supabase project
 
-Go to https://supabase.com and create a project (free tier is fine). You'll use Supabase for Phone Auth only — the local Postgres above is your application database.
+Go to https://supabase.com and create a project (free tier is fine).
 
 1. Enable Phone Auth: **Authentication > Providers > Phone**
 2. Connect your own Twilio account in Supabase's dashboard (Supabase relays via Twilio)
@@ -161,6 +169,18 @@ Editable entities: `profile`, `learnings`, `prs`, `plans`, `retros`, `workouts`.
 
 ---
 
+## Storage
+
+Progress photos go in a Supabase Storage bucket named `progress-photos`. Create it once with:
+
+```bash
+npm run setup:storage
+```
+
+The script provisions the bucket and applies the access policy (private; signed URLs issued per-request). You can also create the bucket manually in the Supabase dashboard under **Storage**.
+
+---
+
 ## Testing
 
 ```bash
@@ -189,7 +209,6 @@ Integration tests run against the local Postgres started by `docker compose up -
 
 - Web UI for browsing workout history, PRs, and plans
 - WhatsApp / SMS adapter (the inbox abstraction makes this a thin shim)
-- Photo storage in S3 for progress tracking
 
 ---
 

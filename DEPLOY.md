@@ -33,9 +33,9 @@ Cron is **external** (cron-job.org or similar) — it hits `/api/cron/*` endpoin
 
 ## Step 1: Provision Postgres
 
-### Option A (recommended): Supabase Postgres
+### Default: Supabase Postgres
 
-Use the Postgres that ships with your Supabase project — same DB instance you already need for Auth.
+Supabase is the data plane for IronClaude — Postgres, Auth (phone OTP), and Storage (progress photos) all in one project.
 
 1. Open your Supabase project dashboard
 2. Go to **Project Settings > Database > Connection String**
@@ -43,9 +43,9 @@ Use the Postgres that ships with your Supabase project — same DB instance you 
 
 The pooler URL works better than the direct connection for serverless-style scale-to-zero. If you keep at least one Fly machine warm, the direct URL is fine too.
 
-### Option B: Fly.io Postgres
+### Alternative: Fly.io Postgres
 
-Cheaper at scale for self-hosters who don't need Supabase's other features.
+Use this only if you're avoiding Supabase. You'll still need Supabase Auth unless you replace the phone-OTP flow.
 
 ```bash
 fly postgres create --name iron-claude-db
@@ -80,8 +80,14 @@ fly secrets set \
   SENTRY_DSN='https://...' \
   GEMINI_API_KEY='AIza...' \
   WHOOP_CLIENT_ID='...' \
-  WHOOP_CLIENT_SECRET='...'
+  WHOOP_CLIENT_SECRET='...' \
+  STRIPE_SECRET_KEY='sk_live_...' \
+  STRIPE_WEBHOOK_SECRET='whsec_...' \
+  STRIPE_PRICE_REGULAR='price_...' \
+  STRIPE_PRICE_ATHLETE='price_...'
 ```
+
+The `STRIPE_*` block is optional — self-hosters who don't want billing can skip it. The app keeps every user on the trial-and-then-expired path without Stripe configured.
 
 ### Required secrets
 
@@ -99,7 +105,7 @@ fly secrets set \
 | `CRON_SECRET`                | Bearer token for `/api/cron/*` endpoints                |
 | `TIMEZONE`                   | IANA TZ name, e.g. `America/New_York`                   |
 
-Optional: `SENTRY_DSN`, `GEMINI_API_KEY`, `WHOOP_CLIENT_ID`, `WHOOP_CLIENT_SECRET`.
+Optional: `SENTRY_DSN`, `GEMINI_API_KEY`, `WHOOP_CLIENT_ID`, `WHOOP_CLIENT_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_REGULAR`, `STRIPE_PRICE_ATHLETE`.
 
 ---
 
@@ -115,6 +121,16 @@ Or push to `main` and let GitHub Actions deploy via `.github/workflows/deploy.ym
 2. Add repo **variable** `ENABLE_FLY_DEPLOY=true`
 
 `start.sh` runs `npm run db:migrate` before launching the server, so every deploy is migration-safe.
+
+### Storage bucket
+
+Create the `progress-photos` bucket once after the first deploy:
+
+```bash
+npm run setup:storage
+```
+
+Or create it manually in the Supabase dashboard under **Storage > New bucket** (name: `progress-photos`, private).
 
 ---
 
@@ -143,6 +159,7 @@ Sign up for [cron-job.org](https://cron-job.org/) (or any HTTPS cron). Add these
 | `GET /api/cron/weekly-plan`       | Sundays at 8pm (local)  | Generate next week's plan                |
 | `GET /api/cron/daily-compaction`  | Daily at 3am            | Compact agent context per user           |
 | `GET /api/cron/refresh-tokens`    | Daily                   | Refresh integration OAuth tokens         |
+| `GET /api/cron/trial-expiry`      | Daily at 9am            | Flip expired trials and notify users     |
 
 Example:
 
@@ -258,6 +275,28 @@ Or merge to `main` if CI deploys are enabled.
 - Twilio (for Phone Auth SMS): pennies per OTP
 
 Scaling past ~50 users will push Supabase into the Pro tier ($25/mo) and add a second Fly machine.
+
+---
+
+## Tiers and Billing
+
+IronClaude has two paid tiers and a free trial:
+
+- **Trial** — 30 days from signup, full access. Flipped to `expired` by the `trial-expiry` cron.
+- **Regular** — standard tier (`STRIPE_PRICE_REGULAR`).
+- **Athlete** — higher-touch tier (`STRIPE_PRICE_ATHLETE`).
+
+Stripe webhook URL: `POST /api/stripe/webhook` — configure this in the Stripe dashboard and copy the signing secret into `STRIPE_WEBHOOK_SECRET`.
+
+To comp an account (skip Stripe and grant a tier directly):
+
+```bash
+npm run grant-tier -- --phone +15551234567 --tier athlete
+```
+
+The same script accepts `--tier regular` or `--tier trial` to reset.
+
+If Stripe env vars are unset, the billing endpoints are disabled and access control falls back to trial-and-expired only.
 
 ---
 

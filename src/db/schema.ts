@@ -12,6 +12,7 @@
  *   - state/*.json files in fitness-data
  */
 
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   text,
@@ -47,6 +48,17 @@ export const users = pgTable(
     displayName: text("display_name"),
     timezone: varchar("timezone", { length: 64 }).notNull().default("America/New_York"),
     active: boolean("active").notNull().default(true),
+    // Subscription tier — see src/auth/tiers.ts. Default new users to a 30-day
+    // trial. Stripe webhook toggles regular/athlete; admin script can grant
+    // comped (and set tierOverriddenByAdmin so Stripe webhooks won't undo it).
+    tier: varchar("tier", { length: 16 }).notNull().default("trial"),
+    trialStartedAt: timestamp("trial_started_at", { withTimezone: true }).notNull().defaultNow(),
+    trialEndsAt: timestamp("trial_ends_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now() + interval '30 days'`),
+    stripeCustomerId: varchar("stripe_customer_id", { length: 64 }),
+    stripeSubscriptionId: varchar("stripe_subscription_id", { length: 64 }),
+    tierOverriddenByAdmin: boolean("tier_overridden_by_admin").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -358,6 +370,34 @@ export const inboxEvents = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Progress photos
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const photos = pgTable(
+  "photos",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    storagePath: text("storage_path").notNull(), // e.g. "<userId>/<photoId>.jpg"
+    bucket: varchar("bucket", { length: 64 }).notNull().default("progress-photos"),
+    contentType: varchar("content_type", { length: 64 }).notNull(),
+    sizeBytes: integer("size_bytes"),
+    width: integer("width"),
+    height: integer("height"),
+    caption: text("caption"),
+    takenAt: timestamp("taken_at", { withTimezone: true }).notNull().defaultNow(),
+    sourceChannel: varchar("source_channel", { length: 16 }).notNull().default("telegram"),
+    sourceMessageId: varchar("source_message_id", { length: 64 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userTimeIdx: index("photos_user_taken_idx").on(t.userId, t.takenAt),
+  })
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Observability
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -409,3 +449,5 @@ export type IntegrationMetric = typeof integrationMetrics.$inferSelect;
 export type InboxEvent = typeof inboxEvents.$inferSelect;
 export type NewInboxEvent = typeof inboxEvents.$inferInsert;
 export type ToolCallLogEntry = typeof toolCallLog.$inferSelect;
+export type Photo = typeof photos.$inferSelect;
+export type NewPhoto = typeof photos.$inferInsert;

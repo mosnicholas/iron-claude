@@ -4,10 +4,24 @@
 
 Single repo, Postgres-backed. There is no longer a separate `fitness-data` repo — the importer (`npm run import`) migrated each user's markdown into the database.
 
+**Data plane:** Supabase — Postgres (`DATABASE_URL` points at the Supabase pooler), Auth (phone OTP via Twilio), and Storage (the `progress-photos` bucket).
+**Compute plane:** Fly.io — Docker container running Express + the inbox worker.
+
 - **Channels** (Telegram today, web/WhatsApp later) post to `/api/webhook` and enqueue an inbox row.
 - **Inbox worker** (`src/inbox/worker.ts`) pulls items, takes a Postgres advisory lock keyed on `user_id`, and runs the `CoachAgent` for one turn. The lock guarantees per-user serialization across any number of app instances.
-- **Storage** is the Drizzle-backed `Storage` interface in `src/storage/db.ts`. All coach tools call it; they never touch the filesystem.
+- **Storage** is the Drizzle-backed `Storage` interface in `src/storage/db.ts`. All coach tools call it; they never touch the filesystem. Binary blobs (progress photos) live in Supabase Storage; everything else is rows in Postgres.
 - **Auth** is Supabase Phone-OTP. Server-side verification lives in `src/auth/`.
+
+### Tiers
+
+Access control has three states: `trial`, `regular`, `athlete`, `expired`.
+
+- New signups start on `trial` (30 days).
+- The `GET /api/cron/trial-expiry` job (daily 9am) auto-flips trials past their expiry to `expired`.
+- Paid upgrades flow through Stripe — webhook at `POST /api/stripe/webhook` sets `regular` or `athlete`.
+- Admin override: `npm run grant-tier -- --phone +1… --tier athlete` writes the tier directly, bypassing Stripe (useful for comps and dev accounts).
+
+Tier checks happen in the request pipeline before reaching the inbox; expired users get a billing prompt instead of a coaching turn.
 
 ### Repo Structure
 
@@ -93,6 +107,10 @@ To add a scenario: extend `tests/scenarios/fixtures.ts`, use `setupTestScenario(
 ### Skills Reference
 - `/plan-week` — Weekly planning workflow (includes progressive overload & deload logic)
 - `/analyze` — Progress analysis and recommendations
+
+### Telegram Onboarding
+
+On a user's first turn, the agent loads the `onboarding` skill (`src/coach-v2/skills/onboarding.md`) to walk through profile setup — goals, equipment, schedule, limitations. The skill self-uninstalls once `profiles` has the required fields populated.
 
 ### Storage Model
 

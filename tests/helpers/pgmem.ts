@@ -10,17 +10,20 @@
  */
 
 import { EventEmitter } from "events";
-import { readFileSync } from "fs";
+import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { newDb, type IMemoryDb } from "pg-mem";
 import { __setTestPool, getDb } from "../../src/db/client.js";
 import { __resetStorageCache } from "../../src/storage/db.js";
 
-const MIGRATION_PATH = join(
-  process.cwd(),
-  "drizzle",
-  "0000_mature_sir_ram.sql"
-);
+const MIGRATIONS_DIR = join(process.cwd(), "drizzle");
+
+function listMigrationFiles(): string[] {
+  return readdirSync(MIGRATIONS_DIR)
+    .filter((f) => /^\d{4}_.+\.sql$/.test(f))
+    .sort()
+    .map((f) => join(MIGRATIONS_DIR, f));
+}
 
 // Locks are global to a pg-mem instance — they model `pg_advisory_lock` which
 // in production is per-database. Held across queries on the same instance.
@@ -78,23 +81,131 @@ function substParams(sqlText: string, params: readonly unknown[]): string {
   );
 }
 
+/**
+ * pg-mem has a known quirk with correlated subqueries in the SELECT list: when
+ * the outer table has zero rows, it still returns one row whose outer columns
+ * are all null. Detect and drop such phantom rows so storage methods behave
+ * the same as on real Postgres.
+ */
+function dropPhantomCorrelatedRows(
+  rows: Record<string, unknown>[],
+  fields: { name: string }[]
+): Record<string, unknown>[] {
+  if (rows.length !== 1) return rows;
+  const row = rows[0];
+  // Heuristic: if every scalar (non-array, non-object) field is null/"null",
+  // this is a phantom row from a correlated subquery against an empty outer.
+  // Array/object fields (subquery COUNT results, jsonb) are skipped from the
+  // check because they're computed even when the outer row doesn't exist.
+  // We iterate over the row's own keys to be robust to fields metadata being
+  // empty (pg-mem doesn't always populate it).
+  const keys = fields.length > 0 ? fields.map((f) => f.name) : Object.keys(row);
+  const scalarFieldsAllNull = keys.every((k) => {
+    const v = row[k];
+    if (Array.isArray(v) || (v && typeof v === "object" && !(v instanceof Date)))
+      return true;
+    return v === null || v === undefined || v === "null";
+  });
+  return scalarFieldsAllNull ? [] : rows;
+}
+
+/**
+ * pg-mem doesn't understand `FOR UPDATE SKIP LOCKED`. We strip it; the
+ * single-threaded JS test runner doesn't actually need row-level locks to
+ * avoid concurrent claims.
+ */
+function stripSkipLocked(sqlText: string): string {
+  return sqlText.replace(/\bFOR\s+UPDATE\s+SKIP\s+LOCKED\b/gi, "");
+}
+
+/**
+ * pg-mem's `ON CONFLICT (...) DO NOTHING RETURNING ...` returns the existing
+ * row, whereas real Postgres returns zero rows when a conflict is hit. We
+ * detect this shape and pre-check the conflict — if it would fire, we return
+ * an empty result without running the insert.
+ *
+ * Returns { intercepted: true } and a synthesized empty result when we want
+ * to bypass the insert, otherwise { intercepted: false }.
+ */
+function maybeShortCircuitDoNothing(
+  db: IMemoryDb,
+  text: string
+): { intercepted: true; result: { command: string; rowCount: number; fields: { name: string }[]; rows: never[] } } | { intercepted: false } {
+  const insertMatch = text.match(
+    /^\s*insert\s+into\s+"?(\w+)"?[\s\S]+?on\s+conflict\s*\(([^)]+)\)\s*do\s+nothing/i
+  );
+  if (!insertMatch) return { intercepted: false };
+  const table = insertMatch[1];
+  const conflictCols = insertMatch[2]
+    .split(",")
+    .map((s) => s.trim().replace(/"/g, ""));
+
+  // Extract values list for the columns from the INSERT body. We only need to
+  // check whether (conflictCols) already exists.
+  const colListMatch = text.match(/insert\s+into\s+"?\w+"?\s*\(([^)]+)\)/i);
+  const valsMatch = text.match(/values\s*\(([^)]+)\)/i);
+  if (!colListMatch || !valsMatch) return { intercepted: false };
+  const colNames = colListMatch[1]
+    .split(",")
+    .map((s) => s.trim().replace(/"/g, ""));
+  const valStrs = valsMatch[1].split(",").map((s) => s.trim());
+  const where = conflictCols
+    .map((cc) => {
+      const idx = colNames.indexOf(cc);
+      if (idx < 0) return null;
+      const v = valStrs[idx];
+      // Skip when value is "default" — caller can't be conflicting on a default
+      if (v.toLowerCase() === "default") return null;
+      return `"${cc}" = ${v}`;
+    })
+    .filter(Boolean) as string[];
+  if (where.length !== conflictCols.length) return { intercepted: false };
+  try {
+    const probe = db.public.query(`SELECT 1 FROM "${table}" WHERE ${where.join(" AND ")} LIMIT 1`);
+    if (probe.rows.length > 0) {
+      // Conflict would fire → no row returned.
+      return {
+        intercepted: true,
+        result: { command: "INSERT", rowCount: 0, fields: [], rows: [] },
+      };
+    }
+  } catch {
+    return { intercepted: false };
+  }
+  return { intercepted: false };
+}
+
 function runQuery(
   db: IMemoryDb,
   sqlText: string,
   params: readonly unknown[] = [],
   arrayMode = false
 ) {
-  const text = params.length > 0 ? substParams(sqlText, params) : sqlText;
+  const subbed = params.length > 0 ? substParams(sqlText, params) : sqlText;
+  const text = stripSkipLocked(subbed);
   if (process.env.DEBUG_PGMEM) {
     console.error("[pgmem]", text);
   }
+  const shortCircuit = maybeShortCircuitDoNothing(db, text);
+  if (shortCircuit.intercepted) {
+    return shortCircuit.result;
+  }
   const result = db.public.query(text);
   const fields = (result.fields ?? []).map((f) => ({ name: f.name }));
-  const rows = arrayMode
-    ? result.rows.map((row: Record<string, unknown>) =>
-        fields.map((f) => row[f.name])
+  // Only run the phantom-row cleanup on SELECTs with subqueries — INSERT/UPDATE
+  // RETURNING and other paths must not be touched. Runs whether the caller
+  // wanted array mode or not; we re-arrayify after cleanup if needed.
+  const looksLikeCorrelatedSelect =
+    /^\s*select/i.test(text) && /\(\s*select/i.test(text);
+  const cleaned = looksLikeCorrelatedSelect
+    ? dropPhantomCorrelatedRows(
+        result.rows as Record<string, unknown>[],
+        fields
       )
-    : result.rows;
+    : (result.rows as Record<string, unknown>[]);
+  const rows = arrayMode
+    ? cleaned.map((row) => fields.map((f) => row[f.name]))
+    : cleaned;
   return {
     command: result.command,
     rowCount: result.rowCount,
@@ -200,11 +311,13 @@ export function createMemDb(): MemDbHandle {
     implementation: (key: unknown) => locks.unlock(Number(key)),
   } as never);
 
-  const migrationSql = readFileSync(MIGRATION_PATH, "utf-8");
-  for (const stmt of migrationSql.split("--> statement-breakpoint")) {
-    const s = stmt.trim();
-    if (!s) continue;
-    mem.public.none(s);
+  for (const file of listMigrationFiles()) {
+    const migrationSql = readFileSync(file, "utf-8");
+    for (const stmt of migrationSql.split("--> statement-breakpoint")) {
+      const s = stmt.trim();
+      if (!s) continue;
+      mem.public.none(s);
+    }
   }
 
   const pool = new MemPool(mem);
