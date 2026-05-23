@@ -69,11 +69,7 @@ export function createApp(): Express {
   app.post("/api/auth/signout", authRoutes.signout);
   app.get("/api/me", authRoutes.requireSession, authRoutes.me);
 
-  app.post(
-    "/api/checkout/create-session",
-    authRoutes.requireSession,
-    createCheckoutSessionHandler
-  );
+  app.post("/api/checkout/create-session", authRoutes.requireSession, createCheckoutSessionHandler);
 
   app.post("/api/integrations/:device/webhook", integrationWebhookHandler);
   app.get("/api/integrations/:device/auth", integrationOAuthAuthHandler);
