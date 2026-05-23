@@ -14,7 +14,7 @@ export type { CoachV2Config, CoachV2Response } from "./coach-v2/index.js";
 // Storage layer
 export { getStorage, DbStorage } from "./storage/db.js";
 export type { Storage } from "./storage/storage.js";
-export type * from "./storage/types.js";
+export type { TelegramUpdate, TelegramMessage, TelegramVoice, TelegramPhotoSize } from "./storage/types.js";
 
 // Bot
 export { TelegramBot, createTelegramBot, createTelegramBotForChat } from "./bot/telegram.js";
@@ -35,7 +35,5 @@ export {
 
 // Utilities
 export * from "./utils/date.js";
-export * from "./utils/pr-calculator.js";
-export * from "./utils/rpe-analyzer.js";
-export * from "./utils/pr-celebrations.js";
+export { calculate1RM } from "./utils/pr-calculator.js";
 export * from "./utils/weight-config.js";
