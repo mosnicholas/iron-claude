@@ -318,11 +318,30 @@ export const messages = pgTable(
     channel: varchar("channel", { length: 16 }).notNull().default("telegram"),
     role: varchar("role", { length: 16 }).notNull(), // user | assistant
     text: text("text").notNull(),
-    meta: jsonb("meta"), // { hasImage: true, voiceFileId: "..." }
+    meta: jsonb("meta"), // { hasImage: true, voiceFileId: "..." } — user-side
+    // ── Assistant-turn metadata (null on user messages) ───────────────────
+    /** Stable id linking the assistant message to its tool_call_log rows. */
+    turnId: varchar("turn_id", { length: 36 }),
+    /** Which handler ran the turn — "coach" | "debug". */
+    handler: varchar("handler", { length: 16 }),
+    /** Coach mode label ("coach" | "planner" | "retro" | "daily-reminder"). */
+    mode: varchar("mode", { length: 32 }),
+    /** Model that produced this assistant message (e.g. "claude-opus-4-7"). */
+    model: varchar("model", { length: 64 }),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    cacheReadTokens: integer("cache_read_tokens"),
+    cacheCreationTokens: integer("cache_creation_tokens"),
+    /** Wall-clock turn duration in ms. */
+    turnMs: integer("turn_ms"),
+    /** Tool names invoked during this turn. */
+    toolsUsed: jsonb("tools_used"), // string[]
     ts: timestamp("ts", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     userTsIdx: index("messages_user_ts_idx").on(t.userId, t.ts),
+    /** Hot path for cost rollups: SUM tokens per user per day. */
+    userModelTsIdx: index("messages_user_model_ts_idx").on(t.userId, t.model, t.ts),
   })
 );
 

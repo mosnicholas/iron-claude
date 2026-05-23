@@ -28,14 +28,37 @@ function rowToStored(row: Message): StoredMessage {
 
 /**
  * Add a message to the history.
+ *
+ * For assistant messages, callers should pass `turnStats` (model, token
+ * counts, duration, turnId, handler/mode, toolsUsed) so per-turn cost +
+ * latency analytics survive in the DB. User messages don't have these.
  */
 export async function addMessage(
   userId: string,
   role: "user" | "assistant",
   text: string,
-  meta?: Record<string, unknown>
+  opts?: {
+    meta?: Record<string, unknown>;
+    turnStats?: {
+      turnId: string;
+      handler: string;
+      mode?: string;
+      model: string;
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens: number;
+      cacheCreationTokens: number;
+      turnMs: number;
+      toolsUsed: string[];
+    };
+  }
 ): Promise<void> {
-  await getStorage().addMessage(userId, { role, text, meta });
+  await getStorage().addMessage(userId, {
+    role,
+    text,
+    meta: opts?.meta,
+    turnStats: opts?.turnStats,
+  });
 }
 
 /**

@@ -185,7 +185,9 @@ export async function runAgentTurn({ user, update, bot }: RunAgentTurnInput): Pr
     // (or sends additional messages if no streaming happened).
     await editor.finalize(response.message);
 
-    await addMessage(user.id, "assistant", response.message);
+    await addMessage(user.id, "assistant", response.message, {
+      turnStats: turnStatsFromResponse(response),
+    });
   } else {
     // Fallback if we couldn't get a message ID
     const response = await agent.chat(messageText, undefined, undefined, undefined, images);
@@ -193,7 +195,9 @@ export async function runAgentTurn({ user, update, bot }: RunAgentTurnInput): Pr
     for (const chunk of chunks) {
       await bot.sendMessageSafe(chunk);
     }
-    await addMessage(user.id, "assistant", response.message);
+    await addMessage(user.id, "assistant", response.message, {
+      turnStats: turnStatsFromResponse(response),
+    });
   }
 }
 
@@ -233,4 +237,24 @@ function inferImageMediaType(
     default:
       return "image/jpeg";
   }
+}
+
+/**
+ * Project a CoachV2Response into the addMessage `turnStats` shape so the
+ * assistant message row carries token + model + duration metadata for
+ * downstream cost/latency rollups.
+ */
+function turnStatsFromResponse(response: import("../coach-v2/index.js").CoachV2Response) {
+  return {
+    turnId: response.turnId,
+    handler: response.mode === "debug" ? "debug" : "coach",
+    mode: response.mode,
+    model: response.model,
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+    cacheReadTokens: response.usage.cache_read_input_tokens,
+    cacheCreationTokens: response.usage.cache_creation_input_tokens,
+    turnMs: response.durationMs,
+    toolsUsed: response.toolsUsed,
+  };
 }

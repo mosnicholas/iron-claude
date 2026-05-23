@@ -50,6 +50,12 @@ export interface HarnessResult {
   message: string;
   toolsUsed: string[];
   turnsUsed: number;
+  /** Model name used for this turn (e.g. "claude-opus-4-7"). */
+  model: string;
+  /** Wall-clock duration of the whole agent turn (across all LLM round-trips + tools). */
+  durationMs: number;
+  /** Stable id linking every LLM call + tool call for this turn in tool_call_log. */
+  turnId: string;
   usage: {
     input_tokens: number;
     output_tokens: number;
@@ -65,6 +71,7 @@ export async function runHarness(opts: HarnessOptions): Promise<HarnessResult> {
   const toolsByName = new Map(opts.tools.map((t) => [t.name, t] as const));
   const anthropicTools = opts.tools.map((t) => toolToAnthropic(t));
 
+  const turnStart = Date.now();
   const messages: Message[] = [{ role: "user", content: opts.userMessage }];
   const toolsUsed: string[] = [];
   const usage = {
@@ -113,6 +120,9 @@ export async function runHarness(opts: HarnessOptions): Promise<HarnessResult> {
         message: text,
         toolsUsed,
         turnsUsed: turn + 1,
+        model: opts.model,
+        durationMs: Date.now() - turnStart,
+        turnId,
         usage,
       };
     }
@@ -133,7 +143,15 @@ export async function runHarness(opts: HarnessOptions): Promise<HarnessResult> {
   const text = lastAssistant
     ? extractText(lastAssistant.content as AssistantContentBlock[])
     : "(coach exhausted tool turns without producing a reply)";
-  return { message: text, toolsUsed, turnsUsed: maxTurns, usage };
+  return {
+    message: text,
+    toolsUsed,
+    turnsUsed: maxTurns,
+    model: opts.model,
+    durationMs: Date.now() - turnStart,
+    turnId,
+    usage,
+  };
 }
 
 function extractText(blocks: AssistantContentBlock[]): string {

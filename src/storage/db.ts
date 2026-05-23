@@ -667,6 +667,7 @@ export class DbStorage implements Storage {
   // ── Messages ─────────────────────────────────────────────────────────────
 
   async addMessage(userId: UserId, msg: MessageInput): Promise<Message> {
+    const stats = msg.turnStats;
     const [row] = await this.db
       .insert(messages)
       .values({
@@ -675,6 +676,16 @@ export class DbStorage implements Storage {
         role: msg.role,
         text: msg.text,
         meta: msg.meta ?? null,
+        turnId: stats?.turnId ?? null,
+        handler: stats?.handler ?? null,
+        mode: stats?.mode ?? null,
+        model: stats?.model ?? null,
+        inputTokens: stats?.inputTokens ?? null,
+        outputTokens: stats?.outputTokens ?? null,
+        cacheReadTokens: stats?.cacheReadTokens ?? null,
+        cacheCreationTokens: stats?.cacheCreationTokens ?? null,
+        turnMs: stats?.turnMs ?? null,
+        toolsUsed: stats?.toolsUsed ?? null,
       })
       .returning();
     return row;

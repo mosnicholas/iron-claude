@@ -62,6 +62,24 @@ export interface MessageInput {
   text: string;
   channel?: string;
   meta?: Record<string, unknown>;
+  /**
+   * Assistant-turn metadata. Only set when `role === "assistant"`. Used for
+   * cost analytics, model-migration ROI, and debugging slow turns. Lives on
+   * the same row as the assistant text so a JOIN-free query rolls up tokens
+   * by user/day/model.
+   */
+  turnStats?: {
+    turnId: string;
+    handler: string;
+    mode?: string;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+    turnMs: number;
+    toolsUsed: string[];
+  };
 }
 
 export interface Storage {

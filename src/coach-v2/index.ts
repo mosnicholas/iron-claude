@@ -27,6 +27,19 @@ export interface CoachV2Response {
   toolsUsed: string[];
   turnsUsed: number;
   mode?: string;
+  /** Model used (for cost analytics). */
+  model: string;
+  /** Wall-clock duration of the agent turn. */
+  durationMs: number;
+  /** Stable id linking this turn to tool_call_log rows. */
+  turnId: string;
+  /** Aggregated token usage across all LLM round-trips in this turn. */
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens: number;
+    cache_creation_input_tokens: number;
+  };
 }
 
 function toResponse(r: HarnessResult, mode?: string): CoachV2Response {
@@ -35,6 +48,10 @@ function toResponse(r: HarnessResult, mode?: string): CoachV2Response {
     toolsUsed: r.toolsUsed,
     turnsUsed: r.turnsUsed,
     mode,
+    model: r.model,
+    durationMs: r.durationMs,
+    turnId: r.turnId,
+    usage: r.usage,
   };
 }
 

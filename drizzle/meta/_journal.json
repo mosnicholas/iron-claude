@@ -36,6 +36,13 @@
       "when": 1779551225668,
       "tag": "0004_chubby_metal_master",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779552886984,
+      "tag": "0005_rich_sentry",
+      "breakpoints": true
     }
   ]
 }

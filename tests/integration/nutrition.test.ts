@@ -6,9 +6,9 @@
  * the rollup is computed via a SUM join.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "@jest/globals";
 import { eq } from "drizzle-orm";
-import { resetMemDb } from "../helpers/pgmem.js";
+import { createMemDb, getMemDb } from "../helpers/pgmem.js";
 import { getDb } from "../../src/db/client.js";
 import { meals, mealItems } from "../../src/db/schema.js";
 import { getStorage } from "../../src/storage/db.js";
@@ -18,14 +18,16 @@ import { findOrCreateUserByChannel } from "../../src/auth/identity.js";
 describe("nutrition", () => {
   let userId: string;
 
+  beforeAll(() => {
+    createMemDb();
+  });
+  afterAll(() => {
+    getMemDb().close();
+  });
   beforeEach(async () => {
-    await resetMemDb();
+    getMemDb().reset();
     const user = await findOrCreateUserByChannel("telegram", "555-nutrition");
     userId = user.id;
-  });
-
-  afterEach(async () => {
-    await resetMemDb();
   });
 
   it("log_meal inserts a meal row + meal_items and surfaces rollup totals", async () => {

@@ -1,0 +1,11 @@
+ALTER TABLE "messages" ADD COLUMN "turn_id" varchar(36);--> statement-breakpoint
+ALTER TABLE "messages" ADD COLUMN "handler" varchar(16);--> statement-breakpoint
+ALTER TABLE "messages" ADD COLUMN "mode" varchar(32);--> statement-breakpoint
+ALTER TABLE "messages" ADD COLUMN "model" varchar(64);--> statement-breakpoint
+ALTER TABLE "messages" ADD COLUMN "input_tokens" integer;--> statement-breakpoint
+ALTER TABLE "messages" ADD COLUMN "output_tokens" integer;--> statement-breakpoint
+ALTER TABLE "messages" ADD COLUMN "cache_read_tokens" integer;--> statement-breakpoint
+ALTER TABLE "messages" ADD COLUMN "cache_creation_tokens" integer;--> statement-breakpoint
+ALTER TABLE "messages" ADD COLUMN "turn_ms" integer;--> statement-breakpoint
+ALTER TABLE "messages" ADD COLUMN "tools_used" jsonb;--> statement-breakpoint
+CREATE INDEX "messages_user_model_ts_idx" ON "messages" USING btree ("user_id","model","ts");
