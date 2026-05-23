@@ -11,8 +11,10 @@ import { getIntegration, getConfiguredIntegrationsForUser } from "./registry.js"
 import { requireSession } from "../auth/middleware.js";
 import { storeIntegrationData } from "./storage.js";
 import type { WebhookEvent } from "./types.js";
-import { createTelegramBot } from "../bot/telegram.js";
+import { sendBotMessageForUser } from "../bot/telegram-for-user.js";
+import { getUserById } from "../auth/identity.js";
 import { getStorage } from "../storage/db.js";
+import { captureError } from "../observability/sentry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Security Helpers
@@ -64,13 +66,21 @@ function formatWebhookNotification(event: WebhookEvent): string {
   }
 }
 
-async function notifyUser(event: WebhookEvent): Promise<void> {
+async function notifyUser(userId: string, event: WebhookEvent): Promise<void> {
   try {
-    const bot = createTelegramBot();
+    const user = await getUserById(userId);
+    if (!user) {
+      console.log(`[integration-webhook] No user row for ${userId}; skipping notification`);
+      return;
+    }
     const message = formatWebhookNotification(event);
-    await bot.sendPlainMessage(message);
+    await sendBotMessageForUser(user, message);
   } catch (error) {
-    console.error(`[integration-webhook] Failed to send notification:`, error);
+    captureError(error, {
+      userId,
+      channel: "telegram",
+      handler: "integration-webhook-notify",
+    });
   }
 }
 
@@ -131,10 +141,14 @@ async function processWebhookAsync(payload: unknown, device: string): Promise<vo
 
     console.log(`[integration-webhook] Stored ${event.type} data for ${event.data.date}`);
 
-    // Notify user via Telegram
-    await notifyUser(event);
+    // Notify the user this event belongs to (NOT the env-pinned chat).
+    await notifyUser(userId, event);
   } catch (error) {
-    console.error(`[integration-webhook] Error processing webhook:`, error);
+    captureError(error, {
+      channel: device,
+      handler: "integration-webhook",
+      extra: { phase: "processWebhookAsync" },
+    });
   }
 }
 

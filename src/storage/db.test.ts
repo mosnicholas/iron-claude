@@ -534,6 +534,37 @@ describe("DbStorage", () => {
       expect(snap).not.toBeNull();
       expect((snap?.recovery as { recovery_score: number }).recovery_score).toBe(78);
     });
+
+    // Note: pg-mem doesn't enforce real Postgres MVCC / row-locking semantics,
+    // so this test only verifies the call SHAPE doesn't error and that both
+    // kinds end up represented in the recoverySnapshot after concurrent calls.
+    // Real-Postgres concurrency (SELECT ... FOR UPDATE serializing two
+    // racing transactions) is exercised by deployment, not pg-mem.
+    it("concurrent upsertIntegrationMetric (sleep + recovery, same date) both land in recoverySnapshot", async () => {
+      await storage.startWorkout(alice, {
+        date: "2026-05-20",
+        isoWeek: "2026-W21",
+        type: "upper",
+        backFilled: false,
+        startedAt: "10:00",
+      });
+
+      await Promise.all([
+        storage.upsertIntegrationMetric(alice, "whoop", "2026-05-20", "sleep", {
+          sleep_hours: 7.0,
+        }),
+        storage.upsertIntegrationMetric(alice, "whoop", "2026-05-20", "recovery", {
+          recovery_score: 82,
+        }),
+      ]);
+
+      const w = await storage.getWorkout(alice, "2026-05-20");
+      const snap = w?.recoverySnapshot as Record<string, unknown> | null;
+      expect(snap).not.toBeNull();
+      // Both writers' kinds must be present — no lost update of the JSON blob.
+      expect((snap?.sleep as { sleep_hours: number }).sleep_hours).toBe(7.0);
+      expect((snap?.recovery as { recovery_score: number }).recovery_score).toBe(82);
+    });
   });
 
   // ── Cross-user scoping (final guard) ───────────────────────────────────────

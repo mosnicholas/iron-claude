@@ -4,6 +4,7 @@
  * Handles communication with the Telegram Bot API.
  */
 
+import { timingSafeEqual } from "crypto";
 import type { TelegramPhotoSize, TelegramUpdate, TelegramVoice } from "../storage/types.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
@@ -44,13 +45,12 @@ export class TelegramBot {
   }
 
   /**
-   * Verify webhook signature (if configured)
+   * Verify the Telegram webhook secret header. Delegates to the standalone
+   * `verifyTelegramSecret` so this also works without a chat-bound bot
+   * instance.
    */
   verifyWebhook(secretToken: string | null): boolean {
-    if (!this.config.webhookSecret) {
-      return true; // No verification configured
-    }
-    return secretToken === this.config.webhookSecret;
+    return verifyTelegramSecret(secretToken, this.config.webhookSecret);
   }
 
   /**
@@ -570,18 +570,45 @@ export function parseCommand(text: string): { command: string; args: string } {
 }
 
 /**
+ * Verify a Telegram webhook secret-token header in constant time.
+ *
+ * Production rule: if `TELEGRAM_WEBHOOK_SECRET` is set, every inbound
+ * `x-telegram-bot-api-secret-token` header must match. If the env var is
+ * unset, we refuse all webhooks (fail closed) instead of trusting the body.
+ *
+ * Pass the env-configured secret explicitly so callers can use this without
+ * constructing a chat-bound TelegramBot.
+ */
+export function verifyTelegramSecret(
+  headerValue: string | null | undefined,
+  configuredSecret: string | undefined = process.env.TELEGRAM_WEBHOOK_SECRET
+): boolean {
+  if (!configuredSecret) return false;
+  if (!headerValue) return false;
+  const a = Buffer.from(headerValue, "utf8");
+  const b = Buffer.from(configuredSecret, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+/**
  * Create a TelegramBot instance from environment variables.
  *
  * Single-tenant convenience for legacy callers (cron broadcasts, scripts).
  * The inbox/per-user flow uses `createTelegramBotForChat(chatId)` instead.
+ *
+ * `TELEGRAM_CHAT_ID` is no longer required at the env level (per-user
+ * dispatch reads chat_ids from `channel_identities`). If unset, `getChatId()`
+ * returns the empty string and any broadcast methods will fail at call time
+ * with a clear error.
  */
 export function createTelegramBot(): TelegramBot {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+  const chatId = process.env.TELEGRAM_CHAT_ID ?? "";
   const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
 
-  if (!botToken || !chatId) {
-    throw new Error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID");
+  if (!botToken) {
+    throw new Error("TELEGRAM_BOT_TOKEN is required");
   }
 
   return new TelegramBot({ botToken, chatId, webhookSecret });

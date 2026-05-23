@@ -1,16 +1,12 @@
 #!/bin/bash
 set -e
 
-# Generate timezone-aware crontab
-echo "Generating crontab for timezone: ${TIMEZONE:-America/New_York}"
-node /app/scripts/generate-crontab.js > /app/crontab.generated
-
-# Run database migrations before starting any processes
+# Run database migrations before serving. The image carries drizzle/ and
+# scripts/db-migrate.ts; tsx is in `dependencies` so it survives prune.
 echo "Running database migrations..."
 npm run db:migrate
 
-# Start supercronic with generated crontab in background
-supercronic /app/crontab.generated &
-
-# Start the Node.js server (foreground)
+# Single foreground process. Cron jobs are driven externally (cron-job.org or
+# Fly scheduled machines) — running Supercronic in-container would duplicate
+# cron firings across instances under horizontal scaling. See DEPLOY.md.
 exec node /app/dist/src/server.js

@@ -14,7 +14,7 @@
  */
 
 import type { Request, Response } from "express";
-import { createTelegramBot } from "../bot/telegram.js";
+import { verifyTelegramSecret } from "../bot/telegram.js";
 import { findOrCreateUserByChannel } from "../auth/identity.js";
 import { insertInboxEvent } from "../inbox/storage.js";
 import { captureError } from "../observability/sentry.js";
@@ -24,13 +24,12 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
   console.log("[webhook] Received request:", req.method);
 
   try {
-    // Use the env-pinned bot only for secret verification — chat targeting now
-    // comes from the inbox worker via createTelegramBotForChat.
-    const bot = createTelegramBot();
-
-    const secretToken = req.headers["x-telegram-bot-api-secret-token"] as string | null;
-    if (!bot.verifyWebhook(secretToken)) {
-      console.log("[webhook] Rejected: webhook secret mismatch");
+    // Fail closed: every inbound webhook must present a matching secret.
+    // `verifyTelegramSecret` requires TELEGRAM_WEBHOOK_SECRET to be set; if it
+    // isn't, the endpoint refuses all traffic rather than trusting the body.
+    const secretHeader = (req.headers["x-telegram-bot-api-secret-token"] as string | undefined) ?? null;
+    if (!verifyTelegramSecret(secretHeader)) {
+      console.log("[webhook] Rejected: webhook secret mismatch or unconfigured");
       res.status(401).json({ error: "Unauthorized" });
       return;
     }

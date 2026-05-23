@@ -135,6 +135,8 @@ describe("POST /api/stripe/webhook", () => {
       .where(eq(users.id, userId));
 
     const fakeEvent = {
+      id: "evt_created_1",
+      created: 1_700_000_000,
       type: "customer.subscription.created",
       data: {
         object: {
@@ -183,6 +185,8 @@ describe("POST /api/stripe/webhook", () => {
       .where(eq(users.id, userId));
 
     const fakeEvent = {
+      id: "evt_admin_del_1",
+      created: 1_700_000_500,
       type: "customer.subscription.deleted",
       data: {
         object: {

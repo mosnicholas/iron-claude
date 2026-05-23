@@ -15,8 +15,8 @@
  * `startWorker()` is wired up at server boot in `src/server.ts`.
  */
 
-import { sql } from "drizzle-orm";
-import { getDb } from "../db/client.js";
+import type { PoolClient } from "pg";
+import { getPool } from "../db/client.js";
 import { getUserById, findOrCreateUserByChannel } from "../auth/identity.js";
 import { createTelegramBotForChat } from "../bot/telegram.js";
 import { captureError } from "../observability/sentry.js";
@@ -139,38 +139,51 @@ async function handleTelegramEvent(event: InboxEvent): Promise<void> {
 
   // Per-user advisory lock — serialize concurrent updates for the same user
   // across instances. Hash the UUID to a bigint slot.
-  const acquired = await tryAdvisoryLock(user.id);
-  if (!acquired) {
-    console.log(
-      `[inbox-worker] user ${user.id} busy on another instance; deferring event ${event.id}`
-    );
-    await deferEvent(event.id, PEER_BUSY_DEFER_MS);
-    return;
-  }
-
+  //
+  // CRITICAL: `pg_advisory_lock` is session-scoped, so the try-lock, agent
+  // run, and unlock must all happen on the SAME physical pg connection. We
+  // pin a `PoolClient` checked out from the pool for the duration. Drizzle
+  // queries inside `runTurn` continue to use the shared pool — that's fine,
+  // because once we hold the advisory lock there's no ordering requirement
+  // inside the agent turn itself.
+  const pool = getPool();
+  const client = await pool.connect();
+  let lockAcquired = false;
   try {
-    const botFactory = injectedCreateBot ?? createTelegramBotForChat;
-    const runTurn = injectedRunAgentTurn ?? defaultRunAgentTurn;
-    const bot = botFactory(String(chatId));
-    await runTurn({ user, update, bot });
+    lockAcquired = await tryAdvisoryLock(client, user.id);
+    if (!lockAcquired) {
+      console.log(
+        `[inbox-worker] user ${user.id} busy on another instance; deferring event ${event.id}`
+      );
+      await deferEvent(event.id, PEER_BUSY_DEFER_MS);
+      return;
+    }
+
+    try {
+      const botFactory = injectedCreateBot ?? createTelegramBotForChat;
+      const runTurn = injectedRunAgentTurn ?? defaultRunAgentTurn;
+      const bot = botFactory(String(chatId));
+      await runTurn({ user, update, bot });
+    } finally {
+      await releaseAdvisoryLock(client, user.id);
+    }
   } finally {
-    await releaseAdvisoryLock(user.id);
+    client.release();
   }
 }
 
-async function tryAdvisoryLock(key: string): Promise<boolean> {
-  const db = getDb();
-  const result = await db.execute(
-    sql`SELECT pg_try_advisory_lock(hashtext(${key})::bigint) AS locked`
+async function tryAdvisoryLock(client: PoolClient, key: string): Promise<boolean> {
+  const result = await client.query(
+    `SELECT pg_try_advisory_lock(hashtext($1)::bigint) AS locked`,
+    [key]
   );
   const row = (result.rows ?? [])[0] as { locked?: boolean } | undefined;
   return row?.locked === true;
 }
 
-async function releaseAdvisoryLock(key: string): Promise<void> {
-  const db = getDb();
+async function releaseAdvisoryLock(client: PoolClient, key: string): Promise<void> {
   try {
-    await db.execute(sql`SELECT pg_advisory_unlock(hashtext(${key})::bigint)`);
+    await client.query(`SELECT pg_advisory_unlock(hashtext($1)::bigint)`, [key]);
   } catch (err) {
     // Releasing should never fail in practice; log and move on.
     captureError(err, {

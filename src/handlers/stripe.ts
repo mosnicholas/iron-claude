@@ -19,10 +19,10 @@
  */
 
 import type { Request, RequestHandler } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import Stripe from "stripe";
 import { getDb } from "../db/client.js";
-import { users } from "../db/schema.js";
+import { stripeEvents, users } from "../db/schema.js";
 import type { Tier } from "../auth/tiers.js";
 
 let cachedStripe: Stripe | null = null;
@@ -66,11 +66,20 @@ export function tierFromPriceId(priceId: string | null | undefined): Tier | null
 /**
  * Update a user's tier from a Stripe event. Honors the
  * `tier_overridden_by_admin` flag (comped users are never downgraded).
+ *
+ * Reorder guard (option B from the bug report): each user tracks the largest
+ * `event.created` epoch we've already applied. If an incoming event's epoch
+ * is <= the stored value, it's stale (Stripe doesn't guarantee delivery
+ * order) and we skip — this prevents a delayed `customer.subscription.deleted`
+ * from clobbering a more recent `customer.subscription.created`. The tier
+ * write and epoch bump happen in a single UPDATE with a WHERE clause that
+ * also re-checks the epoch, so concurrent webhooks can't race past us.
  */
 async function applyTierFromStripe(
   customerId: string,
   newTier: Tier | "expired" | null,
-  subscriptionId: string | null
+  subscriptionId: string | null,
+  eventCreatedEpoch: number
 ): Promise<void> {
   if (!customerId) return;
   const db = getDb();
@@ -86,19 +95,30 @@ async function applyTierFromStripe(
     );
     return;
   }
+  if (eventCreatedEpoch <= user.stripeLastEventEpoch) {
+    console.log(
+      `[stripe] out-of-order event for user=${user.id} (event=${eventCreatedEpoch} <= last=${user.stripeLastEventEpoch}); skipping`
+    );
+    return;
+  }
   if (!newTier) {
     // Unknown price → no-op rather than guessing.
     console.warn(`[stripe] could not derive tier for customer ${customerId}; skipping`);
     return;
   }
+  // Atomic compare-and-set on stripe_last_event_epoch: only writes if the
+  // stored epoch is still strictly less than the incoming event's. Guards
+  // against a concurrent webhook winning the race between our SELECT above
+  // and this UPDATE.
   await db
     .update(users)
     .set({
       tier: newTier,
       stripeSubscriptionId: subscriptionId,
+      stripeLastEventEpoch: eventCreatedEpoch,
       updatedAt: new Date(),
     })
-    .where(eq(users.id, user.id));
+    .where(and(eq(users.id, user.id), lt(users.stripeLastEventEpoch, eventCreatedEpoch)));
   console.log(`[stripe] user=${user.id} tier=${newTier} sub=${subscriptionId ?? "none"}`);
 }
 
@@ -161,6 +181,31 @@ export const stripeWebhookHandler: RequestHandler = async (req: Request, res) =>
     return;
   }
 
+  // Idempotency guard: Stripe delivers at-least-once. Record event.id in
+  // `stripe_events` with ON CONFLICT DO NOTHING; if no row comes back, this
+  // event has already been processed and we short-circuit with 200.
+  try {
+    const db = getDb();
+    const inserted = await db
+      .insert(stripeEvents)
+      .values({
+        id: event.id,
+        type: event.type,
+        createdEpoch: event.created,
+      })
+      .onConflictDoNothing({ target: stripeEvents.id })
+      .returning({ id: stripeEvents.id });
+    if (inserted.length === 0) {
+      console.log(`[stripe] duplicate event ${event.id}, skipping`);
+      res.json({ received: true });
+      return;
+    }
+  } catch (err) {
+    console.error(`[stripe] idempotency insert failed for ${event.id}:`, err);
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    return;
+  }
+
   try {
     switch (event.type) {
       case "customer.subscription.created":
@@ -168,7 +213,7 @@ export const stripeWebhookHandler: RequestHandler = async (req: Request, res) =>
         const sub = event.data.object as Stripe.Subscription;
         const tier = deriveTierFromSubscription(sub);
         const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
-        await applyTierFromStripe(customerId, tier, sub.id);
+        await applyTierFromStripe(customerId, tier, sub.id, event.created);
         break;
       }
       case "customer.subscription.deleted": {
@@ -176,7 +221,7 @@ export const stripeWebhookHandler: RequestHandler = async (req: Request, res) =>
         const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
         // On cancellation, revert to "expired" so the gate kicks in. We don't
         // flip back to "trial" — the trial is one-shot at signup.
-        await applyTierFromStripe(customerId, "expired", null);
+        await applyTierFromStripe(customerId, "expired", null, event.created);
         break;
       }
       case "checkout.session.completed": {

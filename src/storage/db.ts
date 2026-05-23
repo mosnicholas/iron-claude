@@ -751,35 +751,45 @@ export class DbStorage implements Storage {
     kind: "sleep" | "recovery" | "workout",
     payload: Record<string, unknown>
   ): Promise<void> {
-    await this.db
-      .insert(integrationMetrics)
-      .values({ userId, provider, date, kind, payload })
-      .onConflictDoUpdate({
-        target: [
-          integrationMetrics.userId,
-          integrationMetrics.provider,
-          integrationMetrics.date,
-          integrationMetrics.kind,
-        ],
-        set: { payload },
-      });
+    // Wrap the metric upsert AND the workouts.recoverySnapshot merge in a single
+    // transaction with `SELECT ... FOR UPDATE` on the workouts row. Otherwise,
+    // two concurrent webhook calls (e.g. sleep + recovery for the same date)
+    // would race in the read-merge-write cycle and lose one update.
+    await this.db.transaction(async (tx) => {
+      await tx
+        .insert(integrationMetrics)
+        .values({ userId, provider, date, kind, payload })
+        .onConflictDoUpdate({
+          target: [
+            integrationMetrics.userId,
+            integrationMetrics.provider,
+            integrationMetrics.date,
+            integrationMetrics.kind,
+          ],
+          set: { payload },
+        });
 
-    // Mirror key metrics into the workouts.recoverySnapshot column so the
-    // coach can see them in context without a join.
-    if (kind === "recovery" || kind === "sleep") {
-      const [workout] = await this.db
-        .select({ id: workouts.id, snapshot: workouts.recoverySnapshot })
-        .from(workouts)
-        .where(and(eq(workouts.userId, userId), eq(workouts.date, date)))
-        .limit(1);
-      if (workout) {
-        const merged = { ...(workout.snapshot as Record<string, unknown> | null), [kind]: payload };
-        await this.db
-          .update(workouts)
-          .set({ recoverySnapshot: merged })
-          .where(eq(workouts.id, workout.id));
+      // Mirror key metrics into the workouts.recoverySnapshot column so the
+      // coach can see them in context without a join.
+      if (kind === "recovery" || kind === "sleep") {
+        const [workout] = await tx
+          .select({ id: workouts.id, snapshot: workouts.recoverySnapshot })
+          .from(workouts)
+          .where(and(eq(workouts.userId, userId), eq(workouts.date, date)))
+          .limit(1)
+          .for("update");
+        if (workout) {
+          const merged = {
+            ...(workout.snapshot as Record<string, unknown> | null),
+            [kind]: payload,
+          };
+          await tx
+            .update(workouts)
+            .set({ recoverySnapshot: merged })
+            .where(eq(workouts.id, workout.id));
+        }
       }
-    }
+    });
   }
 
   async getIntegrationMetrics(userId: UserId, date: string): Promise<IntegrationMetric[]> {

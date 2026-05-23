@@ -58,6 +58,14 @@ export const users = pgTable(
       .default(sql`now() + interval '30 days'`),
     stripeCustomerId: varchar("stripe_customer_id", { length: 64 }),
     stripeSubscriptionId: varchar("stripe_subscription_id", { length: 64 }),
+    /**
+     * Largest `event.created` (unix seconds) we've already processed for this
+     * customer. The Stripe webhook skips any event whose `created` is <= this
+     * value, so out-of-order deliveries (e.g. a delayed `deleted` arriving
+     * after a re-`created`) can't downgrade a paying user. Updated atomically
+     * with the tier write in applyTierFromStripe().
+     */
+    stripeLastEventEpoch: integer("stripe_last_event_epoch").notNull().default(0),
     tierOverriddenByAdmin: boolean("tier_overridden_by_admin").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -370,6 +378,29 @@ export const inboxEvents = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Stripe webhook idempotency
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Record of every Stripe event we've successfully begun processing. Used to
+ * dedupe Stripe's at-least-once webhook deliveries: the handler does an
+ * INSERT ... ON CONFLICT (id) DO NOTHING RETURNING id and short-circuits if
+ * no row comes back. See src/handlers/stripe.ts.
+ */
+export const stripeEvents = pgTable(
+  "stripe_events",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(), // Stripe's event.id ("evt_...")
+    type: varchar("type", { length: 64 }).notNull(),
+    createdEpoch: integer("created_epoch").notNull(), // event.created (unix seconds)
+    processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    typeIdx: index("stripe_events_type_idx").on(t.type),
+  })
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Progress photos
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -448,6 +479,8 @@ export type NewIntegrationToken = typeof integrationTokens.$inferInsert;
 export type IntegrationMetric = typeof integrationMetrics.$inferSelect;
 export type InboxEvent = typeof inboxEvents.$inferSelect;
 export type NewInboxEvent = typeof inboxEvents.$inferInsert;
+export type StripeEvent = typeof stripeEvents.$inferSelect;
+export type NewStripeEvent = typeof stripeEvents.$inferInsert;
 export type ToolCallLogEntry = typeof toolCallLog.$inferSelect;
 export type Photo = typeof photos.$inferSelect;
 export type NewPhoto = typeof photos.$inferInsert;

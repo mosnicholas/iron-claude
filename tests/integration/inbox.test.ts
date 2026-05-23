@@ -264,6 +264,15 @@ describe("inbox worker", () => {
       // row is incidental (the outer worker still calls markEventDone), so
       // we verify the load-bearing property: only one runTurn invocation
       // happens while p1 is in-flight.
+      //
+      // NOTE: This is a smoke test. pg-mem's advisory-lock model is a global
+      // Set keyed by hash and doesn't enforce real session-scoped semantics
+      // (every checked-out "client" shares the same lock set). Real
+      // session-scoped behavior — where holding `pg_advisory_lock` on one
+      // physical connection blocks try-lock from another — is only exercised
+      // against a real Postgres in the deployed environment. The production
+      // code pins a `PoolClient` for the lock+work+unlock dance; see
+      // `handleTelegramEvent` in `src/inbox/worker.ts`.
       let release: () => void = () => {};
       const blocker = new Promise<void>((res) => {
         release = res;
