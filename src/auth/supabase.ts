@@ -25,12 +25,24 @@ function requireEnv(name: string): string {
   return value;
 }
 
+let forceConfiguredForTests: boolean | null = null;
+
 export function isSupabaseConfigured(): boolean {
+  if (forceConfiguredForTests !== null) return forceConfiguredForTests;
   return Boolean(
     process.env.SUPABASE_URL &&
-    process.env.SUPABASE_ANON_KEY &&
-    process.env.SUPABASE_SERVICE_ROLE_KEY
+      process.env.SUPABASE_ANON_KEY &&
+      process.env.SUPABASE_SERVICE_ROLE_KEY
   );
+}
+
+/**
+ * Test-only: claim Supabase is configured (or not) regardless of env vars.
+ * Used alongside `__setJwtVerifierForTests` so e2e tests can stand in for
+ * the entire Supabase Auth layer without setting real credentials.
+ */
+export function __setSupabaseConfiguredForTests(state: boolean | null): void {
+  forceConfiguredForTests = state;
 }
 
 export function getSupabaseAdmin(): SupabaseClient {
@@ -104,7 +116,9 @@ export type VerifiedJwt = {
   email: string | null;
 };
 
-export async function verifyJwt(jwt: string): Promise<VerifiedJwt | null> {
+type JwtVerifier = (jwt: string) => Promise<VerifiedJwt | null>;
+
+const defaultJwtVerifier: JwtVerifier = async (jwt) => {
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase.auth.getUser(jwt);
@@ -119,4 +133,18 @@ export async function verifyJwt(jwt: string): Promise<VerifiedJwt | null> {
   } catch {
     return null;
   }
+};
+
+let jwtVerifierImpl: JwtVerifier = defaultJwtVerifier;
+
+export async function verifyJwt(jwt: string): Promise<VerifiedJwt | null> {
+  return jwtVerifierImpl(jwt);
+}
+
+/**
+ * Test-only: replace the JWT verifier so e2e tests can bypass real Supabase
+ * Auth. Pass `null` to restore the default Supabase-backed verifier.
+ */
+export function __setJwtVerifierForTests(fn: JwtVerifier | null): void {
+  jwtVerifierImpl = fn ?? defaultJwtVerifier;
 }
