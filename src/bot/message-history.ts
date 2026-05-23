@@ -62,10 +62,13 @@ export async function addMessage(
 }
 
 /**
- * Format recent messages for inclusion in a prompt.
+ * Format recent messages for inclusion in a prompt. `timezone` controls how
+ * the per-message timestamp is rendered — pass the user's IANA tz so a PST
+ * athlete sees PST times, not server-local times.
  */
 export async function formatRecentMessagesForPrompt(
   userId: string,
+  timezone: string,
   count = DEFAULT_RECENT_COUNT
 ): Promise<string> {
   const rows = await getStorage().getRecentMessages(userId, count);
@@ -78,6 +81,7 @@ export async function formatRecentMessagesForPrompt(
   const formatted = messages.map((msg) => {
     const role = msg.isFromUser ? "User" : "Coach";
     const time = new Date(msg.timestamp).toLocaleTimeString("en-US", {
+      timeZone: timezone,
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,

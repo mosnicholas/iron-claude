@@ -113,20 +113,23 @@ export interface DateInfo {
 }
 
 /**
- * Get comprehensive date info using the configured timezone.
- * Pulls TIMEZONE from environment variable (defaults to America/New_York).
+ * Get comprehensive date info using a per-user (or configured) timezone.
+ *
+ * Pass the user's IANA timezone explicitly when you have one (preferred). If
+ * omitted, falls back to the `TIMEZONE` env var via `getTimezone()` —
+ * acceptable for scripts and tests that aren't user-scoped.
  */
-export function getDateInfoTZAware(): DateInfo {
-  const timezone = getTimezone();
+export function getDateInfoTZAware(timezone?: string): DateInfo {
+  const tz = timezone ?? getTimezone();
   const now = new Date();
 
   // Format all values in the target timezone
-  const date = formatInTimeZone(now, timezone, "yyyy-MM-dd");
-  const time = formatInTimeZone(now, timezone, "HH:mm");
-  const dayOfWeek = formatInTimeZone(now, timezone, "EEEE");
+  const date = formatInTimeZone(now, tz, "yyyy-MM-dd");
+  const time = formatInTimeZone(now, tz, "HH:mm");
+  const dayOfWeek = formatInTimeZone(now, tz, "EEEE");
 
   // Calculate ISO week using timezone-aware date
-  const zonedNow = toZonedTime(now, timezone);
+  const zonedNow = toZonedTime(now, tz);
   const isoWeek = formatISOWeek(zonedNow);
 
   return {
@@ -134,8 +137,21 @@ export function getDateInfoTZAware(): DateInfo {
     time,
     dayOfWeek,
     isoWeek,
-    timezone,
+    timezone: tz,
   };
+}
+
+/**
+ * Compute the ISO week label that contains `at` (in the given timezone).
+ *
+ * Crons that run Sunday-night to plan "next week" use this with a 6-hour
+ * anchor offset so a job delayed across the Sunday→Monday boundary still
+ * computes the same week. Example:
+ *   getCurrentWeekAt(new Date(Date.now() - 6*3600*1000), tz)
+ */
+export function getCurrentWeekAt(at: Date, timezone?: string): string {
+  const tz = timezone ?? getTimezone();
+  return formatISOWeek(toZonedTime(at, tz));
 }
 
 /**

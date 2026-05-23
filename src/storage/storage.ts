@@ -201,7 +201,16 @@ export interface Storage {
   addMessage(userId: UserId, msg: MessageInput): Promise<Message>;
   getRecentMessages(userId: UserId, count: number): Promise<Message[]>;
   getMessagesSince(userId: UserId, sinceMs: number): Promise<Message[]>;
-  clearMessages(userId: UserId): Promise<void>;
+  /**
+   * Delete messages for `userId`.
+   *
+   * When `beforeTs` is provided, only deletes rows with `ts <= beforeTs`.
+   * This is the bound that `runDailyCompaction` uses to avoid wiping
+   * messages added concurrently by the inbox worker while the summarizer
+   * was running. When omitted, deletes all messages for the user (legacy
+   * behavior, still used by tests).
+   */
+  clearMessages(userId: UserId, beforeTs?: Date): Promise<void>;
 
   // ── Conversation summary ─────────────────────────────────────────────────
   readConversationSummary(userId: UserId): Promise<ConversationSummary | null>;

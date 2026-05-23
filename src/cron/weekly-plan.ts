@@ -16,7 +16,7 @@ import { createCoachAgentV2 } from "../coach-v2/index.js";
 import { getStorage } from "../storage/db.js";
 import { sendBotMessageForUser } from "../bot/telegram-for-user.js";
 import { getUserById } from "../auth/identity.js";
-import { getCurrentWeek, getNextWeek, getWeekDays } from "../utils/date.js";
+import { getCurrentWeekAt, getNextWeek, getWeekDays } from "../utils/date.js";
 import { runCronForEachUser, type CronResult } from "./runner.js";
 
 function formatWeekDaysInfo(week: string): string {
@@ -33,13 +33,23 @@ Use these exact dates when creating the plan. Each day in the plan should includ
 
 export type WeeklyPlanResult = CronResult & { week?: string };
 
-export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
+/**
+ * Anchor the cron 6 hours back so a delayed Sunday-night run (e.g. the job is
+ * queued at 20:00 but doesn't fire until 02:30 Monday) still computes the
+ * same `endingWeek`. Without this, a job delayed across Sunday→Monday
+ * midnight would generate a retro for the just-started week and a plan for
+ * the week after — skipping the actual upcoming week entirely.
+ */
+const CRON_ANCHOR_OFFSET_MS = 6 * 60 * 60 * 1000;
+
+export async function runWeeklyPlan(asOf: Date = new Date()): Promise<WeeklyPlanResult> {
+  const anchor = new Date(asOf.getTime() - CRON_ANCHOR_OFFSET_MS);
   return runCronForEachUser(
     "weekly-plan",
     async ({ user, storage, sendMessage }) => {
       const timezone = user.timezone;
-      const nextWeek = getNextWeek(getCurrentWeek(timezone));
-      const endingWeek = getCurrentWeek(timezone);
+      const endingWeek = getCurrentWeekAt(anchor, timezone);
+      const nextWeek = getNextWeek(endingWeek);
 
       const existingPlan = await storage.readWeeklyPlan(user.id, nextWeek);
       if (existingPlan) {

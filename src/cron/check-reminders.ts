@@ -30,10 +30,15 @@ export async function runCheckReminders(): Promise<CronResult> {
 
       console.log(`[check-reminders] user=${user.id} found ${dueReminders.length} due reminder(s)`);
 
+      let sent = 0;
       for (const reminder of dueReminders) {
         try {
           await sendMessage(reminder.message);
+          // Only delete after a successful send. If send fails, the row stays
+          // and the next hourly tick picks it up (the past-due catch in
+          // getDueReminders handles that).
           await storage.deleteReminder(user.id, reminder.id);
+          sent += 1;
           console.log(`[check-reminders] user=${user.id} sent and deleted reminder ${reminder.id}`);
         } catch (error) {
           console.error(
@@ -45,7 +50,7 @@ export async function runCheckReminders(): Promise<CronResult> {
 
       return {
         success: true,
-        message: `Processed ${dueReminders.length} reminder(s) at ${today} ${currentHour}:00`,
+        message: `Sent ${sent}/${dueReminders.length} reminder(s) at ${today} ${currentHour}:00`,
       };
     },
     { requireProfile: false }

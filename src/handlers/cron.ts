@@ -4,6 +4,7 @@
  * Handles scheduled tasks triggered by Supercronic.
  */
 
+import { timingSafeEqual } from "crypto";
 import type { Request, Response } from "express";
 import { runDailyReminder } from "../cron/daily-reminder.js";
 import { runWeeklyPlan } from "../cron/weekly-plan.js";
@@ -11,6 +12,7 @@ import { runCheckReminders } from "../cron/check-reminders.js";
 import { runRefreshTokens } from "../cron/refresh-tokens.js";
 import { runDailyCompaction } from "../cron/daily-compaction.js";
 import { runTrialExpiry } from "../cron/trial-expiry.js";
+import { runLogRetention } from "../cron/log-retention.js";
 
 type CronTask =
   | "daily-reminder"
@@ -18,18 +20,37 @@ type CronTask =
   | "check-reminders"
   | "refresh-tokens"
   | "daily-compaction"
-  | "trial-expiry";
+  | "trial-expiry"
+  | "log-retention";
+
+let warnedAboutMissingSecret = false;
 
 /**
  * Validates the cron secret from the Authorization header.
- * Returns true if no secret is configured (allows unauthenticated in dev).
+ *
+ * Fails closed in production: when `CRON_SECRET` is unset and `NODE_ENV` is
+ * "production", every cron request is rejected. In dev/test we log a single
+ * warning and pass through so local iteration isn't blocked.
  */
 function validateCronSecret(req: Request): boolean {
   const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return true;
+  if (!cronSecret) {
+    if (process.env.NODE_ENV === "production") return false;
+    if (!warnedAboutMissingSecret) {
+      console.warn(
+        "[cron] CRON_SECRET is not set — allowing unauthenticated cron in non-production."
+      );
+      warnedAboutMissingSecret = true;
+    }
+    return true;
+  }
 
-  const authHeader = req.headers.authorization;
-  return authHeader === `Bearer ${cronSecret}`;
+  const authHeader = req.headers.authorization ?? "";
+  const expected = `Bearer ${cronSecret}`;
+  const a = Buffer.from(authHeader, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 /**
@@ -56,6 +77,7 @@ export function createCronHandler(task: CronTask) {
         "refresh-tokens": runRefreshTokens,
         "daily-compaction": runDailyCompaction,
         "trial-expiry": runTrialExpiry,
+        "log-retention": runLogRetention,
       };
 
       const result = await runners[task]();

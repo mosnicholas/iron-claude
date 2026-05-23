@@ -72,8 +72,33 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
     res.status(200).json({ ok: true });
   } catch (error) {
     captureError(error, { handler: "webhook", channel: "telegram" });
-    // Still return 200 to prevent Telegram retries on transient errors —
-    // we'd rather lose the message than get stuck in a retry storm.
+    // Transient DB errors (pool exhausted, connection terminated) get a 500
+    // so Telegram retries the delivery — we lost no state because the
+    // inbox_events row wasn't committed. Permanent errors (bad payload
+    // shape, etc.) ack 200 so we don't loop Telegram on a bug we can't fix
+    // at the source.
+    if (errorIsDbTransient(error)) {
+      res.status(500).json({ ok: false, error: "Transient error; retry" });
+      return;
+    }
     res.status(200).json({ ok: true, error: "Internal error" });
   }
+}
+
+/**
+ * True when the error looks like a transient DB issue worth retrying via
+ * Telegram's at-least-once delivery. Conservative: when in doubt, return
+ * false (200-ack) to avoid retry storms on permanent bugs.
+ */
+export function errorIsDbTransient(err: unknown): boolean {
+  if (!err) return false;
+  const code = (err as { code?: string }).code;
+  const msg = err instanceof Error ? err.message : String(err);
+  // Postgres class 08 (connection exception) + 57P (operator intervention)
+  // are the canonical "DB is fine but our connection isn't" signals.
+  if (code && /^(08|57P)/.test(code)) return true;
+  if (code === "ECONNREFUSED" || code === "ECONNRESET" || code === "ETIMEDOUT") return true;
+  return /connection terminated|connection refused|pool|timed? ?out|server closed the connection/i.test(
+    msg
+  );
 }

@@ -711,7 +711,17 @@ export class DbStorage implements Storage {
     return rows;
   }
 
-  async clearMessages(userId: UserId): Promise<void> {
+  async clearMessages(userId: UserId, beforeTs?: Date): Promise<void> {
+    // When `beforeTs` is provided, only delete rows committed at-or-before it.
+    // This is the bound the daily-compaction cron uses so it doesn't wipe
+    // messages added concurrently by the inbox worker while the summarizer
+    // was running.
+    if (beforeTs) {
+      await this.db
+        .delete(messages)
+        .where(and(eq(messages.userId, userId), lte(messages.ts, beforeTs)));
+      return;
+    }
     await this.db.delete(messages).where(eq(messages.userId, userId));
   }
 
@@ -748,14 +758,18 @@ export class DbStorage implements Storage {
   }
 
   async getDueReminders(userId: UserId, triggerDate: string, triggerHour: number) {
+    // Return everything past-due so a cron run that's delayed across the hour
+    // boundary still catches the reminders it missed: rows from any earlier
+    // day, OR today at-or-before the current hour. Without this, a job
+    // queued for 09:00 that fires at 10:01 silently drops the 9-o'clock
+    // reminders because the exact (date, hour) match wouldn't fire again.
     return this.db
       .select()
       .from(reminders)
       .where(
         and(
           eq(reminders.userId, userId),
-          eq(reminders.triggerDate, triggerDate),
-          eq(reminders.triggerHour, triggerHour)
+          sql`(${reminders.triggerDate} < ${triggerDate}::date OR (${reminders.triggerDate} = ${triggerDate}::date AND ${reminders.triggerHour} <= ${triggerHour}))`
         )
       );
   }

@@ -38,17 +38,23 @@ export async function runDailyCompaction(): Promise<CronResult> {
         return { success: true, message: "No messages to compact" };
       }
 
+      // Anchor the deletion to the latest ts we summarized. Any messages
+      // added concurrently by the inbox worker between this getMessagesSince
+      // and the clearMessages below will have a newer ts and survive.
+      const watermark = rows.reduce(
+        (latest, row) => (row.ts > latest ? row.ts : latest),
+        rows[0].ts
+      );
+
       const stored = rows.map(rowToStored);
       const previousSummaryRow = await storage.readConversationSummary(user.id);
       const previousSummary = previousSummaryRow?.body ?? null;
 
       const transcript = formatTranscript(stored);
-      const summary = await summarizeTranscript(transcript, previousSummary, today);
+      const summary = await summarizerImpl(transcript, previousSummary, today);
 
       await storage.writeConversationSummary(user.id, summary, today, rows.length);
-
-      // Only clear messages once the summary has been persisted.
-      await storage.clearMessages(user.id);
+      await storage.clearMessages(user.id, watermark);
 
       return {
         success: true,
@@ -129,7 +135,23 @@ Rules:
   return text;
 }
 
-// Test seam — exposed so unit tests can stub the LLM call without a real key.
+// Test seam — `summarizerImpl` is the indirection point. Tests stub it via
+// `__setSummarizerForTests` so they don't need a real ANTHROPIC_API_KEY (and
+// to deterministically control timing for the "messages added during
+// summarization survive the clear" test).
+type Summarizer = (
+  transcript: string,
+  previousSummary: string | null,
+  today: string
+) => Promise<string>;
+
+let summarizerImpl: Summarizer = summarizeTranscript;
+
+export function __setSummarizerForTests(fn: Summarizer | null): void {
+  summarizerImpl = fn ?? summarizeTranscript;
+}
+
+// Kept for any legacy import paths.
 export const __testing = {
   summarizeTranscript,
   formatTranscriptForTest: (msgs: StoredMessage[]): string => formatTranscript(msgs),

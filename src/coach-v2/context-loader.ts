@@ -45,7 +45,7 @@ export async function loadCoachContext(userId: string, timezone: string): Promis
       storage.getWorkout(userId, today),
       storage.readConversationSummary(userId),
       buildWeekProgress(userId, week),
-      formatRecentMessagesForPrompt(userId, 50),
+      formatRecentMessagesForPrompt(userId, timezone, 50),
     ]);
 
   const profile = profileRow?.body ?? null;

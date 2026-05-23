@@ -27,6 +27,7 @@ export const COMMANDS: Record<string, CommandHandler> = {
   restart: handleRestart,
   reauth: handleReauth,
   whoopstatus: handleWhoopStatus,
+  subscribe: handleSubscribe,
 };
 
 const HELP_TEXT = `**How to Use IronClaude**
@@ -161,15 +162,38 @@ async function handleWhoopStatus(ctx: CommandContext): Promise<string> {
 }
 
 async function handleRestart(ctx: CommandContext): Promise<string> {
+  // Gate /restart on an admin allowlist. Without this, any chat-bound user
+  // can fire process.exit(0) from Telegram and DoS the bot.
+  const allowlist = (process.env.ADMIN_USER_IDS ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (!allowlist.includes(ctx.userId)) {
+    return "Not authorized. /restart is admin-only.";
+  }
+
   await ctx.bot.sendPlainMessage("Restarting server... Be back in a moment!");
 
-  // Small delay to ensure the message is sent before exit
   setTimeout(() => {
     console.log("[Commands] Server restart requested via /restart command");
     process.exit(0);
   }, 500);
 
   return "";
+}
+
+async function handleSubscribe(_ctx: CommandContext): Promise<string> {
+  // Embedded URL so expired-tier users (who are blocked from the agent) can
+  // still discover the upgrade link via this command — `runAgentTurn` lets
+  // /subscribe bypass the tier gate.
+  const url = process.env.CHECKOUT_URL ?? "https://ironclaude.app/billing";
+  return [
+    "Subscribe to keep training with IronClaude:",
+    url,
+    "",
+    "Regular ($15/mo): unlimited coaching, all integrations.",
+    "Athlete ($40/mo): everything in Regular + progress photos + Opus-class model.",
+  ].join("\n");
 }
 
 export function commandExists(command: string): boolean {

@@ -379,6 +379,23 @@ describe("DbStorage", () => {
       expect(await storage.getRecentMessages(alice, 10)).toHaveLength(0);
     });
 
+    it("clearMessages(beforeTs) preserves rows newer than the watermark", async () => {
+      // Daily-compaction watermark behavior: only delete what we already
+      // summarized; anything inserted concurrently by the inbox worker must
+      // survive.
+      await storage.addMessage(alice, { role: "user", text: "old-1" });
+      await storage.addMessage(alice, { role: "assistant", text: "old-2" });
+      const beforeAll = await storage.getRecentMessages(alice, 10);
+      const watermark = beforeAll[beforeAll.length - 1].ts;
+      // Sleep a few ms so the next message has a strictly later ts.
+      await new Promise((res) => setTimeout(res, 5));
+      await storage.addMessage(alice, { role: "user", text: "new-1" });
+
+      await storage.clearMessages(alice, watermark);
+      const remaining = await storage.getRecentMessages(alice, 10);
+      expect(remaining.map((m) => m.text)).toEqual(["new-1"]);
+    });
+
     it("scopes messages by userId", async () => {
       await storage.addMessage(alice, { role: "user", text: "alice-only" });
       expect(await storage.getRecentMessages(bob, 10)).toHaveLength(0);

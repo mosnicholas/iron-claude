@@ -133,12 +133,25 @@ export async function getTokensFromDb(
  * which replaces the SHA-based optimistic locking the GitHub implementation
  * needed.
  */
-export async function saveTokensToDb(userId: string, tokens: TokenSet): Promise<void> {
+export async function saveTokensToDb(
+  userId: string,
+  tokens: TokenSet,
+  externalUserId?: string | null
+): Promise<void> {
+  // If the caller didn't provide an externalUserId (e.g. mid-refresh), keep
+  // whatever the existing row has rather than wiping it back to null. The
+  // Whoop webhook lookup depends on this column being populated.
+  let preserved: string | null = null;
+  if (externalUserId === undefined) {
+    const existing = await getStorage().getIntegrationToken(userId, PROVIDER);
+    preserved = existing?.externalUserId ?? null;
+  }
+
   await getStorage().upsertIntegrationToken(userId, PROVIDER, {
     accessTokenEnc: encryptSecret(tokens.accessToken),
     refreshTokenEnc: encryptSecret(tokens.refreshToken),
     expiresAt: tokens.expiresAt ? new Date(tokens.expiresAt) : null,
-    externalUserId: null,
+    externalUserId: externalUserId === undefined ? preserved : externalUserId,
     scopes: null,
   });
 
@@ -149,12 +162,16 @@ export async function saveTokensToDb(userId: string, tokens: TokenSet): Promise<
  * Persist tokens to Postgres and update in-memory cache.
  * Throws on real failures (DB connection, encryption errors).
  */
-export async function persistTokens(userId: string, tokens: TokenSet): Promise<void> {
+export async function persistTokens(
+  userId: string,
+  tokens: TokenSet,
+  externalUserId?: string | null
+): Promise<void> {
   // Update in-memory cache immediately so the current request can proceed.
   cachedTokens.set(userId, tokens);
 
   try {
-    await saveTokensToDb(userId, tokens);
+    await saveTokensToDb(userId, tokens, externalUserId);
   } catch (error) {
     console.error("[whoop-oauth] Failed to persist tokens to DB:", error);
     throw error;

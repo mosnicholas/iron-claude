@@ -495,6 +495,38 @@ export const saveLearning = defineTool({
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// save_profile
+//
+// Critical for the onboarding loop: `buildCoachSystem` keys the "first
+// session, load onboarding skill" directive on `profile === null`. Without a
+// way to write the profile, that directive is re-injected forever and every
+// per-profile cron skips the user. Onboarding ends by calling this tool with
+// the composed markdown profile.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const saveProfile = defineTool({
+  name: "save_profile",
+  description:
+    "Save the athlete's profile markdown. Call ONCE at the end of onboarding " +
+    "after gathering goals, training history, equipment, schedule, and any " +
+    "limitations. Body should be markdown with ## sections (Goals, Training " +
+    "history, Equipment, Schedule, Limitations, Coaching style if expressed). " +
+    "Subsequent edits should also go through this tool — pass the full updated " +
+    "markdown, not a diff.",
+  schema: z.object({
+    body: z
+      .string()
+      .min(50)
+      .max(8000)
+      .describe("Full markdown profile, typically 200-2000 chars."),
+  }),
+  handler: async (input, ctx) => {
+    await ctx.storage.writeProfile(ctx.userId, input.body);
+    return `Saved profile (${input.body.length} chars).`;
+  },
+});
+
 export const WRITE_TOOLS = [
   startWorkout,
   logExercise,
@@ -505,4 +537,5 @@ export const WRITE_TOOLS = [
   amendPlan,
   saveRetro,
   saveLearning,
+  saveProfile,
 ];

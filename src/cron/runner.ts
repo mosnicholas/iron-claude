@@ -49,6 +49,7 @@ export async function runCronForEachUser(
   let skipCount = 0;
   let failCount = 0;
   const failures: string[] = [];
+  const perUserMessages: string[] = [];
 
   for (const user of users) {
     try {
@@ -66,8 +67,10 @@ export async function runCronForEachUser(
         storage,
         sendMessage: (text) => sendBotMessageForUser(user, text),
       });
-      if (result.success) okCount += 1;
-      else {
+      if (result.success) {
+        okCount += 1;
+        if (result.message) perUserMessages.push(result.message);
+      } else {
         failCount += 1;
         failures.push(`${user.id}: ${result.error ?? "unknown"}`);
       }
@@ -87,9 +90,19 @@ export async function runCronForEachUser(
 
   const summary = `users=${users.length} ok=${okCount} skip=${skipCount} fail=${failCount}`;
   console.log(`[${name}] ${summary}`);
+  // Surface per-user messages so callers / tests can see what actually
+  // happened (e.g. "Sent 1/1 reminder" for check-reminders). When there's
+  // exactly one successful user, bubble their message verbatim; otherwise
+  // include both the aggregate summary and the per-user lines.
+  const message =
+    perUserMessages.length === 1
+      ? perUserMessages[0]
+      : perUserMessages.length > 1
+        ? `${summary}\n${perUserMessages.join("\n")}`
+        : summary;
   return {
     success: failCount === 0,
-    message: summary,
+    message,
     error: failures.length ? failures.join("; ") : undefined,
   };
 }

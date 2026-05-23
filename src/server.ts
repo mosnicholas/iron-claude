@@ -69,6 +69,7 @@ app.get("/api/cron/check-reminders", createCronHandler("check-reminders"));
 app.get("/api/cron/refresh-tokens", createCronHandler("refresh-tokens"));
 app.get("/api/cron/daily-compaction", createCronHandler("daily-compaction"));
 app.get("/api/cron/trial-expiry", createCronHandler("trial-expiry"));
+app.get("/api/cron/log-retention", createCronHandler("log-retention"));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth (Supabase phone OTP + sessions)
