@@ -336,6 +336,21 @@ describe("writes / complete_workout abandoned status", () => {
     const { frontmatter } = parseFrontmatter(raw);
     expect(frontmatter.status).toBe("completed");
   });
+
+  it("closes the workout without energy_level when not provided", async () => {
+    const ctx = makeCtx(repo.path);
+    await startWorkout.handler({ type: "upper" }, ctx);
+    const result = await completeWorkout.handler({ summary: "Done, didn't track energy." }, ctx);
+    expect(result).toContain("Completed workout");
+    expect(result).not.toContain("energy:");
+    const raw = readFileSync(
+      join(repo.path, "weeks", getCurrentWeek(), `${getToday()}.md`),
+      "utf-8"
+    );
+    const { frontmatter } = parseFrontmatter(raw);
+    expect(frontmatter.status).toBe("completed");
+    expect(frontmatter.energy_level).toBeUndefined();
+  });
 });
 
 describe("writes / remove_exercise + edit_exercise", () => {

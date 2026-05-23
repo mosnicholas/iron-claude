@@ -285,11 +285,12 @@ export const completeWorkout = defineTool({
   name: "complete_workout",
   description:
     "Close out a workout. Sets status (completed by default, or 'abandoned' if the athlete cut " +
-    "it short), finished time, duration, energy_level, and adds a ## Summary section. ALSO " +
-    "records any PRs to prs.yaml. Deletes the workout-timeout-check reminder. Defaults to today; " +
-    "pass `date` (YYYY-MM-DD) to close out a back-filled past session — duration_minutes is set " +
-    "to 0 on back-fills since the real times aren't known. " +
-    "ALWAYS call this when the user says they're done — never leave a workout in_progress. " +
+    "it short), finished time, duration, and adds a ## Summary section. Optionally records " +
+    "energy_level if the athlete volunteered it. ALSO records any PRs to prs.yaml. Deletes the " +
+    "workout-timeout-check reminder. Defaults to today; pass `date` (YYYY-MM-DD) to close out a " +
+    "back-filled past session — duration_minutes is set to 0 on back-fills since the real times " +
+    "aren't known. ALWAYS call this when the user says they're done — never leave a workout " +
+    "in_progress, and never ask for energy_level before closing. " +
     "Use status='abandoned' only when the athlete explicitly says they're cutting it short.",
   schema: z.object({
     summary: z
@@ -303,7 +304,11 @@ export const completeWorkout = defineTool({
       .int()
       .min(1)
       .max(10)
-      .describe("Athlete's energy/feel rating, 1-10. Ask if not mentioned."),
+      .optional()
+      .describe(
+        "Athlete's energy/feel rating, 1-10. ONLY pass this if the athlete already volunteered " +
+          "the number — never ask for it."
+      ),
     status: z
       .enum(["completed", "abandoned"])
       .optional()
@@ -347,8 +352,10 @@ export const completeWorkout = defineTool({
       status,
       finished,
       duration_minutes: durationMinutes,
-      energy_level: input.energy_level,
     };
+    if (input.energy_level !== undefined) {
+      updatedFm.energy_level = input.energy_level;
+    }
     if (isBackfill) updatedFm.back_filled = true;
     if (input.prs_hit?.length) {
       updatedFm.prs_hit = input.prs_hit.map((p) => ({
@@ -396,7 +403,7 @@ export const completeWorkout = defineTool({
     }
 
     return [
-      `${status === "abandoned" ? "Abandoned" : "Completed"} workout for ${date}. duration: ${durationMinutes}m, energy: ${input.energy_level}/10.`,
+      `${status === "abandoned" ? "Abandoned" : "Completed"} workout for ${date}. duration: ${durationMinutes}m${input.energy_level !== undefined ? `, energy: ${input.energy_level}/10` : ""}.`,
       `${formatCommitStatus(result)}`,
       ...prMessages,
     ].join("\n");
