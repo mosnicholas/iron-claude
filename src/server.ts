@@ -1,13 +1,21 @@
 /**
  * Express HTTP Server
  *
- * Main entry point for the Fly.io deployment.
+ * Entry point for the Fly.io deployment. Boot order:
+ *   1. Init Sentry (no-op without SENTRY_DSN).
+ *   2. Mount middleware (json, cookies).
+ *   3. Register routes (health, webhook → inbox, cron, auth, integrations).
+ *   4. Register integrations (Whoop). Falls back to DEFAULT_USER_ID until the
+ *      per-user OAuth flow lands.
+ *   5. Start the inbox worker that drains `inbox_events`.
+ *   6. Listen.
  */
 
 import express from "express";
+import cookieParser from "cookie-parser";
 import { webhookHandler } from "./handlers/webhook.js";
 import { createCronHandler } from "./handlers/cron.js";
-import { createTelegramBot } from "./bot/telegram.js";
+import { authRoutes } from "./handlers/auth.js";
 import {
   integrationWebhookHandler,
   integrationOAuthAuthHandler,
@@ -16,17 +24,39 @@ import {
 } from "./integrations/webhook-handler.js";
 import { registerIntegration } from "./integrations/registry.js";
 import { getWhoopIntegration } from "./integrations/whoop/integration.js";
+import { startWorker } from "./inbox/worker.js";
+import { initSentry } from "./observability/sentry.js";
+import { getBacklogCount } from "./inbox/storage.js";
+
+initSentry();
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
+app.use(cookieParser());
 
-// Health check
-app.get("/health", (_, res) => res.json({ ok: true }));
+// ─────────────────────────────────────────────────────────────────────────────
+// Health
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Telegram webhook
+app.get("/health", async (_req, res) => {
+  try {
+    const backlog = await getBacklogCount();
+    res.json({ ok: true, backlog });
+  } catch (err) {
+    res.status(503).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Telegram webhook (insert → inbox; 200 immediately)
+// ─────────────────────────────────────────────────────────────────────────────
+
 app.post("/api/webhook", webhookHandler);
 
-// Cron endpoints (called by external cron service like cron-job.org)
+// ─────────────────────────────────────────────────────────────────────────────
+// Cron endpoints (called by an external scheduler like cron-job.org)
+// ─────────────────────────────────────────────────────────────────────────────
+
 app.get("/api/cron/daily-reminder", createCronHandler("daily-reminder"));
 app.get("/api/cron/weekly-plan", createCronHandler("weekly-plan"));
 app.get("/api/cron/check-reminders", createCronHandler("check-reminders"));
@@ -34,46 +64,49 @@ app.get("/api/cron/refresh-tokens", createCronHandler("refresh-tokens"));
 app.get("/api/cron/daily-compaction", createCronHandler("daily-compaction"));
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Device Integrations (Whoop, Garmin, etc.)
+// Auth (Supabase phone OTP + sessions)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Register available integrations
+app.post("/api/auth/otp/request", authRoutes.otpRequest);
+app.post("/api/auth/otp/verify", authRoutes.otpVerify);
+app.post("/api/auth/signout", authRoutes.signout);
+app.get("/api/me", authRoutes.requireSession, authRoutes.me);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Device Integrations
+// ─────────────────────────────────────────────────────────────────────────────
+
 registerIntegration(getWhoopIntegration());
 
-// Integration webhooks (e.g., POST /api/integrations/whoop/webhook)
 app.post("/api/integrations/:device/webhook", integrationWebhookHandler);
-
-// OAuth initiation (e.g., GET /api/integrations/whoop/auth → redirects to Whoop)
 app.get("/api/integrations/:device/auth", integrationOAuthAuthHandler);
-
-// OAuth callbacks (e.g., GET /api/integrations/whoop/callback?code=xxx)
 app.get("/api/integrations/:device/callback", integrationOAuthCallbackHandler);
-
-// Manual sync endpoint (e.g., POST /api/integrations/sync?date=2026-01-27)
 app.post("/api/integrations/sync", integrationSyncHandler);
 
-/**
- * Send deployment notification to user
- */
-async function notifyDeployment(): Promise<void> {
-  try {
-    const bot = createTelegramBot();
-    const commitSha = process.env.GIT_COMMIT_SHA;
-    const version = commitSha && commitSha !== "unknown" ? commitSha.slice(0, 7) : null;
-
-    const message = version
-      ? `🚀 New version deployed (${version}). I'm back online!`
-      : `🚀 New version deployed. I'm back online!`;
-
-    await bot.sendMessage(message);
-  } catch {
-    // Don't fail startup if notification fails
-    console.log("Could not send deployment notification");
-  }
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Boot
+// ─────────────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  notifyDeployment();
+const server = app.listen(PORT, () => {
+  console.log(`[server] listening on port ${PORT}`);
 });
+
+const worker = startWorker();
+console.log("[server] inbox worker started");
+
+function shutdown(signal: string): void {
+  console.log(`[server] received ${signal}, shutting down`);
+  worker
+    .stop()
+    .catch(() => {
+      /* swallow */
+    })
+    .finally(() => {
+      server.close(() => process.exit(0));
+      setTimeout(() => process.exit(1), 10_000).unref();
+    });
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
