@@ -9,7 +9,6 @@
 import { createCoachAgentV2 } from "../../src/coach-v2/index.js";
 import { setupTestEnv, type TestEnv } from "./setup.js";
 import { getStorage } from "../../src/storage/db.js";
-import { readWorkout } from "./assertions.js";
 
 const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
 const describeWithApi = hasApiKey ? describe : describe.skip;
