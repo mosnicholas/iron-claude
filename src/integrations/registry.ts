@@ -1,77 +1,59 @@
 /**
  * Integration Registry
  *
- * Central registry for all fitness device integrations.
- * Provides discovery and access to configured integrations.
+ * Stores per-device factories that build a `DeviceIntegration` for a given
+ * `userId`. The factory pattern lets us:
+ *   - Verify webhooks and build OAuth URLs without a user (calls with no
+ *     userId get a default user-agnostic instance).
+ *   - Fetch tokens / data per-user by calling `getIntegration(slug, userId)`.
+ *
+ * `registerIntegrationFactory` is called once at boot per device. Anything
+ * that touches `users.id`-keyed data must pass `userId`.
  */
 
 import type { DeviceIntegration, IntegrationMetadata } from "./types.js";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Registry State
-// ─────────────────────────────────────────────────────────────────────────────
+type IntegrationFactory = (userId?: string) => DeviceIntegration;
 
-const integrations = new Map<string, DeviceIntegration>();
+const factories = new Map<string, IntegrationFactory>();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Registration
-// ─────────────────────────────────────────────────────────────────────────────
+export function registerIntegrationFactory(slug: string, factory: IntegrationFactory): void {
+  factories.set(slug, factory);
+}
 
-/**
- * Register a device integration with the registry.
- * Should be called at app startup for each available integration.
- */
-export function registerIntegration(integration: DeviceIntegration): void {
-  integrations.set(integration.slug, integration);
+export function unregisterIntegrationFactory(slug: string): void {
+  factories.delete(slug);
 }
 
 /**
- * Unregister a device integration (mainly for testing).
+ * Resolve an integration for a specific user (or user-agnostic if `userId`
+ * is omitted — e.g. for webhook signature verification).
  */
-export function unregisterIntegration(slug: string): void {
-  integrations.delete(slug);
+export function getIntegration(slug: string, userId?: string): DeviceIntegration | undefined {
+  const factory = factories.get(slug);
+  return factory ? factory(userId) : undefined;
+}
+
+export function getRegisteredSlugs(): string[] {
+  return Array.from(factories.keys());
+}
+
+export function getAllIntegrationsForUser(userId: string): DeviceIntegration[] {
+  return Array.from(factories.values()).map((f) => f(userId));
+}
+
+export function getConfiguredIntegrationsForUser(userId: string): DeviceIntegration[] {
+  return getAllIntegrationsForUser(userId).filter((i) => i.isConfigured());
+}
+
+export function hasConfiguredIntegrationsForUser(userId: string): boolean {
+  return getConfiguredIntegrationsForUser(userId).length > 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Lookup
+// Static metadata (for setup UI)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Get a specific integration by slug.
- */
-export function getIntegration(slug: string): DeviceIntegration | undefined {
-  return integrations.get(slug);
-}
-
-/**
- * Get all registered integrations.
- */
-export function getAllIntegrations(): DeviceIntegration[] {
-  return Array.from(integrations.values());
-}
-
-/**
- * Get all integrations that are currently configured (have valid tokens).
- */
-export function getConfiguredIntegrations(): DeviceIntegration[] {
-  return Array.from(integrations.values()).filter((i) => i.isConfigured());
-}
-
-/**
- * Check if any integrations are configured.
- */
-export function hasConfiguredIntegrations(): boolean {
-  return getConfiguredIntegrations().length > 0;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Metadata (for setup UI)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Static metadata for supported integrations.
- * Used by setup scripts to show available options.
- */
 export const INTEGRATION_METADATA: IntegrationMetadata[] = [
   {
     name: "Whoop",
@@ -81,19 +63,12 @@ export const INTEGRATION_METADATA: IntegrationMetadata[] = [
     scopes: ["read:recovery", "read:sleep", "read:workout", "read:profile"],
     docsUrl: "https://developer.whoop.com/docs/developing/overview",
   },
-  // Add new integrations here when implemented (Garmin, Oura, etc.)
 ];
 
-/**
- * Get metadata for available integrations only.
- */
 export function getAvailableIntegrations(): IntegrationMetadata[] {
   return INTEGRATION_METADATA.filter((m) => m.available);
 }
 
-/**
- * Get metadata for a specific integration.
- */
 export function getIntegrationMetadata(slug: string): IntegrationMetadata | undefined {
   return INTEGRATION_METADATA.find((m) => m.slug === slug);
 }

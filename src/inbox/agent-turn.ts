@@ -110,7 +110,7 @@ export async function runAgentTurn({ user, update, bot }: RunAgentTurnInput): Pr
     const { command, args } = parseCommand(messageText);
 
     if (commandExists(command)) {
-      const response = await executeCommand(command, args, agent, bot);
+      const response = await executeCommand(command, args, { userId: user.id, agent, bot });
       if (response) {
         await bot.sendMessageSafe(response);
         await addMessage(user.id, "assistant", response);

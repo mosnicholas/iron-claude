@@ -4,10 +4,10 @@
  * Implements the DeviceIntegration interface for Whoop.
  * Ties together OAuth, API client, and webhook handling.
  *
- * Each instance is bound to a single userId; multi-tenant entry points
- * (webhook handler, OAuth callback) construct one per request. The factory
- * below falls back to `DEFAULT_USER_ID` for callers that haven't been
- * plumbed through the multi-user migration yet.
+ * Each instance is bound to an optional userId. User-agnostic operations
+ * (`isConfigured`, `verifyWebhook`, `getAuthUrl`) work without one;
+ * data-fetching and token persistence throw if it's missing. The
+ * webhook/OAuth/sync handlers construct a per-user instance per request.
  */
 
 import type { Request } from "express";
@@ -46,10 +46,22 @@ export class WhoopIntegration implements DeviceIntegration {
   readonly slug = "whoop";
 
   private client: WhoopClient | null = null;
-  private readonly userId: string;
+  private readonly userId: string | null;
 
-  constructor(userId: string) {
+  /**
+   * `userId` can be omitted for user-agnostic operations: `isConfigured`,
+   * `verifyWebhook`, `getAuthUrl`. Anything that hits the Whoop API or persists
+   * tokens throws if userId is null.
+   */
+  constructor(userId: string | null = null) {
     this.userId = userId;
+  }
+
+  private requireUserId(method: string): string {
+    if (!this.userId) {
+      throw new Error(`WhoopIntegration.${method} requires a userId`);
+    }
+    return this.userId;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -80,7 +92,7 @@ export class WhoopIntegration implements DeviceIntegration {
    */
   async handleOAuthCallback(code: string, redirectUri: string): Promise<TokenSet> {
     const tokens = await exchangeCodeForTokens(code, redirectUri);
-    await persistTokens(this.userId, tokens);
+    await persistTokens(this.requireUserId("handleOAuthCallback"), tokens);
     this.invalidateClient();
     return tokens;
   }
@@ -89,14 +101,15 @@ export class WhoopIntegration implements DeviceIntegration {
    * Refresh the access token for this user and persist the new tokens.
    */
   async refreshToken(): Promise<TokenSet> {
-    const tokens = await getStoredTokens(this.userId);
+    const uid = this.requireUserId("refreshToken");
+    const tokens = await getStoredTokens(uid);
     if (!tokens) {
       throw new Error("No tokens to refresh");
     }
-    const newTokens = await refreshAccessToken(this.userId, tokens.refreshToken);
+    const newTokens = await refreshAccessToken(uid, tokens.refreshToken);
 
     // Persist the new tokens to the DB
-    await persistTokens(this.userId, newTokens);
+    await persistTokens(uid, newTokens);
 
     // Invalidate cached client so it uses new tokens
     this.invalidateClient();
@@ -122,7 +135,8 @@ export class WhoopIntegration implements DeviceIntegration {
    */
   private async getClient(): Promise<WhoopClient> {
     if (!this.client) {
-      this.client = await createWhoopClient(this.userId);
+      const uid = this.requireUserId("getClient");
+      this.client = await createWhoopClient(uid);
       if (!this.client) {
         throw new Error("Failed to create Whoop client");
       }
@@ -197,20 +211,10 @@ export class WhoopIntegration implements DeviceIntegration {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Get a Whoop integration instance for the given user.
- *
- * TODO(multi-user): callers that don't yet know the userId (e.g.
- * `registerIntegration` at boot, the cron token refresh job) fall back to
- * `DEFAULT_USER_ID` from env. The next migration phase wires real userId
- * resolution into those entry points (auth + webhook adapters).
+ * Build a Whoop integration. Pass `userId` for any flow that hits the API or
+ * persists tokens. Omit it for user-agnostic operations (webhook verification,
+ * config check, OAuth URL building).
  */
 export function getWhoopIntegration(userId?: string): WhoopIntegration {
-  const effectiveUserId = userId ?? process.env.DEFAULT_USER_ID;
-  if (!effectiveUserId) {
-    throw new Error(
-      "getWhoopIntegration: userId not provided and DEFAULT_USER_ID env var is not set. " +
-        "Set DEFAULT_USER_ID until the multi-user auth migration is complete."
-    );
-  }
-  return new WhoopIntegration(effectiveUserId);
+  return new WhoopIntegration(userId ?? null);
 }

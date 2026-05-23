@@ -56,8 +56,24 @@ function toLiteral(v: unknown): string {
   return `'${String(v).replace(/'/g, "''")}'`;
 }
 
+/**
+ * Drizzle inlines JS arrays as a row tuple like `ANY(($1, $2))` — which is
+ * valid in production Postgres but fails in pg-mem because:
+ *   (a) the row constructor isn't an array expression in its parser, and
+ *   (b) array literals like `ARRAY['uuid']` don't auto-cast to `uuid[]`.
+ *
+ * Rewriting to `IN ($1, $2)` is functionally equivalent for our use cases and
+ * avoids both pitfalls.
+ */
+function rewriteArrayAny(sqlText: string): string {
+  return sqlText.replace(
+    /=\s*ANY\(\((\$\d+(?:\s*,\s*\$\d+)*)\)\)/gi,
+    "IN ($1)"
+  );
+}
+
 function substParams(sqlText: string, params: readonly unknown[]): string {
-  return sqlText.replace(/\$(\d+)/g, (_m, n) =>
+  return rewriteArrayAny(sqlText).replace(/\$(\d+)/g, (_m, n) =>
     toLiteral(params[parseInt(n, 10) - 1])
   );
 }
@@ -69,6 +85,9 @@ function runQuery(
   arrayMode = false
 ) {
   const text = params.length > 0 ? substParams(sqlText, params) : sqlText;
+  if (process.env.DEBUG_PGMEM) {
+    console.error("[pgmem]", text);
+  }
   const result = db.public.query(text);
   const fields = (result.fields ?? []).map((f) => ({ name: f.name }));
   const rows = arrayMode
@@ -138,7 +157,6 @@ export interface MemDbHandle {
 
 let currentBackup: ReturnType<IMemoryDb["backup"]> | null = null;
 let currentHandle: MemDbHandle | null = null;
-let currentLocks: ReturnType<typeof createAdvisoryLocks> | null = null;
 
 /**
  * Build a fresh in-memory database with the Drizzle migration applied. Installs
@@ -148,7 +166,6 @@ let currentLocks: ReturnType<typeof createAdvisoryLocks> | null = null;
 export function createMemDb(): MemDbHandle {
   const mem = newDb({ autoCreateForeignKeyIndices: true });
   const locks = createAdvisoryLocks();
-  currentLocks = locks;
 
   mem.public.registerFunction({
     name: "gen_random_uuid",
@@ -209,7 +226,6 @@ export function createMemDb(): MemDbHandle {
       __resetStorageCache();
       currentBackup = null;
       currentHandle = null;
-      currentLocks = null;
     },
     clearLocks(): void {
       locks.clear();

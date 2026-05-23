@@ -5,8 +5,10 @@
  * Stores normalized data in the fitness-data repository.
  */
 
-import type { Request, Response } from "express";
-import { getIntegration, getConfiguredIntegrations } from "./registry.js";
+import { createHmac, randomBytes, timingSafeEqual } from "crypto";
+import type { Request, RequestHandler, Response } from "express";
+import { getIntegration, getConfiguredIntegrationsForUser } from "./registry.js";
+import { requireSession } from "../auth/middleware.js";
 import { storeIntegrationData } from "./storage.js";
 import type { WebhookEvent } from "./types.js";
 import { createTelegramBot } from "../bot/telegram.js";
@@ -98,12 +100,9 @@ async function resolveUserIdForWebhook(device: string, payload: unknown): Promis
  * This is called after we've already returned 200 to the sender.
  */
 async function processWebhookAsync(
-  integration: ReturnType<typeof getIntegration>,
   payload: unknown,
   device: string
 ): Promise<void> {
-  if (!integration) return;
-
   try {
     // Resolve the user this webhook belongs to. Without a linked user we have
     // nowhere to persist the data.
@@ -113,7 +112,14 @@ async function processWebhookAsync(
       return;
     }
 
-    // Parse the webhook payload (this may make API calls)
+    // Build a per-user integration to fetch full data (parseWebhook hits the
+    // Whoop API with the user's stored access token).
+    const integration = getIntegration(device, userId);
+    if (!integration) {
+      console.log(`[integration-webhook] No factory registered for ${device}`);
+      return;
+    }
+
     const event = await integration.parseWebhook(payload);
 
     if (!event) {
@@ -168,8 +174,9 @@ export async function integrationWebhookHandler(req: Request, res: Response): Pr
   const payload = JSON.parse(JSON.stringify(req.body));
   res.status(200).json({ ok: true, message: "Webhook received" });
 
-  // Process asynchronously in the background
-  processWebhookAsync(integration, payload, device);
+  // Process asynchronously in the background — userId is resolved from the
+  // payload (whoop_user_id → integration_tokens.external_user_id).
+  processWebhookAsync(payload, device);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -180,6 +187,47 @@ export async function integrationWebhookHandler(req: Request, res: Response): Pr
  * Build the callback redirect URI from the current request.
  * Uses X-Forwarded-Proto for protocol when behind a reverse proxy (Fly.io).
  */
+// ─────────────────────────────────────────────────────────────────────────────
+// OAuth state HMAC
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Sign a tiny JSON payload with HMAC-SHA256 using $SESSION_SECRET. We send
+ * this as the OAuth `state` param so the provider's callback echoes back a
+ * userId we can trust. Format: `<base64url(payload)>.<base64url(signature)>`.
+ * Includes a 12-byte nonce so replays don't collide.
+ */
+function signOAuthState(payload: { userId: string }): string {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) throw new Error("SESSION_SECRET is required to sign OAuth state");
+  const body = { ...payload, n: randomBytes(12).toString("base64url"), iat: Date.now() };
+  const json = Buffer.from(JSON.stringify(body)).toString("base64url");
+  const sig = createHmac("sha256", secret).update(json).digest("base64url");
+  return `${json}.${sig}`;
+}
+
+function verifyOAuthState(state: string): { userId: string } | null {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) return null;
+  const dot = state.indexOf(".");
+  if (dot < 0) return null;
+  const json = state.slice(0, dot);
+  const sig = state.slice(dot + 1);
+  const expected = createHmac("sha256", secret).update(json).digest("base64url");
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  try {
+    const body = JSON.parse(Buffer.from(json, "base64url").toString("utf8"));
+    if (typeof body?.userId !== "string") return null;
+    // Reject states older than 1 hour.
+    if (typeof body?.iat !== "number" || Date.now() - body.iat > 60 * 60 * 1000) return null;
+    return { userId: body.userId };
+  } catch {
+    return null;
+  }
+}
+
 function getRedirectUri(req: Request, device: string): string {
   const proto = req.get("x-forwarded-proto") || req.protocol;
   return `${proto}://${req.get("host")}/api/integrations/${device}/callback`;
@@ -194,33 +242,40 @@ function getRedirectUri(req: Request, device: string): string {
  * After the user authorizes, they are redirected back to the callback endpoint
  * which will exchange the code for tokens automatically.
  */
-export async function integrationOAuthAuthHandler(req: Request, res: Response): Promise<void> {
-  const device = req.params.device as string;
+export const integrationOAuthAuthHandler: RequestHandler[] = [
+  requireSession,
+  async (req, res) => {
+    const device = req.params.device as string;
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ error: "session required" });
+      return;
+    }
 
-  console.log(`[integration-oauth] Auth initiation for: ${device}`);
+    console.log(`[integration-oauth] Auth initiation for: ${device} (user=${user.id})`);
 
-  const integration = getIntegration(device);
-  if (!integration) {
-    res.status(404).json({ error: "Unknown integration" });
-    return;
-  }
+    const integration = getIntegration(device);
+    if (!integration) {
+      res.status(404).json({ error: "Unknown integration" });
+      return;
+    }
+    if (!integration.isConfigured()) {
+      res.status(400).json({
+        error: `${device} integration is not configured. Set client credentials first.`,
+      });
+      return;
+    }
 
-  if (!integration.isConfigured()) {
-    res.status(400).json({
-      error: `${device} integration is not configured. Set client credentials first.`,
-    });
-    return;
-  }
-
-  const redirectUri = getRedirectUri(req, device);
-  const authUrl = integration.getAuthUrl(redirectUri);
-
-  console.log(
-    `[integration-oauth] Redirecting to auth URL for ${device}, callback: ${redirectUri}`
-  );
-
-  res.redirect(authUrl);
-}
+    const redirectUri = getRedirectUri(req, device);
+    // Encode userId in the OAuth `state` param. The provider echoes it back
+    // to the callback, where we decode it to know which user to bind the
+    // tokens to.
+    const stateParam = signOAuthState({ userId: user.id });
+    const baseAuthUrl = integration.getAuthUrl(redirectUri);
+    const sep = baseAuthUrl.includes("?") ? "&" : "?";
+    res.redirect(`${baseAuthUrl}${sep}state=${encodeURIComponent(stateParam)}`);
+  },
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OAuth Callback Handler
@@ -236,7 +291,7 @@ export async function integrationOAuthAuthHandler(req: Request, res: Response): 
  */
 export async function integrationOAuthCallbackHandler(req: Request, res: Response): Promise<void> {
   const device = req.params.device as string;
-  const { code, error, error_description } = req.query;
+  const { code, error, error_description, state } = req.query;
 
   console.log(`[integration-oauth] Callback for: ${device}`);
 
@@ -274,8 +329,24 @@ export async function integrationOAuthCallbackHandler(req: Request, res: Respons
     return;
   }
 
-  // Look up the integration
-  const integration = getIntegration(device);
+  // Decode userId from the signed state param. Without this we don't know
+  // which user the tokens belong to.
+  const stateValue = typeof state === "string" ? verifyOAuthState(state) : null;
+  if (!stateValue) {
+    res.status(400).send(`
+      <html>
+        <head><title>Authorization Failed</title></head>
+        <body style="font-family: system-ui; padding: 40px; max-width: 600px; margin: 0 auto;">
+          <h1>Authorization Failed</h1>
+          <p>Invalid or expired state parameter. Please restart the authorization flow.</p>
+        </body>
+      </html>
+    `);
+    return;
+  }
+
+  // Look up the integration bound to this user.
+  const integration = getIntegration(device, stateValue.userId);
   if (!integration) {
     res.status(404).send(`
       <html>
@@ -339,80 +410,58 @@ export async function integrationOAuthCallbackHandler(req: Request, res: Respons
  * - Recovering from missed webhooks
  * - Manual refresh
  */
-export async function integrationSyncHandler(req: Request, res: Response): Promise<void> {
-  // Validate cron secret if configured
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const authHeader = req.headers.authorization;
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      res.status(401).json({ error: "Unauthorized" });
+export const integrationSyncHandler: RequestHandler[] = [
+  requireSession,
+  async (req, res) => {
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ error: "session required" });
       return;
     }
-  }
+    const { date } = req.query;
+    const syncDate = typeof date === "string" ? date : new Date().toISOString().split("T")[0];
+    const userId = user.id;
+    console.log(`[integration-sync] Syncing data for user=${userId} date=${syncDate}`);
 
-  const { date } = req.query;
-  const syncDate = typeof date === "string" ? date : new Date().toISOString().split("T")[0];
+    const results: Array<{
+      integration: string;
+      success: boolean;
+      data?: { sleep: boolean; recovery: boolean; workouts: number };
+      error?: string;
+    }> = [];
 
-  console.log(`[integration-sync] Syncing data for: ${syncDate}`);
+    const integrations = getConfiguredIntegrationsForUser(userId);
 
-  // TODO(multi-user): the manual sync endpoint doesn't yet receive a userId;
-  // fall back to DEFAULT_USER_ID until the auth/admin migration lands.
-  const userId = process.env.DEFAULT_USER_ID;
-  if (!userId) {
-    res.status(500).json({
-      error:
-        "DEFAULT_USER_ID is not set; manual sync requires a userId (auth phase will pass it in).",
-    });
-    return;
-  }
+    for (const integration of integrations) {
+      try {
+        const sleep = await integration.fetchSleep(syncDate);
+        const recovery = await integration.fetchRecovery(syncDate);
+        const workouts = await integration.fetchWorkouts(syncDate);
 
-  const results: Array<{
-    integration: string;
-    success: boolean;
-    data?: { sleep: boolean; recovery: boolean; workouts: number };
-    error?: string;
-  }> = [];
+        if (sleep) {
+          await storeIntegrationData(userId, { type: "sleep", data: sleep });
+        }
+        if (recovery) {
+          await storeIntegrationData(userId, { type: "recovery", data: recovery });
+        }
+        for (const workout of workouts) {
+          await storeIntegrationData(userId, { type: "workout", data: workout });
+        }
 
-  const integrations = getConfiguredIntegrations();
-
-  for (const integration of integrations) {
-    try {
-      const sleep = await integration.fetchSleep(syncDate);
-      const recovery = await integration.fetchRecovery(syncDate);
-      const workouts = await integration.fetchWorkouts(syncDate);
-
-      // Store each piece of data
-      if (sleep) {
-        await storeIntegrationData(userId, { type: "sleep", data: sleep });
+        results.push({
+          integration: integration.slug,
+          success: true,
+          data: { sleep: !!sleep, recovery: !!recovery, workouts: workouts.length },
+        });
+      } catch (error) {
+        results.push({
+          integration: integration.slug,
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
       }
-      if (recovery) {
-        await storeIntegrationData(userId, { type: "recovery", data: recovery });
-      }
-      for (const workout of workouts) {
-        await storeIntegrationData(userId, { type: "workout", data: workout });
-      }
-
-      results.push({
-        integration: integration.slug,
-        success: true,
-        data: {
-          sleep: !!sleep,
-          recovery: !!recovery,
-          workouts: workouts.length,
-        },
-      });
-    } catch (error) {
-      results.push({
-        integration: integration.slug,
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
     }
-  }
 
-  res.json({
-    ok: true,
-    date: syncDate,
-    results,
-  });
-}
+    res.json({ ok: true, date: syncDate, results });
+  },
+];

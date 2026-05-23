@@ -10,7 +10,14 @@ import { TelegramBot } from "./telegram.js";
 import { getIntegration } from "../integrations/registry.js";
 import { inspectStoredTokens, isWhoopOAuthConfigured } from "../integrations/whoop/oauth.js";
 
-type CommandHandler = (agent: CoachAgentV2, bot: TelegramBot, args: string) => Promise<string>;
+export interface CommandContext {
+  userId: string;
+  agent: CoachAgentV2;
+  bot: TelegramBot;
+  args: string;
+}
+
+type CommandHandler = (ctx: CommandContext) => Promise<string>;
 
 /**
  * Available commands — only infrastructure commands, not coaching capabilities.
@@ -59,19 +66,15 @@ Just talk to me naturally! Here's what I can help with:
 • Ask me anything about training, form, recovery
 • Tell me how you're feeling — I'll adjust the plan`;
 
-async function handleHelp(_agent: CoachAgentV2, _bot: TelegramBot, _args: string): Promise<string> {
+async function handleHelp(_ctx: CommandContext): Promise<string> {
   return HELP_TEXT;
 }
 
 /**
  * /reauth - Generate a Whoop OAuth re-authorization link.
  */
-async function handleReauth(
-  _agent: CoachAgentV2,
-  _bot: TelegramBot,
-  args: string
-): Promise<string> {
-  const device = args.trim().toLowerCase() || "whoop";
+async function handleReauth(ctx: CommandContext): Promise<string> {
+  const device = ctx.args.trim().toLowerCase() || "whoop";
   const integration = getIntegration(device);
 
   if (!integration) {
@@ -95,11 +98,7 @@ async function handleReauth(
  * Diagnostic for "Whoop tokens not configured" errors: surfaces whether
  * /reauth actually persisted both access and refresh tokens.
  */
-async function handleWhoopStatus(
-  _agent: CoachAgentV2,
-  _bot: TelegramBot,
-  _args: string
-): Promise<string> {
+async function handleWhoopStatus(ctx: CommandContext): Promise<string> {
   const lines: string[] = ["Whoop integration status:"];
 
   const credsConfigured = isWhoopOAuthConfigured();
@@ -109,18 +108,9 @@ async function handleWhoopStatus(
     return lines.join("\n");
   }
 
-  // TODO(multi-user): /whoopstatus reads the on-DB token row for the active
-  // user. Until per-channel identity resolution is wired into bot commands,
-  // we fall back to DEFAULT_USER_ID.
-  const userId = process.env.DEFAULT_USER_ID;
-  if (!userId) {
-    lines.push("✗ DEFAULT_USER_ID is not set; /whoopstatus needs a userId.");
-    return lines.join("\n");
-  }
-
   let inspection;
   try {
-    inspection = await inspectStoredTokens(userId);
+    inspection = await inspectStoredTokens(ctx.userId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     lines.push(`✗ Failed to read tokens row: ${message}`);
@@ -168,12 +158,8 @@ async function handleWhoopStatus(
   return lines.join("\n");
 }
 
-async function handleRestart(
-  _agent: CoachAgentV2,
-  bot: TelegramBot,
-  _args: string
-): Promise<string> {
-  await bot.sendPlainMessage("Restarting server... Be back in a moment!");
+async function handleRestart(ctx: CommandContext): Promise<string> {
+  await ctx.bot.sendPlainMessage("Restarting server... Be back in a moment!");
 
   // Small delay to ensure the message is sent before exit
   setTimeout(() => {
@@ -191,12 +177,11 @@ export function commandExists(command: string): boolean {
 export async function executeCommand(
   command: string,
   args: string,
-  agent: CoachAgentV2,
-  bot: TelegramBot
+  ctx: { userId: string; agent: CoachAgentV2; bot: TelegramBot }
 ): Promise<string> {
   const handler = COMMANDS[command];
   if (!handler) {
     return "";
   }
-  return handler(agent, bot, args);
+  return handler({ ...ctx, args });
 }

@@ -5,8 +5,8 @@
  *   1. Init Sentry (no-op without SENTRY_DSN).
  *   2. Mount middleware (json, cookies).
  *   3. Register routes (health, webhook → inbox, cron, auth, integrations).
- *   4. Register integrations (Whoop). Falls back to DEFAULT_USER_ID until the
- *      per-user OAuth flow lands.
+ *   4. Register integration factories (e.g. Whoop). Per-user instances are
+ *      built on demand by the webhook/OAuth/cron handlers.
  *   5. Start the inbox worker that drains `inbox_events`.
  *   6. Listen.
  */
@@ -22,7 +22,7 @@ import {
   integrationOAuthCallbackHandler,
   integrationSyncHandler,
 } from "./integrations/webhook-handler.js";
-import { registerIntegration } from "./integrations/registry.js";
+import { registerIntegrationFactory } from "./integrations/registry.js";
 import { getWhoopIntegration } from "./integrations/whoop/integration.js";
 import { startWorker } from "./inbox/worker.js";
 import { initSentry } from "./observability/sentry.js";
@@ -76,7 +76,7 @@ app.get("/api/me", authRoutes.requireSession, authRoutes.me);
 // Device Integrations
 // ─────────────────────────────────────────────────────────────────────────────
 
-registerIntegration(getWhoopIntegration());
+registerIntegrationFactory("whoop", (userId) => getWhoopIntegration(userId));
 
 app.post("/api/integrations/:device/webhook", integrationWebhookHandler);
 app.get("/api/integrations/:device/auth", integrationOAuthAuthHandler);
