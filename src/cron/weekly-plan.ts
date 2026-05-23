@@ -1,8 +1,9 @@
 /**
  * Weekly Planning Cron Job
  *
- * Initiates the weekly planning flow by generating a retrospective first,
- * then asking the user questions before generating the plan.
+ * For each active user, initiates the weekly planning flow by generating a
+ * retrospective first, then asking the user questions before generating the
+ * plan.
  * Schedule: Sunday at 8:00pm (user's timezone)
  *
  * Flow:
@@ -12,9 +13,11 @@
  */
 
 import { createCoachAgentV2 } from "../coach-v2/index.js";
-import { createTelegramBot } from "../bot/telegram.js";
-import { getCurrentWeek, getNextWeek, getWeekDays, getTimezone } from "../utils/date.js";
-import { runCronTask, type CronResult } from "./runner.js";
+import { getStorage } from "../storage/db.js";
+import { sendBotMessageForUser } from "../bot/telegram-for-user.js";
+import { getUserById } from "../auth/identity.js";
+import { getCurrentWeek, getNextWeek, getWeekDays } from "../utils/date.js";
+import { runCronForEachUser, type CronResult } from "./runner.js";
 
 function formatWeekDaysInfo(week: string): string {
   const days = getWeekDays(week);
@@ -31,53 +34,59 @@ Use these exact dates when creating the plan. Each day in the plan should includ
 export type WeeklyPlanResult = CronResult & { week?: string };
 
 export async function runWeeklyPlan(): Promise<WeeklyPlanResult> {
-  const timezone = getTimezone();
-
-  return runCronTask(
+  return runCronForEachUser(
     "weekly-plan",
-    async ({ bot, storage }) => {
+    async ({ user, storage, sendMessage }) => {
+      const timezone = user.timezone;
       const nextWeek = getNextWeek(getCurrentWeek(timezone));
       const endingWeek = getCurrentWeek(timezone);
 
-      const existingPlan = await storage.readWeeklyPlan(nextWeek);
+      const existingPlan = await storage.readWeeklyPlan(user.id, nextWeek);
       if (existingPlan) {
-        await bot.sendMessageSafe(`📋 Plan for ${nextWeek} already exists — no action needed.`);
-        return { success: true, week: nextWeek, message: `Plan already exists for ${nextWeek}` };
+        await sendMessage(`📋 Plan for ${nextWeek} already exists — no action needed.`);
+        return { success: true, message: `Plan already exists for ${nextWeek}` };
       }
 
-      const agent = createCoachAgentV2({ timezone });
+      const agent = createCoachAgentV2({ userId: user.id, timezone });
 
       // Step 1: Generate retrospective for the ending week
-      console.log(`[weekly-plan] Generating retro for ending week: ${endingWeek}`);
+      console.log(`[weekly-plan] user=${user.id} generating retro for ending week: ${endingWeek}`);
       await agent.runRetrospective(`Generate the retrospective for week ${endingWeek}.`);
-      console.log(`[weekly-plan] Retro generated for ${endingWeek}`);
+      console.log(`[weekly-plan] user=${user.id} retro generated for ${endingWeek}`);
 
       // Step 2: Ask planning questions
       const response = await agent.chat(
         `You are starting the weekly planning flow for ${nextWeek}. Ask 2-3 short coaching questions — fatigue, schedule, focus areas. Do NOT generate the plan yet — wait for the athlete's response, then load the plan-week skill.`
       );
-      await bot.sendMessageSafe(response.message);
+      await sendMessage(response.message);
 
       return {
         success: true,
-        week: nextWeek,
         message: `Generated retro for ${endingWeek}, asked planning questions for ${nextWeek}`,
       };
     },
     { errorMessage: 'Had trouble starting the planning process. Say "plan my week" to try again.' }
-  ) as Promise<WeeklyPlanResult>;
+  );
 }
 
 /**
- * Force regenerate a plan (overwrites existing). Routes through the planner.
+ * Force regenerate a plan for a specific user (overwrites existing).
+ * Routes through the planner.
  */
-export async function forceRegeneratePlan(week: string): Promise<WeeklyPlanResult> {
-  const timezone = getTimezone();
-  console.log(`[weekly-plan] Force regenerating plan for ${week}`);
+export async function forceRegeneratePlan(userId: string, week: string): Promise<WeeklyPlanResult> {
+  console.log(`[weekly-plan] user=${userId} force regenerating plan for ${week}`);
 
   try {
-    const bot = createTelegramBot();
-    const agent = createCoachAgentV2({ timezone });
+    const user = await getUserById(userId);
+    if (!user) {
+      return { success: false, error: `User ${userId} not found` };
+    }
+    const timezone = user.timezone;
+
+    // Touch storage to ensure the plan target user exists / catches early DB errors.
+    void getStorage();
+
+    const agent = createCoachAgentV2({ userId, timezone });
 
     const weekDaysInfo = formatWeekDaysInfo(week);
 
@@ -93,7 +102,7 @@ After generating the plan:
     );
     console.log("[weekly-plan] Planner completed");
 
-    await bot.sendMessageSafe(response.message);
+    await sendBotMessageForUser(user, response.message);
 
     return { success: true, week, message: `Regenerated plan for ${week}` };
   } catch (error) {

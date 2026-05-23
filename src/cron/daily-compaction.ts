@@ -1,97 +1,73 @@
 /**
  * Daily Compaction Cron Job
  *
- * Once a day, archive the chat transcript and distill it down to a
- * carry-forward summary so each new day starts with a clean message buffer
- * but doesn't lose context (pains, focus areas, in-flight discussions).
+ * Once a day, per user, distill the last 48h of chat down to a carry-forward
+ * summary so each new day starts with a clean message buffer but doesn't lose
+ * context (pains, focus areas, in-flight discussions).
  *
  * Without this, the prompt window (50 messages) eventually rolls over
  * mid-conversation — that's exactly the bug that produced the "goblet
  * squats are up next" contradiction.
  *
  * Schedule: 03:00 local time daily (well past any normal workout window).
+ *
+ * Multi-tenant: iterates active users; transcripts now live in the `messages`
+ * table indefinitely (no archive file). After summarizing, we clear the
+ * per-user message buffer.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
-import { syncRepo } from "../storage/repo-sync.js";
-import { writeAndCommit } from "../coach-v2/git.js";
-import {
-  clearMessages,
-  formatTranscript,
-  getAllMessages,
-  type StoredMessage,
-} from "../bot/message-history.js";
-import { getToday, getTimezone } from "../utils/date.js";
-import { runCronTask, type CronResult } from "./runner.js";
+import { formatTranscript, type StoredMessage } from "../bot/message-history.js";
+import { getToday } from "../utils/date.js";
+import { runCronForEachUser, type CronResult } from "./runner.js";
+import type { Message } from "../db/schema.js";
 
 const SUMMARY_MODEL = "claude-haiku-4-5";
-const SUMMARY_PATH = "state/conversation-summary.md";
-const TRANSCRIPT_DIR = "transcripts";
+const COMPACTION_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
 
 export async function runDailyCompaction(): Promise<CronResult> {
-  return runCronTask(
+  return runCronForEachUser(
     "daily-compaction",
-    async () => {
-      const timezone = getTimezone();
+    async ({ user, storage }) => {
+      const timezone = user.timezone;
       const today = getToday(timezone);
 
-      const messages = getAllMessages();
-      if (messages.length === 0) {
+      const cutoff = Date.now() - COMPACTION_WINDOW_MS;
+      const rows = await storage.getMessagesSince(user.id, cutoff);
+      if (rows.length === 0) {
         return { success: true, message: "No messages to compact" };
       }
 
-      const repoPath = await ensureRepoPath();
-      const previousSummary = readPreviousSummary(repoPath);
+      const stored = rows.map(rowToStored);
+      const previousSummaryRow = await storage.readConversationSummary(user.id);
+      const previousSummary = previousSummaryRow?.body ?? null;
 
-      const transcript = formatTranscript(messages);
+      const transcript = formatTranscript(stored);
       const summary = await summarizeTranscript(transcript, previousSummary, today);
 
-      const transcriptPath = `${TRANSCRIPT_DIR}/${today}.md`;
-      const transcriptContent = `# Conversation transcript — ${today}\n\n${transcript}\n`;
-      await writeAndCommit(
-        repoPath,
-        transcriptPath,
-        transcriptContent,
-        `Archive conversation transcript for ${today}`
-      );
+      await storage.writeConversationSummary(user.id, summary, today, rows.length);
 
-      const summaryContent = buildSummaryFile(summary, today, messages.length);
-      await writeAndCommit(
-        repoPath,
-        SUMMARY_PATH,
-        summaryContent,
-        `Refresh conversation summary (${today})`
-      );
-
-      // Only clear local cache once both commits succeeded.
-      clearMessages();
+      // Only clear messages once the summary has been persisted.
+      await storage.clearMessages(user.id);
 
       return {
         success: true,
-        message: `Compacted ${messages.length} messages → ${transcriptPath} + ${SUMMARY_PATH}`,
+        message: `Compacted ${rows.length} messages → conversation summary (${today})`,
       };
     },
     {
       // Don't notify the user — this is a silent housekeeping job.
+      requireProfile: false,
     }
   );
 }
 
-async function ensureRepoPath(): Promise<string> {
-  const repoName = process.env.DATA_REPO;
-  const token = process.env.GITHUB_TOKEN;
-  if (!repoName || !token) {
-    throw new Error("DATA_REPO and GITHUB_TOKEN must be set");
-  }
-  return syncRepo({ repoUrl: `https://github.com/${repoName}.git`, token });
-}
-
-function readPreviousSummary(repoPath: string): string | null {
-  const path = join(repoPath, SUMMARY_PATH);
-  if (!existsSync(path)) return null;
-  return readFileSync(path, "utf-8");
+function rowToStored(row: Message): StoredMessage {
+  return {
+    text: row.text,
+    timestamp: row.ts.toISOString(),
+    isFromUser: row.role === "user",
+  };
 }
 
 async function summarizeTranscript(
@@ -153,16 +129,8 @@ Rules:
   return text;
 }
 
-function buildSummaryFile(summary: string, today: string, msgCount: number): string {
-  return `<!-- Auto-generated by daily-compaction. Last updated: ${today} (${msgCount} msgs compacted) -->
-
-${summary}
-`;
-}
-
 // Test seam — exposed so unit tests can stub the LLM call without a real key.
 export const __testing = {
   summarizeTranscript,
-  buildSummaryFile,
   formatTranscriptForTest: (msgs: StoredMessage[]): string => formatTranscript(msgs),
 };

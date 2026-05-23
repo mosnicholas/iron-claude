@@ -570,7 +570,10 @@ export function parseCommand(text: string): { command: string; args: string } {
 }
 
 /**
- * Create a TelegramBot instance from environment variables
+ * Create a TelegramBot instance from environment variables.
+ *
+ * Single-tenant convenience for legacy callers (cron broadcasts, scripts).
+ * The inbox/per-user flow uses `createTelegramBotForChat(chatId)` instead.
  */
 export function createTelegramBot(): TelegramBot {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -581,6 +584,23 @@ export function createTelegramBot(): TelegramBot {
     throw new Error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID");
   }
 
+  return new TelegramBot({ botToken, chatId, webhookSecret });
+}
+
+/**
+ * Create a TelegramBot instance scoped to a specific chat_id.
+ *
+ * This is the multi-tenant entry point — the inbox worker, per-user cron
+ * broadcasts, and any flow that knows a target chat at runtime should use
+ * this instead of `createTelegramBot()` (which requires a single env-pinned
+ * chat).
+ */
+export function createTelegramBotForChat(chatId: string): TelegramBot {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!botToken) {
+    throw new Error("TELEGRAM_BOT_TOKEN is required");
+  }
   return new TelegramBot({ botToken, chatId, webhookSecret });
 }
 

@@ -1,0 +1,172 @@
+name: main-ci
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  lint:
+    name: Lint & format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+
+  db-tests:
+    name: DB & integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ironclaude
+          POSTGRES_PASSWORD: ironclaude
+          POSTGRES_DB: ironclaude
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ironclaude"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://ironclaude:ironclaude@localhost:5432/ironclaude
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run db:migrate
+      - name: Run DB & integration tests
+        run: |
+          if npm run 2>/dev/null | grep -qE '^[[:space:]]+test:db$'; then
+            npm run test:db
+          else
+            NODE_OPTIONS='--experimental-vm-modules' npx jest --testPathPatterns='src/storage|tests/integration'
+          fi
+
+  migration-check:
+    name: Drizzle migration drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run db:generate
+      - run: git diff --exit-code drizzle/
+
+  scenario-tests:
+    name: Scenario tests (real model)
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, unit, db-tests]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ironclaude
+          POSTGRES_PASSWORD: ironclaude
+          POSTGRES_DB: ironclaude
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ironclaude"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://ironclaude:ironclaude@localhost:5432/ironclaude
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect ANTHROPIC_API_KEY availability
+        id: detect
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "HAS_ANTHROPIC_KEY=true" >> "$GITHUB_ENV"
+          else
+            echo "HAS_ANTHROPIC_KEY=false" >> "$GITHUB_ENV"
+            echo "ANTHROPIC_API_KEY not set; scenario tests will be skipped."
+          fi
+      - uses: actions/setup-node@v4
+        if: ${{ env.HAS_ANTHROPIC_KEY == 'true' }}
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        if: ${{ env.HAS_ANTHROPIC_KEY == 'true' }}
+        run: npm ci
+      - name: Run migrations
+        if: ${{ env.HAS_ANTHROPIC_KEY == 'true' }}
+        run: npm run db:migrate
+      - name: Run scenario tests
+        if: ${{ env.HAS_ANTHROPIC_KEY == 'true' }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: npm run test:scenarios
+
+  notify:
+    name: Notify on failure
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, unit, db-tests, migration-check, scenario-tests]
+    if: failure()
+    steps:
+      - name: Send Telegram alert
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "Telegram secrets not configured; skipping notification."
+            exit 0
+          fi
+          MSG="main-ci failed on ${SHA::7}: ${RUN_URL}"
+          curl -fsS -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
+            --data-urlencode "text=${MSG}" \
+            > /dev/null

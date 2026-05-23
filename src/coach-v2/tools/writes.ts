@@ -11,12 +11,7 @@
 
 import { z } from "zod";
 import { defineTool } from "../tool.js";
-import {
-  calendarInfoFor,
-  getCurrentWeek,
-  getDateInfoTZAware,
-  getToday,
-} from "../../utils/date.js";
+import { calendarInfoFor, getCurrentWeek, getDateInfoTZAware, getToday } from "../../utils/date.js";
 import { calculate1RM } from "../../utils/pr-calculator.js";
 import type { ToolContext } from "../tool.js";
 
@@ -67,10 +62,7 @@ function computeDurationMinutes(start: string, end: string): number {
   return mins;
 }
 
-async function resolveWorkoutId(
-  ctx: ToolContext,
-  date: string
-): Promise<string | null> {
+async function resolveWorkoutId(ctx: ToolContext, date: string): Promise<string | null> {
   const workout = await ctx.storage.getWorkout(ctx.userId, date);
   return workout?.id ?? null;
 }
@@ -140,8 +132,7 @@ export const startWorkout = defineTool({
         await ctx.storage.addReminder(ctx.userId, {
           triggerDate: date,
           triggerHour,
-          message:
-            "Still working out? If you're done, let me know so I can close out the session.",
+          message: "Still working out? If you're done, let me know so I can close out the session.",
           context: "workout-timeout-check",
         });
       } catch (err) {

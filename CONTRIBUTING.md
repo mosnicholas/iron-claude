@@ -60,6 +60,23 @@ This helps identify unused exports, dependencies, and files.
 - Ensure all checks pass
 - Keep PRs focused - one feature or fix per PR
 
+### Required Status Checks
+
+The `main` branch is protected. Every PR must pass the following CI jobs
+(defined in `.github/workflows/ci.yml`) before it can be merged:
+
+- `lint` — ESLint + Prettier format check
+- `typecheck` — `tsc --noEmit`
+- `unit` — fast unit tests (`npm test`)
+- `db-tests` — Postgres-backed storage and integration tests
+- `migration-check` — Drizzle migration drift detection (fails if the
+  schema changed without a committed migration)
+
+In addition, PRs require **1 approval from a CODEOWNER**
+(see `.github/CODEOWNERS`). Configure these as required status checks
+and require code-owner review in the repository's branch protection
+settings for `main`.
+
 ## Project Structure
 
 ```

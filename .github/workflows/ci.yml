@@ -2,60 +2,101 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches-ignore: [main]
   pull_request:
-    branches: [main]
-  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  lint:
+    name: Lint & format
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version-file: '.nvmrc'
+          node-version: '20'
           cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Type check
-        run: npm run typecheck
-
-      - name: Build
-        run: npm run build
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Test
-        run: npm test
-
-  scenario-tests:
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'push' || github.event.pull_request.base.ref == 'main'
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version-file: '.nvmrc'
+          node-version: '20'
           cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
 
-      - name: Install dependencies
-        run: npm ci
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
 
-      - name: Build
-        run: npm run build
-
-      - name: Run scenario tests
+  db-tests:
+    name: DB & integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: npm run test:scenarios
+          POSTGRES_USER: ironclaude
+          POSTGRES_PASSWORD: ironclaude
+          POSTGRES_DB: ironclaude
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ironclaude"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://ironclaude:ironclaude@localhost:5432/ironclaude
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Run migrations
+        run: npm run db:migrate
+      - name: Run DB & integration tests
+        run: |
+          if npm run 2>/dev/null | grep -qE '^[[:space:]]+test:db$'; then
+            npm run test:db
+          else
+            NODE_OPTIONS='--experimental-vm-modules' npx jest --testPathPatterns='src/storage|tests/integration'
+          fi
+
+  migration-check:
+    name: Drizzle migration drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Regenerate migrations
+        run: npm run db:generate
+      - name: Ensure no uncommitted migration changes
+        run: git diff --exit-code drizzle/

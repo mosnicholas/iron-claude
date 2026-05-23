@@ -1,20 +1,3 @@
-CREATE TABLE "auth_otps" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"phone_e164" varchar(32) NOT NULL,
-	"code_hash" varchar(128) NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL,
-	"consumed_at" timestamp with time zone,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "auth_sessions" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"user_id" uuid NOT NULL,
-	"token_hash" varchar(128) NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE "channel_identities" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" uuid NOT NULL,
@@ -131,6 +114,7 @@ CREATE TABLE "tool_call_log" (
 --> statement-breakpoint
 CREATE TABLE "users" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"supabase_user_id" uuid,
 	"phone_e164" varchar(32) NOT NULL,
 	"display_name" text,
 	"timezone" varchar(64) DEFAULT 'America/New_York' NOT NULL,
@@ -197,7 +181,6 @@ CREATE TABLE "workouts" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "auth_sessions" ADD CONSTRAINT "auth_sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "channel_identities" ADD CONSTRAINT "channel_identities_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "conversation_summaries" ADD CONSTRAINT "conversation_summaries_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "inbox_events" ADD CONSTRAINT "inbox_events_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -215,9 +198,6 @@ ALTER TABLE "weekly_retros" ADD CONSTRAINT "weekly_retros_user_id_users_id_fk" F
 ALTER TABLE "workout_exercises" ADD CONSTRAINT "workout_exercises_workout_id_workouts_id_fk" FOREIGN KEY ("workout_id") REFERENCES "public"."workouts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workout_sets" ADD CONSTRAINT "workout_sets_exercise_id_workout_exercises_id_fk" FOREIGN KEY ("exercise_id") REFERENCES "public"."workout_exercises"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workouts" ADD CONSTRAINT "workouts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "auth_otps_phone_idx" ON "auth_otps" USING btree ("phone_e164");--> statement-breakpoint
-CREATE UNIQUE INDEX "auth_sessions_token_idx" ON "auth_sessions" USING btree ("token_hash");--> statement-breakpoint
-CREATE INDEX "auth_sessions_user_idx" ON "auth_sessions" USING btree ("user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "channel_identities_chan_ext_idx" ON "channel_identities" USING btree ("channel","external_id");--> statement-breakpoint
 CREATE INDEX "channel_identities_user_idx" ON "channel_identities" USING btree ("user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "inbox_events_uniq" ON "inbox_events" USING btree ("channel","external_update_id");--> statement-breakpoint
@@ -233,6 +213,7 @@ CREATE INDEX "reminders_user_idx" ON "reminders" USING btree ("user_id");--> sta
 CREATE INDEX "tool_call_log_user_ts_idx" ON "tool_call_log" USING btree ("user_id","ts");--> statement-breakpoint
 CREATE INDEX "tool_call_log_turn_idx" ON "tool_call_log" USING btree ("turn_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "users_phone_idx" ON "users" USING btree ("phone_e164");--> statement-breakpoint
+CREATE UNIQUE INDEX "users_supabase_idx" ON "users" USING btree ("supabase_user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "weekly_plans_user_week_idx" ON "weekly_plans" USING btree ("user_id","iso_week");--> statement-breakpoint
 CREATE UNIQUE INDEX "weekly_retros_user_week_idx" ON "weekly_retros" USING btree ("user_id","iso_week");--> statement-breakpoint
 CREATE INDEX "workout_exercises_workout_idx" ON "workout_exercises" USING btree ("workout_id");--> statement-breakpoint

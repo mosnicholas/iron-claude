@@ -85,8 +85,14 @@ export interface Storage {
 
   // ── Workouts ─────────────────────────────────────────────────────────────
   getWorkout(userId: UserId, date: string): Promise<WorkoutWithDetails | null>;
-  listWorkouts(userId: UserId, opts?: { isoWeek?: string; limit?: number }): Promise<WorkoutSummary[]>;
-  listWeekDates(userId: UserId, isoWeek: string): Promise<{ date: string; type: string; status: string }[]>;
+  listWorkouts(
+    userId: UserId,
+    opts?: { isoWeek?: string; limit?: number }
+  ): Promise<WorkoutSummary[]>;
+  listWeekDates(
+    userId: UserId,
+    isoWeek: string
+  ): Promise<{ date: string; type: string; status: string }[]>;
   getExerciseHistory(
     userId: UserId,
     exerciseName: string,
@@ -152,12 +158,20 @@ export interface Storage {
 
   // ── Conversation summary ─────────────────────────────────────────────────
   readConversationSummary(userId: UserId): Promise<ConversationSummary | null>;
-  writeConversationSummary(userId: UserId, body: string, asOfDate: string, messageCount: number): Promise<void>;
+  writeConversationSummary(
+    userId: UserId,
+    body: string,
+    asOfDate: string,
+    messageCount: number
+  ): Promise<void>;
 
   // ── Reminders ────────────────────────────────────────────────────────────
   getReminders(userId: UserId): Promise<Reminder[]>;
   getDueReminders(userId: UserId, triggerDate: string, triggerHour: number): Promise<Reminder[]>;
-  addReminder(userId: UserId, r: Omit<NewReminder, "userId" | "id" | "createdAt">): Promise<Reminder>;
+  addReminder(
+    userId: UserId,
+    r: Omit<NewReminder, "userId" | "id" | "createdAt">
+  ): Promise<Reminder>;
   deleteReminder(userId: UserId, id: string): Promise<void>;
   deleteRemindersByContext(userId: UserId, context: string): Promise<number>;
 

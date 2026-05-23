@@ -76,10 +76,7 @@ Use this context to maintain conversation continuity.`;
  * by the nightly compaction job to archive the day's transcript and generate
  * a summary.
  */
-export async function getAllMessages(
-  userId: string,
-  sinceMs?: number
-): Promise<StoredMessage[]> {
+export async function getAllMessages(userId: string, sinceMs?: number): Promise<StoredMessage[]> {
   const cutoff = sinceMs ?? Date.now() - DEFAULT_MAX_AGE_MS;
   const rows = await getStorage().getMessagesSince(userId, cutoff);
   return rows.map(rowToStored);

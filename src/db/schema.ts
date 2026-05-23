@@ -36,6 +36,13 @@ export const users = pgTable(
   "users",
   {
     id: uuid("id").defaultRandom().primaryKey(),
+    /**
+     * Foreign key to Supabase's auth.users(id). Owns the canonical phone/email
+     * + OTP state; we don't manage credentials ourselves. Nullable so we can
+     * still auto-create a user from a Telegram-first signup before they bind
+     * a real phone via OTP.
+     */
+    supabaseUserId: uuid("supabase_user_id"),
     phoneE164: varchar("phone_e164", { length: 32 }).notNull(),
     displayName: text("display_name"),
     timezone: varchar("timezone", { length: 64 }).notNull().default("America/New_York"),
@@ -45,6 +52,7 @@ export const users = pgTable(
   },
   (t) => ({
     phoneIdx: uniqueIndex("users_phone_idx").on(t.phoneE164),
+    supabaseIdx: uniqueIndex("users_supabase_idx").on(t.supabaseUserId),
   })
 );
 
@@ -69,41 +77,8 @@ export const channelIdentities = pgTable(
   })
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Auth
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const authOtps = pgTable(
-  "auth_otps",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    phoneE164: varchar("phone_e164", { length: 32 }).notNull(),
-    codeHash: varchar("code_hash", { length: 128 }).notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    consumedAt: timestamp("consumed_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    phoneIdx: index("auth_otps_phone_idx").on(t.phoneE164),
-  })
-);
-
-export const authSessions = pgTable(
-  "auth_sessions",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    tokenHash: varchar("token_hash", { length: 128 }).notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    tokenIdx: uniqueIndex("auth_sessions_token_idx").on(t.tokenHash),
-    userIdx: index("auth_sessions_user_idx").on(t.userId),
-  })
-);
+// Auth lives in Supabase's auth.* schema; we don't define our own tables for
+// OTPs or sessions. `users.supabase_user_id` joins to auth.users(id).
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Coaching content
@@ -334,10 +309,7 @@ export const integrationTokens = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    userProviderIdx: uniqueIndex("integration_tokens_user_provider_idx").on(
-      t.userId,
-      t.provider
-    ),
+    userProviderIdx: uniqueIndex("integration_tokens_user_provider_idx").on(t.userId, t.provider),
     externalIdx: index("integration_tokens_external_idx").on(t.provider, t.externalUserId),
   })
 );

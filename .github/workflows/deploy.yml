@@ -1,0 +1,62 @@
+name: Deploy to Fly.io
+
+on:
+  workflow_run:
+    workflows: [main-ci]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-fly
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy app
+    runs-on: ubuntu-latest
+    # Only deploy if upstream main-ci succeeded AND the repo opted in.
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'success' &&
+        vars.ENABLE_FLY_DEPLOY == 'true'
+      }}
+    steps:
+      - name: Checkout commit that triggered main-ci
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run build
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --remote-only
+
+      - name: Tag deploy commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          SHORT_SHA="${SHA::7}"
+          TAG="deploy-${SHORT_SHA}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists; skipping."
+            exit 0
+          fi
+          git tag "${TAG}" "${SHA}"
+          git push origin "${TAG}"

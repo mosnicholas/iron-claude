@@ -30,34 +30,24 @@ export interface CoachContext {
   dateInfo: ReturnType<typeof getDateInfoTZAware>;
 }
 
-export async function loadCoachContext(
-  userId: string,
-  timezone: string
-): Promise<CoachContext> {
+export async function loadCoachContext(userId: string, timezone: string): Promise<CoachContext> {
   const dateInfo = getDateInfoTZAware();
   const week = getCurrentWeek(timezone);
   const today = getToday(timezone);
   const storage = getStorage();
 
-  const [
-    profileRow,
-    planRow,
-    todayWorkoutRow,
-    summaryRow,
-    weekProgress,
-    messageHistory,
-  ] = await Promise.all([
-    storage.readProfile(userId),
-    storage.readWeeklyPlan(userId, week),
-    storage.getWorkout(userId, today),
-    storage.readConversationSummary(userId),
-    buildWeekProgress(userId, week),
-    formatRecentMessagesForPrompt(userId, 50),
-  ]);
+  const [profileRow, planRow, todayWorkoutRow, summaryRow, weekProgress, messageHistory] =
+    await Promise.all([
+      storage.readProfile(userId),
+      storage.readWeeklyPlan(userId, week),
+      storage.getWorkout(userId, today),
+      storage.readConversationSummary(userId),
+      buildWeekProgress(userId, week),
+      formatRecentMessagesForPrompt(userId, 50),
+    ]);
 
   const profile = profileRow?.body ?? null;
-  const coachingPriorities =
-    profileRow?.coachingPriorities ?? extractCoachingPriorities(profile);
+  const coachingPriorities = profileRow?.coachingPriorities ?? extractCoachingPriorities(profile);
 
   return {
     profile,
@@ -91,7 +81,7 @@ function renderWorkoutForContext(workout: WorkoutWithDetails): string {
       lines.push("(no sets yet)");
     } else {
       for (const s of ex.sets) {
-        const weight = s.weight !== null ? `${s.weight}` : s.weightText ?? "BW";
+        const weight = s.weight !== null ? `${s.weight}` : (s.weightText ?? "BW");
         const rpe = s.rpe !== null && s.rpe !== undefined ? ` @ RPE ${s.rpe}` : "";
         lines.push(`- ${weight} x ${s.reps}${rpe}`);
       }

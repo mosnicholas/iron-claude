@@ -449,10 +449,7 @@ export class DbStorage implements Storage {
         await tx.insert(workoutSets).values(newRows);
       }
 
-      await tx
-        .update(workouts)
-        .set({ updatedAt: new Date() })
-        .where(eq(workouts.id, workoutId));
+      await tx.update(workouts).set({ updatedAt: new Date() }).where(eq(workouts.id, workoutId));
 
       return { exerciseId, addedSetCount: newRows.length, noop: false };
     });
@@ -635,7 +632,12 @@ export class DbStorage implements Storage {
     return rows[0] ?? null;
   }
 
-  async writeConversationSummary(userId: UserId, body: string, asOfDate: string, messageCount: number) {
+  async writeConversationSummary(
+    userId: UserId,
+    body: string,
+    asOfDate: string,
+    messageCount: number
+  ) {
     await this.db
       .insert(conversationSummaries)
       .values({ userId, body, asOfDate, messageCount })
@@ -668,7 +670,10 @@ export class DbStorage implements Storage {
     userId: UserId,
     r: Omit<NewReminder, "userId" | "id" | "createdAt">
   ): Promise<Reminder> {
-    const [row] = await this.db.insert(reminders).values({ ...r, userId }).returning();
+    const [row] = await this.db
+      .insert(reminders)
+      .values({ ...r, userId })
+      .returning();
     return row;
   }
 
@@ -718,12 +723,18 @@ export class DbStorage implements Storage {
     return row;
   }
 
-  async findUserByExternalIntegrationId(provider: string, externalUserId: string): Promise<UserId | null> {
+  async findUserByExternalIntegrationId(
+    provider: string,
+    externalUserId: string
+  ): Promise<UserId | null> {
     const [row] = await this.db
       .select({ userId: integrationTokens.userId })
       .from(integrationTokens)
       .where(
-        and(eq(integrationTokens.provider, provider), eq(integrationTokens.externalUserId, externalUserId))
+        and(
+          eq(integrationTokens.provider, provider),
+          eq(integrationTokens.externalUserId, externalUserId)
+        )
       )
       .limit(1);
     return row?.userId ?? null;
