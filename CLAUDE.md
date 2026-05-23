@@ -101,6 +101,20 @@ To add a new scenario test, use the existing pattern:
 3. Provide brief feedback on the session
 4. Note any patterns for `learnings.md`
 
+### Nutrition Coaching
+
+Nutrition logging shares the per-day file with the workout — `weeks/YYYY-WXX/YYYY-MM-DD.md` — under a `## Nutrition` section. Each meal is a `### Meal (HH:MM)` block with one item per line and a `_Subtotal: ..._` footer. Frontmatter carries the rolled-up daily totals (`protein_g`, `kcal`, optionally `carbs_g`, `fat_g`) so other code can read totals without re-parsing the meal body.
+
+**Tools** (`src/coach-v2/tools/nutrition.ts`):
+- `lookup_food(query, limit?)` — searches USDA FoodData Central, returns top matches with per-100g macros. The agent calls this BEFORE log_meal to ground macros — this is the fix for the fabrication bug where the coach was guessing protein values.
+- `log_meal({ meal, items, notes?, date? })` — appends a meal section and recomputes the daily rollup. Auto-creates the daily file if absent. `start_workout` now upgrades a nutrition-only file in place rather than refusing.
+
+**USDA API**: free tier via `USDA_API_KEY` (or `DEMO_KEY` rate-limited fallback). Get a key at https://fdc.nal.usda.gov/api-key-signup.html.
+
+**Macro targets** live in `profile.md` under `## Nutrition` if the athlete has configured them. The current daily rollup is surfaced to the coach in the dynamic state block (`Today's nutrition rollup`) so it can give "you're at X, need Y more by EOD" feedback without an extra tool call.
+
+**Photo input**: meal photos flow through the existing webhook → image block → coach handler path. The prompt instructs the coach to identify visible items, call `lookup_food` for each, then `log_meal`.
+
 ### Weekly Planning Flow (Sundays)
 
 The weekly planning is **interactive** - questions first, then plan:

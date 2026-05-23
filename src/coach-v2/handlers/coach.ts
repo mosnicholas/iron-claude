@@ -15,6 +15,7 @@ import { READ_TOOLS } from "../tools/reads.js";
 import { WRITE_TOOLS } from "../tools/writes.js";
 import { REMINDER_TOOLS } from "../tools/reminders.js";
 import { SKILL_TOOLS } from "../tools/skills.js";
+import { NUTRITION_TOOLS } from "../tools/nutrition.js";
 import { buildCoachSystem, loadCoachContext } from "../context-loader.js";
 import { COACH_BASE_PROMPT } from "../prompts/coach.js";
 
@@ -31,7 +32,13 @@ export interface CoachHandlerOptions {
   onThinkingDelta?: (delta: string) => void;
 }
 
-const COACH_TOOLS = [...READ_TOOLS, ...WRITE_TOOLS, ...REMINDER_TOOLS, ...SKILL_TOOLS];
+const COACH_TOOLS = [
+  ...READ_TOOLS,
+  ...WRITE_TOOLS,
+  ...REMINDER_TOOLS,
+  ...SKILL_TOOLS,
+  ...NUTRITION_TOOLS,
+];
 
 export async function runCoach(opts: CoachHandlerOptions): Promise<HarnessResult> {
   const ctx = loadCoachContext(opts.repoPath, opts.timezone);

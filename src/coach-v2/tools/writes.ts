@@ -128,11 +128,31 @@ export const startWorkout = defineTool({
       ctx.timezone,
       input.date
     );
-    if (existsSync(path)) {
-      return `Workout file already exists at ${relative}. Use log_exercise to add sets, or get_workout to see current state.`;
-    }
     const nowInfo = getDateInfoTZAware();
+
+    // A nutrition-only file may already exist (athlete logged a meal before
+    // training). Upgrade it in place rather than refusing.
+    let baseFm: Record<string, unknown>;
+    let baseBody: string;
+    let upgraded = false;
+    if (existsSync(path)) {
+      const raw = readFileSync(path, "utf-8");
+      const parsed = parseFrontmatter(raw);
+      if (parsed.frontmatter.type) {
+        return `Workout file already exists at ${relative}. Use log_exercise to add sets, or get_workout to see current state.`;
+      }
+      baseFm = { ...(parsed.frontmatter as Record<string, unknown>) };
+      baseBody = /^## Exercises\s*$/m.test(parsed.content)
+        ? parsed.content
+        : parsed.content.trimEnd() + `\n\n## Exercises\n\n`;
+      upgraded = true;
+    } else {
+      baseFm = {};
+      baseBody = `# Workout — ${dayName}, ${date}\n\n## Exercises\n\n`;
+    }
+
     const fm: Record<string, unknown> = {
+      ...baseFm,
       date,
       type: input.type,
       status: "in_progress",
@@ -143,14 +163,11 @@ export const startWorkout = defineTool({
     if (input.planned_day) fm.planned_day = input.planned_day;
     if (isBackfill) fm.back_filled = true;
 
-    const body = `# Workout — ${dayName}, ${date}\n\n## Exercises\n\n`;
-    const content = buildFile(fm, body);
-    const result = await writeAndCommit(
-      ctx.repoPath,
-      relative,
-      content,
-      `Start ${input.type} workout for ${date}${isBackfill ? " (back-filled)" : ""}`
-    );
+    const content = buildFile(fm, baseBody);
+    const commitMsg = upgraded
+      ? `Start ${input.type} workout for ${date} (upgrade nutrition-only file)`
+      : `Start ${input.type} workout for ${date}${isBackfill ? " (back-filled)" : ""}`;
+    const result = await writeAndCommit(ctx.repoPath, relative, content, commitMsg);
 
     // Schedule the timeout reminder (best-effort, don't fail the tool).
     // Skip on back-fills — the workout already happened.
