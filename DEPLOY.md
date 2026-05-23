@@ -1,190 +1,130 @@
-# Deploying IronClaude to Fly.io
+# Deploying IronClaude
 
-Deploy IronClaude to Fly.io for Telegram notifications, morning reminders, and automated weekly planning.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Telegram                                 │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  Fly.io (Docker Container)                   │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  Express Server (src/server.ts)                       │  │
-│  │  - POST /api/webhook (Telegram messages)              │  │
-│  │  - GET /api/cron/* (scheduled tasks)                  │  │
-│  │  - GET /health (health check)                         │  │
-│  └───────────────────────────────────────────────────────┘  │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  Supercronic (cron scheduler)                         │  │
-│  │  - Daily reminders                                    │  │
-│  │  - Weekly retrospective                               │  │
-│  │  - Weekly planning                                    │  │
-│  └───────────────────────────────────────────────────────┘  │
-│                              │                               │
-│              ┌───────────────┴───────────────┐              │
-│              ▼                               ▼               │
-│  ┌─────────────────────┐     ┌─────────────────────────┐    │
-│  │  Claude Agent SDK   │     │  GitHub API             │    │
-│  │  (AI coaching)      │     │  (data storage)         │    │
-│  └─────────────────────┘     └─────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Endpoints:**
-- `POST /api/webhook` - Telegram message handler
-- `GET /api/cron/daily-reminder` - Morning workout reminder
-- `GET /api/cron/weekly-plan` - Sunday planning (generates retro + plan)
-- `GET /health` - Health check
-
----
+This guide deploys IronClaude to Fly.io with a Supabase-hosted Postgres database. The same steps work for Fly.io Postgres if you'd rather self-host the DB.
 
 ## Prerequisites
 
-- [Fly.io account](https://fly.io)
-- [Fly CLI](https://fly.io/docs/flyctl/install/) installed
-- [Telegram account](https://telegram.org)
+- [Fly.io account](https://fly.io) and [`fly` CLI](https://fly.io/docs/flyctl/install/) installed
+- [Supabase project](https://supabase.com) with Phone Auth enabled and a Twilio account connected (Authentication > Providers > Phone)
+- [Telegram bot token](https://t.me/botfather)
 - [Anthropic API key](https://console.anthropic.com)
-- GitHub repository for workout data storage
 - (Optional) [Gemini API key](https://aistudio.google.com) for voice transcription
+- (Optional) Whoop developer credentials for the integration
 
----
+## Architecture (production)
 
-## Quick Deploy
-
-The easiest way to deploy is using the setup wizard:
-
-```bash
-npm run setup
+```
+   Telegram --> /api/webhook --> Postgres inbox
+                                       |
+                                       v
+                        +--------------+--------------+
+                        |   Fly machines (1..N)      |
+                        |   Express + inbox worker   |
+                        +--------------+--------------+
+                                       |
+                +----------------------+--------+
+                v                      v        v
+         Postgres (Supabase)    Anthropic   Integrations
 ```
 
-This will:
-1. Collect your credentials
-2. Create the fitness-data GitHub repo
-3. Run the onboarding conversation
-4. Configure your Fly.io app (generates `fly.toml`)
-5. Deploy to Fly.io
-6. Configure the Telegram webhook
+Cron is **external** (cron-job.org or similar) — it hits `/api/cron/*` endpoints over HTTPS. The container no longer runs Supercronic.
 
 ---
 
-## Step 1: Create Telegram Bot
+## Step 1: Provision Postgres
 
-1. Open Telegram and message [@BotFather](https://t.me/botfather)
-2. Send `/newbot`
-3. Choose a name (e.g., "IronClaude")
-4. Choose a username (e.g., "iron_claude_bot")
-5. Save the **bot token** (looks like `123456789:ABCdef...`)
+### Option A (recommended): Supabase Postgres
 
----
+Use the Postgres that ships with your Supabase project — same DB instance you already need for Auth.
 
-## Step 2: Get Your Chat ID
+1. Open your Supabase project dashboard
+2. Go to **Project Settings > Database > Connection String**
+3. Copy the **pooler URL** (Transaction or Session pooler — IronClaude works with either). This becomes your `DATABASE_URL`.
 
-1. Message your new bot (send anything)
-2. Open this URL in your browser (replace `<TOKEN>` with your bot token):
-   ```
-   https://api.telegram.org/bot<TOKEN>/getUpdates
-   ```
-3. Find `"chat":{"id":123456789}` in the response
-4. Save this **chat ID**
+The pooler URL works better than the direct connection for serverless-style scale-to-zero. If you keep at least one Fly machine warm, the direct URL is fine too.
 
----
+### Option B: Fly.io Postgres
 
-## Step 3: Create GitHub Token
-
-The bot stores workout data in your GitHub repo.
-
-1. Go to [GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens](https://github.com/settings/tokens?type=beta)
-2. Click "Generate new token"
-3. Name: "IronClaude Bot"
-4. Repository access: Select your workout-routine repo
-5. Permissions:
-   - Contents: Read and write
-   - Metadata: Read-only
-6. Generate and save the **token**
-
----
-
-## Step 4: Install Fly CLI
+Cheaper at scale for self-hosters who don't need Supabase's other features.
 
 ```bash
-curl -L https://fly.io/install.sh | sh
-fly auth login
+fly postgres create --name iron-claude-db
+fly postgres attach iron-claude-db --app iron-claude
 ```
+
+`attach` writes `DATABASE_URL` into your app secrets automatically.
 
 ---
 
-## Step 5: Deploy to Fly.io
-
-### Configure fly.toml
-
-Copy the template and customize it:
-
-```bash
-cp fly.toml.example fly.toml
-```
-
-Edit `fly.toml` and update:
-- `app` - Your unique app name (e.g., `my-fitness-coach`)
-- `primary_region` - Your nearest [Fly.io region](https://fly.io/docs/reference/regions/) (e.g., `ewr`, `lax`, `lhr`)
-
-### Build the application
-
-```bash
-npm install
-npm run build
-```
-
-### Create the app (first time only)
-
-```bash
-fly apps create <your-app-name>
-```
-
-### Set secrets
+## Step 2: Configure Fly secrets
 
 ```bash
 fly secrets set \
-  TELEGRAM_BOT_TOKEN=your_bot_token \
-  TELEGRAM_CHAT_ID=your_chat_id \
-  TELEGRAM_WEBHOOK_SECRET=random_secret_string \
-  ANTHROPIC_API_KEY=your_anthropic_key \
-  GITHUB_TOKEN=your_github_token \
-  DATA_REPO=username/fitness-data \
-  TIMEZONE=America/New_York \
-  CRON_SECRET=another_random_secret
+  DATABASE_URL='postgres://...' \
+  ANTHROPIC_API_KEY='sk-ant-...' \
+  TELEGRAM_BOT_TOKEN='123456:ABC...' \
+  TELEGRAM_WEBHOOK_SECRET="$(openssl rand -hex 16)" \
+  SUPABASE_URL='https://xxxx.supabase.co' \
+  SUPABASE_ANON_KEY='eyJ...' \
+  SUPABASE_SERVICE_ROLE_KEY='eyJ...' \
+  INTEGRATION_TOKEN_KEY="$(openssl rand -base64 32)" \
+  SESSION_SECRET="$(openssl rand -base64 32)" \
+  CRON_SECRET="$(openssl rand -hex 32)" \
+  TIMEZONE='America/New_York'
 ```
 
-Optional (for voice messages):
+Optional secrets:
+
 ```bash
-fly secrets set GEMINI_API_KEY=your_gemini_key
+fly secrets set \
+  SENTRY_DSN='https://...' \
+  GEMINI_API_KEY='AIza...' \
+  WHOOP_CLIENT_ID='...' \
+  WHOOP_CLIENT_SECRET='...'
 ```
 
-### Deploy
+### Required secrets
+
+| Secret                       | Purpose                                                 |
+|------------------------------|---------------------------------------------------------|
+| `DATABASE_URL`               | Postgres connection string (Supabase pooler or Fly PG)  |
+| `ANTHROPIC_API_KEY`          | Claude Agent SDK                                        |
+| `TELEGRAM_BOT_TOKEN`         | Bot token from @BotFather                               |
+| `TELEGRAM_WEBHOOK_SECRET`    | Validates Telegram webhook requests                     |
+| `SUPABASE_URL`               | Supabase project URL                                    |
+| `SUPABASE_ANON_KEY`          | Used by client/login flows                              |
+| `SUPABASE_SERVICE_ROLE_KEY`  | Used server-side to verify OTP and manage users         |
+| `INTEGRATION_TOKEN_KEY`      | AES key for encrypting integration OAuth tokens at rest |
+| `SESSION_SECRET`             | Signs session cookies for the (forthcoming) web UI      |
+| `CRON_SECRET`                | Bearer token for `/api/cron/*` endpoints                |
+| `TIMEZONE`                   | IANA TZ name, e.g. `America/New_York`                   |
+
+Optional: `SENTRY_DSN`, `GEMINI_API_KEY`, `WHOOP_CLIENT_ID`, `WHOOP_CLIENT_SECRET`.
+
+---
+
+## Step 3: Deploy
 
 ```bash
 fly deploy
 ```
 
+Or push to `main` and let GitHub Actions deploy via `.github/workflows/deploy.yml`. To enable auto-deploy on a fork:
+
+1. Add repo **secret** `FLY_API_TOKEN` (generate with `fly tokens create deploy -x 999999h`)
+2. Add repo **variable** `ENABLE_FLY_DEPLOY=true`
+
+`start.sh` runs `npm run db:migrate` before launching the server, so every deploy is migration-safe.
+
 ---
 
-## Step 6: Set Telegram Webhook
-
-Tell Telegram where to send messages:
+## Step 4: Set the Telegram webhook
 
 ```bash
-curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<your-app>.fly.dev/api/webhook&secret_token=<WEBHOOK_SECRET>"
+npm run set-webhook
 ```
 
-Or use the helper script:
-```bash
-npm run set-webhook https://<your-app>.fly.dev/api/webhook
-```
-
-### Verify webhook is set:
+This reads `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, and your Fly app URL, then calls Telegram's `setWebhook`. Verify with:
 
 ```bash
 curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
@@ -192,231 +132,135 @@ curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
 
 ---
 
-## Environment Variables
+## Step 5: Configure external cron
 
-### Required
+Sign up for [cron-job.org](https://cron-job.org/) (or any HTTPS cron). Add these jobs — all with header `Authorization: Bearer $CRON_SECRET`:
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `TELEGRAM_BOT_TOKEN` | Bot token from BotFather | `123456789:ABCdef...` |
-| `TELEGRAM_CHAT_ID` | Your chat ID | `987654321` |
-| `TELEGRAM_WEBHOOK_SECRET` | Secret for webhook verification | `random_string` |
-| `ANTHROPIC_API_KEY` | Claude API key | `sk-ant-...` |
-| `GITHUB_TOKEN` | Fine-grained personal access token | `github_pat_...` |
-| `DATA_REPO` | Repository in `owner/repo` format | `username/fitness-data` |
-| `TIMEZONE` | Your timezone | `America/New_York` |
-| `CRON_SECRET` | Bearer token for cron endpoints | `another_random_string` |
+| Endpoint                          | Schedule                | Purpose                                  |
+|-----------------------------------|-------------------------|------------------------------------------|
+| `GET /api/cron/check-reminders`   | Every hour              | Fire any per-user reminders that are due |
+| `GET /api/cron/daily-reminder`    | Weekdays at 6am (local) | Morning workout nudge                    |
+| `GET /api/cron/weekly-plan`       | Sundays at 8pm (local)  | Generate next week's plan                |
+| `GET /api/cron/daily-compaction`  | Daily at 3am            | Compact agent context per user           |
+| `GET /api/cron/refresh-tokens`    | Daily                   | Refresh integration OAuth tokens         |
 
-### Optional
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `GEMINI_API_KEY` | For voice message transcription | _(none)_ |
-| `GIT_COMMIT_EMAIL` | Email for data repo commits | `coach@fitness-bot.local` |
-| `GIT_COMMIT_NAME` | Name for data repo commits | `Fitness Coach` |
-
----
-
-## Cron Schedule
-
-Scheduled tasks run via Supercronic inside the container. Defined in `crontab`:
-
-| Job | Schedule (UTC) | Description |
-|-----|----------------|-------------|
-| Daily Reminder | `0 11 * * 1-5` | 11am UTC (6am EST), Mon-Fri |
-| Weekly Retro | `0 23 * * 6` | 11pm UTC (6pm EST), Saturday |
-| Weekly Plan | `0 1 * * 0` | 1am UTC (8pm EST), Sunday |
-
-**Note:** Adjust times based on your timezone. The default assumes US Eastern (UTC-5).
-
-To change schedules, edit `crontab` and redeploy:
-
-```
-# Daily reminder - 11:00 UTC on weekdays
-0 11 * * 1-5 curl -s -H "Authorization: Bearer $CRON_SECRET" http://localhost:8080/api/cron/daily-reminder
-```
-
----
-
-## Testing
-
-### Test locally
+Example:
 
 ```bash
-npm install
-npm run build
-npm start
-
-# In another terminal:
-curl http://localhost:8080/health
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  https://<your-app>.fly.dev/api/cron/check-reminders
 ```
 
-### Test cron endpoints manually
-
-```bash
-# With CRON_SECRET
-curl -H "Authorization: Bearer YOUR_SECRET" https://<your-app>.fly.dev/api/cron/daily-reminder
-```
-
-### Test bot
-
-Send a message to your bot on Telegram. You should get a response.
+cron-job.org lets you set timezones per job, so "weekdays at 6am" matches the user's local morning even though Fly's clock is UTC.
 
 ---
 
-## Health Check
-
-The `/health` endpoint returns the application status:
+## Step 6: Verify
 
 ```bash
 curl https://<your-app>.fly.dev/health
 ```
 
-**Response:**
+Expected:
+
 ```json
-{"status": "ok"}
+{"ok": true, "backlog": 0}
 ```
 
-Use this to verify the app is running. Fly.io uses this endpoint internally to monitor machine health.
+`backlog` is the count of unprocessed items in the inbox. Anything non-zero that doesn't drain within a few seconds means the worker isn't running or is stuck on a long turn.
+
+Send a message to your Telegram bot. You should see it in the inbox briefly, then a reply.
+
+---
+
+## Multi-instance scaling
+
+The inbox uses a Postgres advisory lock keyed on `user_id`, so any number of Fly machines can pull from the same inbox without conflicting:
+
+```bash
+fly scale count 3
+```
+
+A single user's turns still execute strictly in order (the advisory lock guarantees serialization per user_id) — only different users parallelize across machines.
+
+---
+
+## Database migrations
+
+- `start.sh` runs `npm run db:migrate` on every boot, so deploys auto-apply pending migrations.
+- To create a new migration:
+
+  ```bash
+  npm run db:generate   # drizzle-kit writes a new file in drizzle/
+  ```
+
+- **Rollback:** drizzle-kit does not auto-generate down-migrations. To roll back, write the down SQL by hand and apply it via `psql $DATABASE_URL -f rollback.sql`. Then delete the offending migration file and the corresponding row from `drizzle.__drizzle_migrations`.
+
+- `drizzle-kit studio` (run locally with `DATABASE_URL` pointing at production — be careful) gives you a browser-based DB editor.
+
+---
+
+## Importing existing users
+
+To migrate someone from the old GitHub-repo-per-user version:
+
+```bash
+fly ssh console
+# inside the container:
+npm run import -- \
+  --phone +15551234567 \
+  --repo their-github/fitness-data \
+  --github-token ghp_...
+```
+
+Use `--dry-run` first to validate parsing. The importer is idempotent — safe to re-run.
 
 ---
 
 ## Monitoring
 
-### View logs
-
-```bash
-fly logs
-```
-
-### Check status
-
-```bash
-fly status
-```
-
-### SSH into container
-
-```bash
-fly ssh console
-```
-
----
-
-## Troubleshooting
-
-### Bot not responding
-
-1. Check webhook is set:
-   ```bash
-   curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
-   ```
-2. View application logs:
-   ```bash
-   fly logs
-   ```
-3. Verify secrets are set:
-   ```bash
-   fly secrets list
-   ```
-
-### "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID"
-
-Secrets not set. Add them with `fly secrets set` and redeploy.
-
-### "Unauthorized" on cron endpoints
-
-You have `CRON_SECRET` set but the request doesn't include the bearer token. The internal Supercronic calls include this automatically.
-
-### Voice messages not working
-
-Set `GEMINI_API_KEY` secret. Voice transcription uses Gemini.
-
-### GitHub storage errors
-
-1. Verify `GITHUB_TOKEN` has correct permissions
-2. Verify `DATA_REPO` format is `owner/repo`
-3. Check token hasn't expired
-
----
-
-## Security Notes
-
-- **Webhook secret**: Prevents unauthorized requests to your webhook
-- **CRON_SECRET**: Prevents manual triggering of cron jobs
-- **Chat ID verification**: Bot only responds to your chat ID
-- **Fine-grained tokens**: Use minimal GitHub permissions
+- **Sentry** — set `SENTRY_DSN` to get error events, performance traces, and inbox-worker spans.
+- **Fly logs** — `fly logs` for stdout/stderr.
+- **Health** — `/health` returns `{ok, backlog}`. Hook this up to your uptime monitor.
+- **Inbox depth** — alert on `backlog > 20` sustained for more than a minute. That signals the worker is wedged or under-provisioned.
 
 ---
 
 ## Updating
 
-After code changes:
-
 ```bash
-npm run build
 fly deploy
 ```
 
----
-
-## Cost
-
-Fly.io pricing for this setup:
-- ~$5-7/month for an always-on small VM (1 shared CPU, 1GB RAM)
-- First $5/month is included in the free tier
-
-To reduce costs, you can enable auto-stop (machine stops when idle):
-```toml
-# In fly.toml
-[http_service]
-  auto_stop_machines = true
-```
-
-Note: This adds cold-start latency when the bot receives a message after being idle.
+Or merge to `main` if CI deploys are enabled.
 
 ---
 
-## Auto-Deploy (Optional)
+## Troubleshooting
 
-Set up automatic deployments when you push to GitHub.
+**`/health` shows growing `backlog`** — worker isn't draining. Check `fly logs` for exceptions in `src/inbox/worker.ts`. A stuck advisory lock will release after `lock_expires_at`; until then that user's messages queue.
 
-### Option A: Fly.io Dashboard (Recommended)
+**`Unauthorized` on cron endpoints** — caller didn't send `Authorization: Bearer $CRON_SECRET`, or the secret you configured in cron-job.org doesn't match what Fly has. Re-check with `fly secrets list`.
 
-Connect your Fly.io app directly to GitHub:
+**Bot doesn't reply** — verify the webhook with `getWebhookInfo`. Then check Sentry / `fly logs` for handler errors.
 
-1. Deploy once manually: `fly deploy`
-2. Go to [Fly.io Dashboard](https://fly.io/dashboard) → Your App → Settings
-3. Connect to your GitHub repository
-4. Fly.io will auto-deploy on push to main
+**OAuth callback fails for an integration** — likely `INTEGRATION_TOKEN_KEY` differs from when the token was first encrypted. Rotating this key invalidates all stored integration tokens; users have to reconnect.
 
-**Pros:** Simple, no tokens to manage
-**Cons:** Less control over build process
+**Migration fails on boot** — `start.sh` will exit non-zero, Fly will mark the machine unhealthy, and the old machine stays up. Roll forward by fixing the migration and redeploying.
 
-### Option B: GitHub Actions
+---
 
-This repo includes GitHub Actions workflows that are disabled by default.
+## Cost (rough estimate)
 
-To enable auto-deploy:
+- Fly.io: ~$5-7/mo for a single shared-cpu-1x with 1GB RAM
+- Supabase: $0 on free tier (Postgres + Auth)
+- Anthropic: usage-based; a single user averages well under $5/mo
+- Twilio (for Phone Auth SMS): pennies per OTP
 
-1. Go to your repo: **Settings → Secrets and variables → Actions**
-2. Add a **variable**: `ENABLE_FLY_DEPLOY` = `true`
-3. Add a **secret**: `FLY_API_TOKEN` = your Fly.io deploy token
-4. (Optional) Add variable `FLY_REGION` for PR previews (default: `ewr`)
+Scaling past ~50 users will push Supabase into the Pro tier ($25/mo) and add a second Fly machine.
 
-Generate a Fly.io token:
-```bash
-fly tokens create deploy -x 999999h
-```
+---
 
-**Pros:** Full control, PR preview environments
-**Cons:** Requires managing tokens
+## License
 
-### For Forks
-
-If you fork this repo, the deploy workflows will **not** run automatically (they check for `ENABLE_FLY_DEPLOY`). This is intentional - each fork manages its own deployment.
-
-To deploy your fork:
-1. Configure your own `fly.toml`
-2. Deploy manually with `fly deploy`
-3. Or enable GitHub Actions in your fork's settings
+MIT

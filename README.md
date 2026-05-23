@@ -1,198 +1,201 @@
 # IronClaude
 
-AI-powered personal workout coach with Telegram integration.
+AI-powered personal workout coach over Telegram (and soon web). Postgres-backed, multi-user-ready, open source.
 
-## Quick Start
+IronClaude pairs the Claude Agent SDK with a fitness data model in Postgres. It logs your workouts, tracks PRs, plans your week, and adapts to recovery signals from wearables — all from a chat interface.
+
+---
+
+## Quickstart (self-hosters)
+
+Prerequisites: Node.js 20+, Docker, a Supabase project (free tier OK), a Telegram bot, and an Anthropic API key.
 
 ```bash
-git clone <your-repo-url> iron-claude
+# 1. Clone and install
+git clone https://github.com/your-fork/iron-claude.git
 cd iron-claude
 npm install
-npm run setup
+
+# 2. Start local Postgres for development
+docker compose up -d postgres
 ```
 
-The setup wizard will:
-1. Collect your API credentials (Telegram, GitHub, Anthropic)
-2. Create a private GitHub repo for your fitness data
-3. Run an AI-powered onboarding conversation to build your profile
-4. Deploy to Fly.io
-5. Connect your Telegram bot
+### 3. Create a Supabase project
 
-Once complete, message your bot on Telegram to start training.
+Go to https://supabase.com and create a project (free tier is fine). You'll use Supabase for Phone Auth only — the local Postgres above is your application database.
 
----
+1. Enable Phone Auth: **Authentication > Providers > Phone**
+2. Connect your own Twilio account in Supabase's dashboard (Supabase relays via Twilio)
+3. Copy these values into `.env`:
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
 
-## Prerequisites
+### 4. Generate local secrets
 
-You'll need:
-- **Telegram Bot Token** - Create via [@BotFather](https://t.me/botfather)
-- **GitHub Personal Access Token** - With `repo` scope for data storage
-- **Anthropic API Key** - For Claude AI coaching
-- **Gemini API Key** (optional) - For voice message transcription
-
----
-
-## Daily Workflow
-
-### Morning
-Get an automatic reminder with today's workout plan.
-
-### During Your Workout
-Log exercises via Telegram:
-```
-OHP 115: 6, 5, 5 @8
-Dips +25: 8, 7, 7
-Pull-ups: 10, 8, 7
+```bash
+openssl rand -base64 32   # INTEGRATION_TOKEN_KEY
+openssl rand -base64 32   # SESSION_SECRET
 ```
 
-### After Training
-Ask for analysis:
-```
-analyze today
+Add both to `.env`.
+
+### 5. Create a Telegram bot
+
+Message [@BotFather](https://t.me/botfather) and run `/newbot`. Save the token.
+
+```env
+TELEGRAM_BOT_TOKEN=123456:ABC...
+TELEGRAM_WEBHOOK_SECRET=$(openssl rand -hex 16)
 ```
 
-### Weekly (Sundays)
-The bot automatically generates next week's plan, or ask:
+### 6. Add your Anthropic API key
+
+```env
+ANTHROPIC_API_KEY=sk-ant-...
 ```
-plan next week
+
+### 7. Migrate and run
+
+```bash
+npm run db:migrate
+npm run dev
 ```
+
+### 8. Sign up
+
+The hosted web onboarding flow at `http://localhost:8080/onboard.html` is **coming soon**. For now, sign up by messaging your Telegram bot — it auto-creates a user on first contact and runs an onboarding conversation to build your profile.
 
 ---
 
 ## Architecture
 
 ```
-iron-claude/
-├── src/
-│   ├── bot/                     ← Telegram bot + voice transcription
-│   ├── coach/                   ← AI coaching (Claude Agent SDK)
-│   ├── cron/                    ← Scheduled tasks
-│   ├── handlers/                ← HTTP request handlers
-│   ├── storage/                 ← GitHub data persistence
-│   ├── utils/                   ← Date handling, helpers
-│   └── server.ts                ← Express HTTP server
-├── prompts/                     ← System prompts for coaching
-│   ├── system.md                ← Core coaching prompt
-│   ├── onboarding.md            ← New user onboarding
-│   ├── weekly-planning.md       ← Plan generation
-│   └── retrospective.md         ← Weekly analysis
-├── scripts/                     ← Setup wizard
-├── .claude/commands/            ← Claude Code slash commands
-├── Dockerfile                   ← Docker build config
-├── fly.toml                     ← Fly.io deployment config
-└── crontab                      ← Scheduled task definitions
+                    +-------------------+
+   Telegram  ---->  |   /api/webhook    |
+   (web soon)       +---------+---------+
+                              |
+                              v
+                  +-----------------------+
+                  |   inbox (Postgres)    |  durable queue, per-user
+                  +-----------+-----------+
+                              |
+                              v   advisory lock per user_id
+                  +-----------------------+
+                  |   inbox worker        |  serializes turns,
+                  |   (CoachAgent)        |  runs the Claude Agent SDK
+                  +-----------+-----------+
+                              |
+              +---------------+---------------+
+              v               v               v
+        +-----------+   +-----------+   +-------------+
+        | Postgres  |   | Anthropic |   | Integrations|
+        | (storage) |   | (Claude)  |   | (Whoop, ...)|
+        +-----------+   +-----------+   +-------------+
 ```
 
-Your personal data (profile, workout logs, PRs) lives in a separate private GitHub repo created during setup.
+The inbox decouples channel ingestion from agent execution. Multiple app instances can pull from the same inbox safely — an advisory lock keyed on `user_id` guarantees turn-by-turn ordering per user.
 
 ---
 
-## Log Format
+## Telegram commands
+
+You can also just chat naturally — the agent understands context.
+
+| Command     | Description                              |
+|-------------|------------------------------------------|
+| `/today`    | Show today's workout                     |
+| `/plan`     | Show this week's plan                    |
+| `/fullplan` | Show full plan with all details          |
+| `/done`     | Complete current workout                 |
+| `/prs`      | Show personal records                    |
+| `/help`     | List all commands                        |
+
+### Logging exercises
 
 ```
-# Standard format
 OHP 115: 6, 5, 5 @8
-
-# Bodyweight with added weight
 Dips +25: 8, 7, 7
-
-# Isometric holds
-Handstand: 30s, 25s, 30s
-
-# Without RPE
 Pull-ups: 10, 8, 7
+Handstand: 30s, 25s, 30s
 ```
 
-**Format:** `Exercise Weight: rep, rep, rep @RPE`
+Format: `Exercise Weight: rep, rep, rep @RPE`
 - `+weight` = added weight for bodyweight exercises
-- `@number` = RPE (Rate of Perceived Exertion, 1-10)
+- `@number` = RPE (1-10)
 
 ---
 
-## Telegram Commands
+## Migrating from the GitHub-repo version
 
-| Command | Description |
-|---------|-------------|
-| `/today` | Show today's workout |
-| `/plan` | Show this week's plan |
-| `/fullplan` | Show full plan with all details |
-| `/done` | Complete current workout |
-| `/prs` | Show personal records |
-| `/help` | List all commands |
+Earlier versions of IronClaude stored each user's data as markdown in a private GitHub repo. The importer brings that history into Postgres.
 
-You can also just chat naturally - the AI understands context.
+```bash
+npm run import -- \
+  --phone +15551234567 \
+  --repo your-github/fitness-data \
+  --github-token ghp_...
+```
+
+Add `--dry-run` to validate the parse without writing to the database:
+
+```bash
+npm run import -- --phone +15551234567 --repo your-github/fitness-data \
+  --github-token ghp_... --dry-run
+```
+
+The importer maps `profile.md`, `learnings.md`, `prs.yaml`, weekly plans, retros, and per-day workout files into the new schema. It is idempotent — re-running it skips rows that already exist.
+
+To run the importer against a deployed instance, see `DEPLOY.md` (use `fly ssh console`).
 
 ---
 
 ## Customization
 
-Your fitness data lives in a separate private GitHub repo (created during setup). You can customize:
+User data lives in Postgres now — there is no per-user repo. To edit your data:
 
-### Profile
-Edit `profile.md` in your fitness-data repo to update:
-- Training goals and preferences
-- Coaching style (Direct / Balanced / Gentle)
-- Schedule and availability
-- Any limitations or injuries
+- **Easiest:** chat with the bot ("update my profile to mention a left-shoulder limitation")
+- **Direct:** open a SQL shell or `drizzle-kit studio` and edit rows
 
-### Claude Code Commands
-You can also use Claude Code locally in your fitness-data repo:
+Editable entities: `profile`, `learnings`, `prs`, `plans`, `retros`, `workouts`. The schema lives in `src/db/schema.ts`.
+
+---
+
+## Testing
+
 ```bash
-claude /plan-week    # Generate weekly plan
-claude /analyze      # Analyze progress
+npm test                                          # Unit + integration tests (~10s)
+npm run test:all                                  # Includes scenarios
+ANTHROPIC_API_KEY=sk-... npm run test:scenarios   # End-to-end agent runs
 ```
+
+Integration tests run against the local Postgres started by `docker compose up -d postgres`.
 
 ---
 
 ## Troubleshooting
 
-### Bot not responding
-1. Check webhook: `curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"`
-2. Check Fly.io logs: `fly logs`
-3. Verify secrets are set: `fly secrets list`
+**Bot not responding?**
 
-### Re-run setup
-```bash
-npm run setup
-```
+1. Check the webhook: `curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"`
+2. Check the inbox: `curl http://localhost:8080/health` (returns `{ok: true, backlog: N}`)
+3. Tail logs: `npm run dev` output, or `fly logs` in production
+
+**Inbox stuck?** Look for items in the `inbox` table with `processed_at IS NULL` and a non-null `lock_expires_at` in the past — that means an instance crashed mid-turn. The worker will retry automatically.
 
 ---
 
-## Future Enhancements
+## Future enhancements
 
-These are potential improvements not yet implemented:
+- Web UI for browsing workout history, PRs, and plans
+- WhatsApp / SMS adapter (the inbox abstraction makes this a thin shim)
+- Photo storage in S3 for progress tracking
 
-### Infrastructure
-- **Persistent volume for repo cache**: Add a Fly.io volume mount to `/data` to persist the fitness-data repo clone across deploys. This would eliminate the need to re-clone on cold starts. Currently uses `/tmp` which is cleared on each deploy.
-- **Workout templates**: Pre-built program templates (5/3/1, PPL, etc.) that can be imported during onboarding.
+---
 
-### Wearable Integration (via MCP)
-Connect to health wearables to pull recovery and readiness data directly into coaching decisions:
+## Deploying to production
 
-- **Whoop**: Recovery score, strain, HRV, sleep performance
-- **Apple Watch / HealthKit**: Activity rings, heart rate, sleep data
-- **Oura Ring**: Readiness score, sleep stages, HRV trends
-- **Garmin**: Training status, body battery, stress levels
-
-**How it would work**:
-1. Configure MCP server for your wearable's API
-2. Coach automatically pulls daily readiness scores
-3. Training intensity adjusts based on recovery: "Whoop shows 45% recovery - programming a lighter day"
-4. Weekly retrospectives include recovery correlation analysis
-
-### Progress Photo Tracking
-Send weekly photos to track physical progress alongside strength gains:
-
-- **Weekly photo logging**: Send a progress photo via Telegram each week
-- **Side-by-side comparisons**: "Here's week 1 vs week 12"
-- **Organized storage**: Photos saved to `fitness-data/photos/YYYY-WXX.jpg`
-- **Privacy-first**: All photos stored in your private GitHub repo
-
-**Suggested workflow**:
-1. Sunday planning message includes photo reminder
-2. Send photo via Telegram
-3. Coach confirms receipt and stores securely
-4. Monthly summaries include visual progress alongside PR charts
+See [DEPLOY.md](./DEPLOY.md) for a step-by-step Fly.io + Supabase deployment guide.
 
 ---
 
