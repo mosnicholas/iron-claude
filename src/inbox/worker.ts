@@ -49,9 +49,7 @@ export function __setRunAgentTurn(fn: RunAgentTurnFn | null): void {
 }
 
 /** Test-only: inject a bot factory (so tests don't need real Telegram creds). */
-export function __setCreateBotForChat(
-  fn: ((chatId: string) => TelegramBot) | null
-): void {
+export function __setCreateBotForChat(fn: ((chatId: string) => TelegramBot) | null): void {
   injectedCreateBot = fn;
 }
 

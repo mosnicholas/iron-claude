@@ -235,9 +235,7 @@ describe("DbStorage", () => {
 
     it("appendExerciseSets rejects appending to completed workout", async () => {
       const w = await storage.startWorkout(alice, startInput);
-      await storage.appendExerciseSets(alice, w.id, "Bench", [
-        { reps: 5, weight: 175 },
-      ]);
+      await storage.appendExerciseSets(alice, w.id, "Bench", [{ reps: 5, weight: 175 }]);
       await storage.completeWorkout(alice, w.id, {
         summary: "done",
         energyLevel: 8,
@@ -246,17 +244,13 @@ describe("DbStorage", () => {
         durationMinutes: 60,
       });
       await expect(
-        storage.appendExerciseSets(alice, w.id, "OHP", [
-          { reps: 5, weight: 105 },
-        ])
+        storage.appendExerciseSets(alice, w.id, "OHP", [{ reps: 5, weight: 105 }])
       ).rejects.toThrow(/completed/);
     });
 
     it("removeExercise deletes the exercise + sets", async () => {
       const w = await storage.startWorkout(alice, startInput);
-      await storage.appendExerciseSets(alice, w.id, "Bench", [
-        { reps: 5, weight: 175 },
-      ]);
+      await storage.appendExerciseSets(alice, w.id, "Bench", [{ reps: 5, weight: 175 }]);
       const removed = await storage.removeExercise(alice, w.id, "Bench");
       expect(removed).toBe(true);
       const got = await storage.getWorkout(alice, startInput.date);
@@ -274,9 +268,7 @@ describe("DbStorage", () => {
         { reps: 5, weight: 175 },
         { reps: 5, weight: 175 },
       ]);
-      const edited = await storage.editExercise(alice, w.id, "Bench", [
-        { reps: 3, weight: 200 },
-      ]);
+      const edited = await storage.editExercise(alice, w.id, "Bench", [{ reps: 3, weight: 200 }]);
       expect(edited).toBe(true);
       const got = await storage.getWorkout(alice, startInput.date);
       expect(got?.exercises[0].sets).toHaveLength(1);
@@ -286,9 +278,7 @@ describe("DbStorage", () => {
 
     it("completeWorkout updates status + inserts PRs", async () => {
       const w = await storage.startWorkout(alice, startInput);
-      await storage.appendExerciseSets(alice, w.id, "Bench", [
-        { reps: 5, weight: 200 },
-      ]);
+      await storage.appendExerciseSets(alice, w.id, "Bench", [{ reps: 5, weight: 200 }]);
       await storage.completeWorkout(alice, w.id, {
         summary: "PR day",
         energyLevel: 9,
@@ -318,9 +308,7 @@ describe("DbStorage", () => {
         { reps: 5, weight: 175 },
         { reps: 5, weight: 180 },
       ]);
-      await storage.appendExerciseSets(alice, w.id, "OHP", [
-        { reps: 5, weight: 105 },
-      ]);
+      await storage.appendExerciseSets(alice, w.id, "OHP", [{ reps: 5, weight: 105 }]);
       const got = await storage.getWorkout(alice, startInput.date);
       expect(got).not.toBeNull();
       expect(got!.exercises.map((e) => e.name)).toEqual(["Bench", "OHP"]);
@@ -330,19 +318,16 @@ describe("DbStorage", () => {
     // pg-mem's correlated subquery support is incomplete; the SQL inside
     // `listWorkouts` returns a phantom null row regardless of the WHERE
     // filter. Verified against real Postgres in scenario tests instead.
-    it.skip(
-      "listWorkouts filters by iso week (pg-mem correlated-subquery limitation)",
-      async () => {
-        await storage.startWorkout(alice, startInput);
-        await storage.startWorkout(alice, {
-          ...startInput,
-          date: "2026-05-15",
-          isoWeek: "2026-W20",
-        });
-        const rows = await storage.listWorkouts(alice, { isoWeek: "2026-W21" });
-        expect(rows).toHaveLength(1);
-      }
-    );
+    it.skip("listWorkouts filters by iso week (pg-mem correlated-subquery limitation)", async () => {
+      await storage.startWorkout(alice, startInput);
+      await storage.startWorkout(alice, {
+        ...startInput,
+        date: "2026-05-15",
+        isoWeek: "2026-W20",
+      });
+      const rows = await storage.listWorkouts(alice, { isoWeek: "2026-W21" });
+      expect(rows).toHaveLength(1);
+    });
 
     it("listWeekDates returns week's workouts", async () => {
       await storage.startWorkout(alice, startInput);
@@ -353,9 +338,7 @@ describe("DbStorage", () => {
 
     it("getExerciseHistory finds matching exercises (case-insensitive)", async () => {
       const w = await storage.startWorkout(alice, startInput);
-      await storage.appendExerciseSets(alice, w.id, "Bench Press", [
-        { reps: 5, weight: 175 },
-      ]);
+      await storage.appendExerciseSets(alice, w.id, "Bench Press", [{ reps: 5, weight: 175 }]);
       const hits = await storage.getExerciseHistory(alice, "bench", 10);
       expect(hits).toHaveLength(1);
       expect(hits[0].sets).toHaveLength(1);
@@ -457,10 +440,7 @@ describe("DbStorage", () => {
         message: "y",
         context: "workout-timeout-check",
       });
-      const n = await storage.deleteRemindersByContext(
-        alice,
-        "workout-timeout-check"
-      );
+      const n = await storage.deleteRemindersByContext(alice, "workout-timeout-check");
       expect(n).toBe(2);
     });
 
@@ -506,55 +486,36 @@ describe("DbStorage", () => {
         accessTokenEnc: "ct1",
         externalUserId: "whoop-1",
       });
-      const id = await storage.findUserByExternalIntegrationId(
-        "whoop",
-        "whoop-1"
-      );
+      const id = await storage.findUserByExternalIntegrationId("whoop", "whoop-1");
       expect(id).toBe(alice);
     });
 
     it("findUserByExternalIntegrationId returns null when missing", async () => {
-      expect(
-        await storage.findUserByExternalIntegrationId("whoop", "missing")
-      ).toBeNull();
+      expect(await storage.findUserByExternalIntegrationId("whoop", "missing")).toBeNull();
     });
   });
 
   // ── Integration metrics ────────────────────────────────────────────────────
   describe("integration metrics", () => {
     it("upsertIntegrationMetric stores payload", async () => {
-      await storage.upsertIntegrationMetric(
-        alice,
-        "whoop",
-        "2026-05-20",
-        "sleep",
-        { sleep_hours: 7.5 }
-      );
+      await storage.upsertIntegrationMetric(alice, "whoop", "2026-05-20", "sleep", {
+        sleep_hours: 7.5,
+      });
       const rows = await storage.getIntegrationMetrics(alice, "2026-05-20");
       expect(rows).toHaveLength(1);
       expect(rows[0].kind).toBe("sleep");
     });
 
     it("upsert overwrites for (user, provider, date, kind)", async () => {
-      await storage.upsertIntegrationMetric(
-        alice,
-        "whoop",
-        "2026-05-20",
-        "sleep",
-        { sleep_hours: 7.5 }
-      );
-      await storage.upsertIntegrationMetric(
-        alice,
-        "whoop",
-        "2026-05-20",
-        "sleep",
-        { sleep_hours: 8.0 }
-      );
+      await storage.upsertIntegrationMetric(alice, "whoop", "2026-05-20", "sleep", {
+        sleep_hours: 7.5,
+      });
+      await storage.upsertIntegrationMetric(alice, "whoop", "2026-05-20", "sleep", {
+        sleep_hours: 8.0,
+      });
       const rows = await storage.getIntegrationMetrics(alice, "2026-05-20");
       expect(rows).toHaveLength(1);
-      expect((rows[0].payload as { sleep_hours: number }).sleep_hours).toBe(
-        8.0
-      );
+      expect((rows[0].payload as { sleep_hours: number }).sleep_hours).toBe(8.0);
     });
 
     it("mirrors recovery payload into workouts.recoverySnapshot", async () => {
@@ -565,13 +526,9 @@ describe("DbStorage", () => {
         backFilled: false,
         startedAt: "10:00",
       });
-      await storage.upsertIntegrationMetric(
-        alice,
-        "whoop",
-        "2026-05-20",
-        "recovery",
-        { recovery_score: 78 }
-      );
+      await storage.upsertIntegrationMetric(alice, "whoop", "2026-05-20", "recovery", {
+        recovery_score: 78,
+      });
       const w = await storage.getWorkout(alice, "2026-05-20");
       const snap = w?.recoverySnapshot as Record<string, unknown> | null;
       expect(snap).not.toBeNull();

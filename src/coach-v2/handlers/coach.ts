@@ -18,6 +18,8 @@ import { SKILL_TOOLS } from "../tools/skills.js";
 import { buildCoachSystem, loadCoachContext } from "../context-loader.js";
 import { COACH_BASE_PROMPT } from "../prompts/coach.js";
 import { getStorage } from "../../storage/db.js";
+import { getUserById } from "../../auth/identity.js";
+import { effectiveTier } from "../../auth/tiers.js";
 
 export interface CoachHandlerOptions {
   userId: string;
@@ -42,8 +44,26 @@ export async function runCoach(opts: CoachHandlerOptions): Promise<HarnessResult
     opts.images && opts.images.length > 0
       ? [...opts.images, { type: "text" as const, text: opts.message || "" }]
       : opts.message;
+
+  // Choose model by tier when the caller hasn't pinned one explicitly.
+  // Trial / athlete / comped → Opus (full experience).
+  // Regular → Sonnet (cheaper, still excellent).
+  // Expired never reaches here (gated upstream by the inbox tier-gate); if it
+  // somehow does, fall back to Sonnet rather than burning Opus on a non-paying
+  // user.
+  let model = opts.model;
+  if (!model) {
+    const user = await getUserById(opts.userId);
+    const tier = user ? effectiveTier(user) : "trial";
+    if (tier === "athlete" || tier === "comped" || tier === "trial") {
+      model = "claude-opus-4-7";
+    } else {
+      model = "claude-sonnet-4-6";
+    }
+  }
+
   return runHarness({
-    model: opts.model ?? "claude-opus-4-7",
+    model,
     system,
     userMessage,
     tools: COACH_TOOLS,

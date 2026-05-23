@@ -12,6 +12,7 @@ import { z } from "zod";
 import { stringify as stringifyYaml } from "yaml";
 import { defineTool } from "../tool.js";
 import { getCurrentWeek, getWeekDays } from "../../utils/date.js";
+import { getPhotoSignedUrl } from "../../storage/photos.js";
 import type { Pr } from "../../db/schema.js";
 import type { WorkoutWithDetails } from "../../storage/storage.js";
 
@@ -286,6 +287,70 @@ export const getExerciseHistory = defineTool({
   },
 });
 
+export const getProgressPhoto = defineTool({
+  name: "get_progress_photo",
+  description:
+    "Retrieve a past progress photo by date or by index (most recent = 0). " +
+    "Returns a signed URL the model can describe verbally — image bytes aren't " +
+    "inlined to avoid context bloat. Use when the athlete asks 'how have I " +
+    "changed' or 'compare to last month'. " +
+    "If `date` is set, returns the photo nearest that date within 7 days. " +
+    "If `index` is set, returns the Nth-most-recent (0 = newest). " +
+    "Defaults to the most recent photo.",
+  schema: z.object({
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Format: YYYY-MM-DD")
+      .optional()
+      .describe("Target date; pick the photo nearest this date within 7 days."),
+    index: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe("Most recent = 0. Ignored if `date` is provided."),
+  }),
+  handler: async (input, ctx) => {
+    // Pull a generous slice; the model rarely cares about photos older than
+    // the last ~year and we want to avoid loading bytes-free metadata into
+    // memory unnecessarily.
+    const all = await ctx.storage.listPhotos(ctx.userId, { limit: 200 });
+    if (all.length === 0) {
+      return "No progress photos found for this athlete.";
+    }
+
+    let chosen = all[0];
+    if (input.date) {
+      const target = new Date(input.date).getTime();
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+      let best: { row: (typeof all)[number]; delta: number } | null = null;
+      for (const row of all) {
+        const delta = Math.abs(new Date(row.takenAt).getTime() - target);
+        if (delta <= sevenDaysMs && (!best || delta < best.delta)) {
+          best = { row, delta };
+        }
+      }
+      if (!best) {
+        return `No progress photo found within 7 days of ${input.date}.`;
+      }
+      chosen = best.row;
+    } else if (typeof input.index === "number") {
+      if (input.index >= all.length) {
+        return `Only ${all.length} progress photo(s) on file; index ${input.index} is out of range.`;
+      }
+      chosen = all[input.index];
+    }
+
+    const url = await getPhotoSignedUrl(ctx.userId, chosen.id);
+    if (!url) {
+      return `Photo from ${chosen.takenAt.toISOString().slice(0, 10)} is not currently retrievable.`;
+    }
+    const dateStr = new Date(chosen.takenAt).toISOString().slice(0, 10);
+    const captionPart = chosen.caption ? `, ${chosen.caption}` : "";
+    return `Progress photo from ${dateStr}${captionPart}: ${url}\n(URL expires in 5 min)`;
+  },
+});
+
 export const READ_TOOLS = [
   getProfile,
   getLearnings,
@@ -294,4 +359,5 @@ export const READ_TOOLS = [
   getWorkout,
   getWorkouts,
   getExerciseHistory,
+  getProgressPhoto,
 ];

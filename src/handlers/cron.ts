@@ -10,13 +10,15 @@ import { runWeeklyPlan } from "../cron/weekly-plan.js";
 import { runCheckReminders } from "../cron/check-reminders.js";
 import { runRefreshTokens } from "../cron/refresh-tokens.js";
 import { runDailyCompaction } from "../cron/daily-compaction.js";
+import { runTrialExpiry } from "../cron/trial-expiry.js";
 
 type CronTask =
   | "daily-reminder"
   | "weekly-plan"
   | "check-reminders"
   | "refresh-tokens"
-  | "daily-compaction";
+  | "daily-compaction"
+  | "trial-expiry";
 
 /**
  * Validates the cron secret from the Authorization header.

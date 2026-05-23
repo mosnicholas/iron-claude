@@ -35,6 +35,7 @@ import { isSupabaseConfigured } from "../auth/supabase.js";
 import type { ImageBlock } from "../coach-v2/llm-client.js";
 import type { TelegramUpdate } from "../storage/types.js";
 import type { User } from "../db/schema.js";
+import { gateInboxTurn } from "./tier-gate.js";
 
 export interface RunAgentTurnInput {
   user: User;
@@ -51,6 +52,15 @@ export interface RunAgentTurnInput {
  * via re-throw so it can mark the inbox row failed and apply backoff.
  */
 export async function runAgentTurn({ user, update, bot }: RunAgentTurnInput): Promise<void> {
+  // Tier gate — expired users get a block message instead of an agent run.
+  // Trial / regular / athlete / comped fall through to the normal flow.
+  const gate = gateInboxTurn(user);
+  if (gate !== "allow") {
+    await bot.sendMessageSafe(gate.block);
+    await addMessage(user.id, "assistant", gate.block);
+    return;
+  }
+
   // Send typing indicator
   await bot.sendTypingAction();
 
@@ -81,14 +91,42 @@ export async function runAgentTurn({ user, update, bot }: RunAgentTurnInput): Pr
     }
   } else if (photo) {
     try {
-      const image = await downloadPhotoAsImageBlock(photo.file_id, bot);
-      images = [image];
+      const { buffer, mediaType } = await downloadPhotoBytes(photo.file_id, bot);
+      images = [
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: mediaType,
+            data: buffer.toString("base64"),
+          },
+        },
+      ];
+
       // Captions on photos arrive as `caption`, not `text`. If neither is
       // present, give the model a reasonable default prompt.
+      const caption = extractCaption(update);
       messageText =
-        extractCaption(update) ||
-        extractMessageText(update) ||
-        "[athlete shared a photo with no caption]";
+        caption || extractMessageText(update) || "[athlete shared a photo with no caption]";
+
+      // Persist to Supabase Storage so the agent can compare against past
+      // photos later. Best-effort: if Storage is misconfigured or upload
+      // fails, log + continue so the conversation isn't broken.
+      if (isSupabaseConfigured()) {
+        try {
+          const sourceMessageId = update.message?.message_id?.toString() ?? null;
+          await uploadPhoto(user.id, buffer, mediaType, {
+            caption: caption || null,
+            sizeBytes: buffer.byteLength,
+            width: photo.width ?? null,
+            height: photo.height ?? null,
+            sourceChannel: "telegram",
+            sourceMessageId,
+          });
+        } catch (uploadErr) {
+          console.error("[agent-turn] Failed to persist photo to storage:", uploadErr);
+        }
+      }
     } catch (err) {
       console.error("[agent-turn] Failed to download photo:", err);
       await bot.sendMessage("Couldn't download that image. Try sending it again?");
@@ -160,19 +198,24 @@ export async function runAgentTurn({ user, update, bot }: RunAgentTurnInput): Pr
 }
 
 /**
- * Fetch a Telegram photo by file_id and return it as an Anthropic ImageBlock.
+ * Fetch a Telegram photo's raw bytes by file_id, plus a sniffed media type.
+ * Returning the buffer (not a pre-built ImageBlock) lets the caller both
+ * (a) base64-encode it for the LLM and (b) push the same bytes into Supabase
+ * Storage without paying for a second download.
+ *
  * Telegram serves photos as JPEG; we sniff the URL extension and fall back to
- * jpeg if unsure. The Anthropic SDK accepts the `image` block uniformly across
- * jpeg/png/gif/webp.
+ * jpeg if unsure. The Anthropic SDK accepts the `image` block uniformly
+ * across jpeg/png/gif/webp.
  */
-async function downloadPhotoAsImageBlock(fileId: string, bot: TelegramBot): Promise<ImageBlock> {
+async function downloadPhotoBytes(
+  fileId: string,
+  bot: TelegramBot
+): Promise<{ buffer: Buffer; mediaType: ReturnType<typeof inferImageMediaType> }> {
   const { filePath, fileUrl } = await bot.getFile(fileId);
-  const buffer = await bot.downloadFile(fileUrl);
-  const data = Buffer.from(buffer).toString("base64");
-  const mediaType = inferImageMediaType(filePath);
+  const ab = await bot.downloadFile(fileUrl);
   return {
-    type: "image",
-    source: { type: "base64", media_type: mediaType, data },
+    buffer: Buffer.from(ab),
+    mediaType: inferImageMediaType(filePath),
   };
 }
 

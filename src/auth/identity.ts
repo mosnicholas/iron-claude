@@ -137,6 +137,7 @@ export async function findOrCreateUserByPhone(
       supabaseUserId,
       displayName: hint?.displayName,
       timezone: hint?.timezone ?? getTimezone(),
+      trialEndsAt: thirtyDaysFromNow(),
     })
     .returning();
   return created;

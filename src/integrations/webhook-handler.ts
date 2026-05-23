@@ -99,10 +99,7 @@ async function resolveUserIdForWebhook(device: string, payload: unknown): Promis
  * Process a webhook in the background.
  * This is called after we've already returned 200 to the sender.
  */
-async function processWebhookAsync(
-  payload: unknown,
-  device: string
-): Promise<void> {
+async function processWebhookAsync(payload: unknown, device: string): Promise<void> {
   try {
     // Resolve the user this webhook belongs to. Without a linked user we have
     // nowhere to persist the data.

@@ -124,10 +124,7 @@ export async function uploadPhoto(
     try {
       await supabase.storage.from(PHOTO_BUCKET).remove([path]);
     } catch (cleanupErr) {
-      console.error(
-        "[photos] Storage cleanup after failed DB insert also failed:",
-        cleanupErr
-      );
+      console.error("[photos] Storage cleanup after failed DB insert also failed:", cleanupErr);
     }
     throw dbErr;
   }
@@ -165,10 +162,7 @@ export async function getPhotoSignedUrl(
  * Pure DB read — does not hit Supabase Storage. Useful for the coach tool
  * that needs to find "the most recent" or "the photo closest to date X".
  */
-export async function listUserPhotos(
-  userId: string,
-  opts: ListPhotosOpts = {}
-): Promise<Photo[]> {
+export async function listUserPhotos(userId: string, opts: ListPhotosOpts = {}): Promise<Photo[]> {
   const conditions = [eq(photos.userId, userId)];
   if (opts.since) conditions.push(gte(photos.takenAt, new Date(opts.since)));
   if (opts.until) conditions.push(lte(photos.takenAt, new Date(opts.until)));

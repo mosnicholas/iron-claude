@@ -77,8 +77,7 @@ function parseArgs(argv: string[]): Args {
     typeof opts["telegram-chat-id"] === "string" ? (opts["telegram-chat-id"] as string) : undefined;
   const displayName =
     typeof opts["display-name"] === "string" ? (opts["display-name"] as string) : undefined;
-  const timezone =
-    typeof opts.timezone === "string" ? (opts.timezone as string) : getTimezone();
+  const timezone = typeof opts.timezone === "string" ? (opts.timezone as string) : getTimezone();
   const dryRun = opts["dry-run"] === true;
 
   if (!phone) throw new Error("--phone is required");
@@ -570,11 +569,7 @@ interface ReminderJson {
   context?: string;
 }
 
-async function importReminders(
-  userId: string,
-  repoDir: string,
-  dryRun: boolean
-): Promise<number> {
+async function importReminders(userId: string, repoDir: string, dryRun: boolean): Promise<number> {
   const path = join(repoDir, "state", "reminders.json");
   const raw = readMaybe(path);
   if (!raw) {
@@ -658,8 +653,7 @@ async function importWhoopTokens(
       ? tokens.scopes
       : null;
   const externalRaw = tokens.externalUserId ?? tokens.userId ?? tokens.user_id;
-  const externalUserId =
-    externalRaw != null && externalRaw !== "" ? String(externalRaw) : null;
+  const externalUserId = externalRaw != null && externalRaw !== "" ? String(externalRaw) : null;
 
   if (!dryRun) {
     await getStorage().upsertIntegrationToken(userId, "whoop", {
@@ -894,9 +888,7 @@ async function main(): Promise<void> {
     log.info(pc.bold(`Done in ${elapsed}s${args.dryRun ? " (dry-run)" : ""}`));
     log.info(`  profile=${counts.profile} learnings=${counts.learnings} prs=${counts.prs}`);
     log.info(`  plans=${counts.plans} retros=${counts.retros}`);
-    log.info(
-      `  workouts=${counts.workouts} exercises=${counts.exercises} sets=${counts.sets}`
-    );
+    log.info(`  workouts=${counts.workouts} exercises=${counts.exercises} sets=${counts.sets}`);
     log.info(
       `  reminders=${counts.reminders} whoopTokens=${counts.whoopTokens} convSummary=${counts.conversationSummary} messages=${counts.messages}`
     );
