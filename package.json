@@ -1,7 +1,8 @@
 {
-  "name": "iron-claude",
+  "name": "iron-claude-pro",
   "version": "1.0.0",
-  "description": "A Claude-powered personal fitness coach that lives in Telegram",
+  "private": true,
+  "description": "IronClaude (Pro) — multi-tenant AI workout + nutrition coach over Telegram. Proprietary.",
   "type": "module",
   "scripts": {
     "build": "tsc && npm run copy-skills",

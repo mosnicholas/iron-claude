@@ -1,78 +1,12 @@
-# IronClaude
+# IronClaude (Pro)
 
-AI-powered personal workout coach over Telegram (and soon web). Postgres-backed, multi-user-ready, open source.
+Internal monorepo for the multi-tenant IronClaude product: AI workout +
+nutrition coach over Telegram (and soon web), backed by Postgres + Supabase
+Auth, billed via Stripe.
 
-IronClaude pairs the Claude Agent SDK with a fitness data model in Postgres. It logs your workouts, tracks PRs, plans your week, and adapts to recovery signals from wearables — all from a chat interface.
-
----
-
-## Quickstart (self-hosters)
-
-Prerequisites: Node.js 20+, Docker, a Supabase project (free tier OK), a Telegram bot, and an Anthropic API key.
-
-Create a Supabase project. You get three things from it:
-
-- **Postgres** — connection string for `DATABASE_URL` in production
-- **Auth** — phone OTP (configure Twilio in Supabase's dashboard)
-- **Storage** — progress-photo bucket
-
-```bash
-# 1. Clone and install
-git clone https://github.com/your-fork/iron-claude.git
-cd iron-claude
-npm install
-
-# 2. Start local Postgres for development
-docker compose up -d postgres
-```
-
-The local Postgres in `docker-compose.yml` is for development only. In production, point `DATABASE_URL` at Supabase's connection pooler (Project Settings > Database > Connection String).
-
-### 3. Create a Supabase project
-
-Go to https://supabase.com and create a project (free tier is fine).
-
-1. Enable Phone Auth: **Authentication > Providers > Phone**
-2. Connect your own Twilio account in Supabase's dashboard (Supabase relays via Twilio)
-3. Copy these values into `.env`:
-   - `SUPABASE_URL`
-   - `SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-
-### 4. Generate local secrets
-
-```bash
-openssl rand -base64 32   # INTEGRATION_TOKEN_KEY
-openssl rand -base64 32   # SESSION_SECRET
-```
-
-Add both to `.env`.
-
-### 5. Create a Telegram bot
-
-Message [@BotFather](https://t.me/botfather) and run `/newbot`. Save the token.
-
-```env
-TELEGRAM_BOT_TOKEN=123456:ABC...
-TELEGRAM_WEBHOOK_SECRET=$(openssl rand -hex 16)
-```
-
-### 6. Add your Anthropic API key
-
-```env
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-### 7. Migrate and run
-
-```bash
-npm run db:migrate
-npm run dev
-```
-
-### 8. Sign up
-
-The hosted web onboarding flow at `http://localhost:8080/onboard.html` is **coming soon**. For now, sign up by messaging your Telegram bot — it auto-creates a user on first contact and runs an onboarding conversation to build your profile.
+This repo is the commercial product. The original single-user GitHub-backed
+version lives in [`iron-claude-git-backing`](https://github.com/mosnicholas/iron-claude-git-backing)
+as a public reference implementation.
 
 ---
 
@@ -102,122 +36,108 @@ The hosted web onboarding flow at `http://localhost:8080/onboard.html` is **comi
         +-----------+   +-----------+   +-------------+
 ```
 
-The inbox decouples channel ingestion from agent execution. Multiple app instances can pull from the same inbox safely — an advisory lock keyed on `user_id` guarantees turn-by-turn ordering per user.
+The inbox decouples channel ingestion from agent execution. Multiple Fly
+instances pull from the same inbox safely — an advisory lock keyed on
+`user_id` guarantees turn-by-turn ordering per user.
 
 ---
 
-## Telegram commands
-
-You can also just chat naturally — the agent understands context.
-
-| Command     | Description                              |
-|-------------|------------------------------------------|
-| `/today`    | Show today's workout                     |
-| `/plan`     | Show this week's plan                    |
-| `/fullplan` | Show full plan with all details          |
-| `/done`     | Complete current workout                 |
-| `/prs`      | Show personal records                    |
-| `/help`     | List all commands                        |
-
-### Logging exercises
-
-```
-OHP 115: 6, 5, 5 @8
-Dips +25: 8, 7, 7
-Pull-ups: 10, 8, 7
-Handstand: 30s, 25s, 30s
-```
-
-Format: `Exercise Weight: rep, rep, rep @RPE`
-- `+weight` = added weight for bodyweight exercises
-- `@number` = RPE (1-10)
-
----
-
-## Migrating from the GitHub-repo version
-
-Earlier versions of IronClaude stored each user's data as markdown in a private GitHub repo. The importer brings that history into Postgres.
+## Local development
 
 ```bash
-npm run import -- \
-  --phone +15551234567 \
-  --repo your-github/fitness-data \
-  --github-token ghp_...
+# 1. Install
+npm install
+
+# 2. Spin up local Postgres
+docker compose up -d postgres
+
+# 3. Copy .env.example to .env and fill in:
+#    - DATABASE_URL=postgres://ironclaude:ironclaude@localhost:5432/ironclaude
+#    - ANTHROPIC_API_KEY
+#    - TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET
+#    - SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+#    - INTEGRATION_TOKEN_KEY (openssl rand -base64 32)
+#    - SESSION_SECRET (openssl rand -base64 32)
+#    - STRIPE_* (optional — disables billing if unset)
+
+# 4. Migrate + run
+npm run db:migrate
+npm run dev
 ```
-
-Add `--dry-run` to validate the parse without writing to the database:
-
-```bash
-npm run import -- --phone +15551234567 --repo your-github/fitness-data \
-  --github-token ghp_... --dry-run
-```
-
-The importer maps `profile.md`, `learnings.md`, `prs.yaml`, weekly plans, retros, and per-day workout files into the new schema. It is idempotent — re-running it skips rows that already exist.
-
-To run the importer against a deployed instance, see `DEPLOY.md` (use `fly ssh console`).
 
 ---
 
-## Customization
+## Tiers
 
-User data lives in Postgres now — there is no per-user repo. To edit your data:
+| Tier     | What's in                                                                  |
+|----------|----------------------------------------------------------------------------|
+| `trial`  | Full coaching for 30 days from signup. Auto-flips to `expired`.            |
+| `regular`| Unlimited turns, all integrations, Sonnet-class model. No photos.          |
+| `athlete`| Everything in regular + photos + Opus-class model + higher rate ceiling.   |
+| `comped` | Same as athlete; never downgraded by the Stripe webhook.                   |
+| `expired`| Read-only; coach turns return "subscribe to continue".                     |
 
-- **Easiest:** chat with the bot ("update my profile to mention a left-shoulder limitation")
-- **Direct:** open a SQL shell or `drizzle-kit studio` and edit rows
-
-Editable entities: `profile`, `learnings`, `prs`, `plans`, `retros`, `workouts`. The schema lives in `src/db/schema.ts`.
-
----
-
-## Storage
-
-Progress photos go in a Supabase Storage bucket named `progress-photos`. Create it once with:
+### Comp an account
 
 ```bash
-npm run setup:storage
+npm run grant-tier -- --phone +15551234567 --tier athlete
 ```
 
-The script provisions the bucket and applies the access policy (private; signed URLs issued per-request). You can also create the bucket manually in the Supabase dashboard under **Storage**.
+Sets `tier_overridden_by_admin = true`. Stripe webhook downgrade events are
+ignored for comped accounts.
 
 ---
 
 ## Testing
 
 ```bash
-npm test                                          # Unit + integration tests (~10s)
-npm run test:all                                  # Includes scenarios
-ANTHROPIC_API_KEY=sk-... npm run test:scenarios   # End-to-end agent runs
+npm test                                          # Unit + integration tier (~10s, no API key)
+npm run test:db                                   # Storage tier only
+ANTHROPIC_API_KEY=sk-... npm run test:scenarios   # Real-model scenario tier (~2 min)
 ```
 
-Integration tests run against the local Postgres started by `docker compose up -d postgres`.
+Integration tests use `pg-mem` (no Docker required). Scenario tests run
+against the same DB substrate plus real Haiku.
 
 ---
 
-## Troubleshooting
+## Migrating data in
 
-**Bot not responding?**
+To import existing fitness-data repo content for an athlete:
 
-1. Check the webhook: `curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"`
-2. Check the inbox: `curl http://localhost:8080/health` (returns `{ok: true, backlog: N}`)
-3. Tail logs: `npm run dev` output, or `fly logs` in production
+```bash
+npm run import -- \
+  --phone +15551234567 \
+  --repo someuser/fitness-data \
+  --github-token ghp_...
+```
 
-**Inbox stuck?** Look for items in the `inbox` table with `processed_at IS NULL` and a non-null `lock_expires_at` in the past — that means an instance crashed mid-turn. The worker will retry automatically.
-
----
-
-## Future enhancements
-
-- Web UI for browsing workout history, PRs, and plans
-- WhatsApp / SMS adapter (the inbox abstraction makes this a thin shim)
+Use `--dry-run` to validate first.
 
 ---
 
-## Deploying to production
+## Telegram commands
 
-See [DEPLOY.md](./DEPLOY.md) for a step-by-step Fly.io + Supabase deployment guide.
+| Command     | Description                              |
+|-------------|------------------------------------------|
+| `/today`    | Show today's workout                     |
+| `/plan`     | Show this week's plan                    |
+| `/done`     | Complete current workout                 |
+| `/prs`      | Show personal records                    |
+| `/help`     | List all commands                        |
+| `/debug …`  | Read-only diagnostic mode                |
+
+Athletes can also just chat — the agent handles the rest.
+
+---
+
+## Deploying
+
+See [DEPLOY.md](./DEPLOY.md). Push to `main` → Actions runs CI → on green,
+Fly deploys → `start.sh` runs `npm run db:migrate` before serving.
 
 ---
 
 ## License
 
-MIT
+Proprietary. See `LICENSE`.

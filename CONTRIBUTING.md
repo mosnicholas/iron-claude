@@ -1,107 +1,70 @@
-# Contributing to IronClaude
+# Internal Dev Notes
 
-Thank you for your interest in contributing to IronClaude! This document provides guidelines and instructions for contributing.
+This is a proprietary repo. PRs come from collaborators only; there is no
+public contribution flow.
 
-## Getting Started
+## Local setup
 
-1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/iron-claude.git`
-3. Install dependencies: `npm install`
-4. Create a `.env` file based on `.env.example`
-5. Run in development mode: `npm run dev`
+See `README.md`. tl;dr: `npm install`, `docker compose up -d postgres`,
+copy `.env.example` to `.env` and fill it in, `npm run db:migrate`,
+`npm run dev`.
 
-## Development Workflow
+## Workflow
 
-### Code Style
+- Branches: `feature/...`, `fix/...`, `chore/...` are fine; `claude/...`
+  is reserved for Claude Code on the web sessions.
+- Before every commit: `npm run lint:fix && npm test`.
+- Schema changes: `npm run db:generate` produces an incremental
+  migration. Commit it alongside the schema change — CI's
+  `migration-check` job fails if you skip this.
 
-- We use TypeScript for all source files
-- Run `npm run lint:fix` before committing to auto-format code
-- Run `npm run typecheck` to verify TypeScript types
-- Keep functions small and focused
-- Use descriptive variable names
+## CI
 
-### Testing
+`.github/workflows/ci.yml` runs on every PR:
 
-Run tests with:
-```bash
-npm test
-```
-
-Add tests for new functionality when possible.
-
-### Checking for Unused Code
-
-Periodically run:
-```bash
-npx knip
-```
-
-This helps identify unused exports, dependencies, and files.
-
-## Making Changes
-
-1. Create a feature branch: `git checkout -b feature/your-feature-name`
-2. Make your changes
-3. Run linting and tests: `npm run lint:fix && npm test`
-4. Commit with a clear message describing the change
-5. Push to your fork and open a Pull Request
-
-### Commit Messages
-
-- Use present tense ("Add feature" not "Added feature")
-- Use imperative mood ("Move cursor to..." not "Moves cursor to...")
-- Keep the first line under 72 characters
-- Reference issues when relevant
-
-## Pull Request Guidelines
-
-- Provide a clear description of the changes
-- Include any relevant issue numbers
-- Ensure all checks pass
-- Keep PRs focused - one feature or fix per PR
-
-### Required Status Checks
-
-The `main` branch is protected. Every PR must pass the following CI jobs
-(defined in `.github/workflows/ci.yml`) before it can be merged:
-
-- `lint` — ESLint + Prettier format check
+- `lint` — ESLint + Prettier
 - `typecheck` — `tsc --noEmit`
-- `unit` — fast unit tests (`npm test`)
-- `db-tests` — Postgres-backed storage and integration tests
-- `migration-check` — Drizzle migration drift detection (fails if the
-  schema changed without a committed migration)
+- `unit` — fast unit tests
+- `db-tests` — Postgres-backed storage + integration tests via pg-mem
+- `migration-check` — Drizzle migration-drift guard
 
-In addition, PRs require **1 approval from a CODEOWNER**
-(see `.github/CODEOWNERS`). Configure these as required status checks
-and require code-owner review in the repository's branch protection
-settings for `main`.
+`main-ci.yml` runs on push to `main` and includes the scenario tier
+(real Haiku calls, gated by `ANTHROPIC_API_KEY` repo secret).
 
-## Project Structure
+`deploy.yml` runs `flyctl deploy --remote-only` after main CI passes.
+
+## Commit hygiene
+
+- Present tense, imperative mood. ("Add tier middleware" not "Added".)
+- First line ≤ 72 chars. Body explains *why*, not just *what*.
+- Reference an issue when one exists.
+
+## Periodic hygiene
+
+- `npx knip` — find unused exports, dependencies, files. Worth running
+  every couple of weeks.
+- `npm audit` — security advisories. Dependabot catches most of these.
+
+## Layout
 
 ```
-iron-claude/
-├── src/
-│   ├── bot/          # Telegram bot integration
-│   ├── coach/        # AI coaching agent (Claude Agent SDK)
-│   ├── cron/         # Scheduled tasks
-│   ├── handlers/     # HTTP request handlers
-│   ├── storage/      # GitHub data storage
-│   └── utils/        # Utility functions
-├── scripts/          # Setup and deployment scripts
-├── prompts/          # AI coaching prompts
-└── templates/        # Document templates
+src/
+├── auth/            Supabase Auth, identity resolution, tier gating
+├── bot/             Telegram bot client + message history
+├── coach-v2/        AI coaching agent (Claude Agent SDK + tools)
+├── cron/            Scheduled per-user fan-out jobs
+├── db/              Drizzle schema + client
+├── handlers/        HTTP request handlers (webhook, auth, stripe, ...)
+├── inbox/           Multi-instance-safe event queue + worker
+├── integrations/    Device integrations (Whoop, ...)
+├── nutrition/       USDA FoodData Central client
+├── storage/         Storage interface + Postgres impl + photos
+├── crypto/          AES-GCM helpers for at-rest secrets
+└── observability/   Sentry wrapper
+
+drizzle/             Generated SQL migrations
+prompts/             System prompts the coach loads
+scripts/             Setup / import / admin scripts
+tests/               Integration + scenario tests
+.github/             CI/CD workflows, CODEOWNERS, dependabot
 ```
-
-## Reporting Issues
-
-When reporting issues, please include:
-
-- A clear description of the problem
-- Steps to reproduce
-- Expected vs actual behavior
-- Your environment (Node version, OS, etc.)
-
-## Questions?
-
-Feel free to open an issue for questions about the codebase or contributing process.
