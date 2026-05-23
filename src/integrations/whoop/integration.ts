@@ -3,6 +3,11 @@
  *
  * Implements the DeviceIntegration interface for Whoop.
  * Ties together OAuth, API client, and webhook handling.
+ *
+ * Each instance is bound to a single userId; multi-tenant entry points
+ * (webhook handler, OAuth callback) construct one per request. The factory
+ * below falls back to `DEFAULT_USER_ID` for callers that haven't been
+ * plumbed through the multi-user migration yet.
  */
 
 import type { Request } from "express";
@@ -41,6 +46,11 @@ export class WhoopIntegration implements DeviceIntegration {
   readonly slug = "whoop";
 
   private client: WhoopClient | null = null;
+  private readonly userId: string;
+
+  constructor(userId: string) {
+    this.userId = userId;
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Configuration
@@ -66,27 +76,27 @@ export class WhoopIntegration implements DeviceIntegration {
   }
 
   /**
-   * Exchange an authorization code for tokens and persist them.
+   * Exchange an authorization code for tokens and persist them for this user.
    */
   async handleOAuthCallback(code: string, redirectUri: string): Promise<TokenSet> {
     const tokens = await exchangeCodeForTokens(code, redirectUri);
-    await persistTokens(tokens);
+    await persistTokens(this.userId, tokens);
     this.invalidateClient();
     return tokens;
   }
 
   /**
-   * Refresh the access token and persist the new tokens.
+   * Refresh the access token for this user and persist the new tokens.
    */
   async refreshToken(): Promise<TokenSet> {
-    const tokens = await getStoredTokens();
+    const tokens = await getStoredTokens(this.userId);
     if (!tokens) {
       throw new Error("No tokens to refresh");
     }
-    const newTokens = await refreshAccessToken(tokens.refreshToken);
+    const newTokens = await refreshAccessToken(this.userId, tokens.refreshToken);
 
-    // Persist the new tokens to GitHub
-    await persistTokens(newTokens);
+    // Persist the new tokens to the DB
+    await persistTokens(this.userId, newTokens);
 
     // Invalidate cached client so it uses new tokens
     this.invalidateClient();
@@ -112,7 +122,7 @@ export class WhoopIntegration implements DeviceIntegration {
    */
   private async getClient(): Promise<WhoopClient> {
     if (!this.client) {
-      this.client = await createWhoopClient();
+      this.client = await createWhoopClient(this.userId);
       if (!this.client) {
         throw new Error("Failed to create Whoop client");
       }
@@ -183,17 +193,24 @@ export class WhoopIntegration implements DeviceIntegration {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Singleton Instance
+// Factory
 // ─────────────────────────────────────────────────────────────────────────────
 
-let instance: WhoopIntegration | null = null;
-
 /**
- * Get the Whoop integration instance.
+ * Get a Whoop integration instance for the given user.
+ *
+ * TODO(multi-user): callers that don't yet know the userId (e.g.
+ * `registerIntegration` at boot, the cron token refresh job) fall back to
+ * `DEFAULT_USER_ID` from env. The next migration phase wires real userId
+ * resolution into those entry points (auth + webhook adapters).
  */
-export function getWhoopIntegration(): WhoopIntegration {
-  if (!instance) {
-    instance = new WhoopIntegration();
+export function getWhoopIntegration(userId?: string): WhoopIntegration {
+  const effectiveUserId = userId ?? process.env.DEFAULT_USER_ID;
+  if (!effectiveUserId) {
+    throw new Error(
+      "getWhoopIntegration: userId not provided and DEFAULT_USER_ID env var is not set. " +
+        "Set DEFAULT_USER_ID until the multi-user auth migration is complete."
+    );
   }
-  return instance;
+  return new WhoopIntegration(effectiveUserId);
 }

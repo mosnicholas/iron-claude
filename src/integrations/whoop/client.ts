@@ -8,7 +8,7 @@
 import type { TokenSet } from "../types.js";
 import {
   getStoredTokens,
-  getTokensFromGitHub,
+  getTokensFromDb,
   isTokenExpired,
   refreshAccessToken,
   persistTokens,
@@ -246,8 +246,10 @@ function sleep(ms: number): Promise<void> {
 
 export class WhoopClient {
   private tokens: TokenSet;
+  private readonly userId: string;
 
-  constructor(tokens: TokenSet) {
+  constructor(userId: string, tokens: TokenSet) {
+    this.userId = userId;
     this.tokens = tokens;
   }
 
@@ -266,12 +268,13 @@ export class WhoopClient {
   }
 
   /**
-   * Create a client from stored tokens (GitHub-backed).
+   * Create a client from stored tokens (DB-backed) for the given user.
    * Automatically refreshes if expired and persists the new tokens.
-   * If refresh fails (e.g. another instance used the refresh token), re-reads from GitHub.
+   * If refresh fails (e.g. another instance used the refresh token), re-reads
+   * the freshest tokens from the DB.
    */
-  static async fromEnvironment(): Promise<WhoopClient> {
-    const tokens = await getStoredTokens();
+  static async fromUser(userId: string): Promise<WhoopClient> {
+    const tokens = await getStoredTokens(userId);
     if (!tokens) {
       throw new Error("Whoop tokens not configured");
     }
@@ -280,22 +283,22 @@ export class WhoopClient {
     if (isTokenExpired(tokens)) {
       console.log("[whoop] Access token expired, refreshing...");
       try {
-        const newTokens = await refreshAccessToken(tokens.refreshToken);
-        await persistTokens(newTokens);
-        return new WhoopClient(newTokens);
+        const newTokens = await refreshAccessToken(userId, tokens.refreshToken);
+        await persistTokens(userId, newTokens);
+        return new WhoopClient(userId, newTokens);
       } catch (error) {
         // Refresh failed - another instance may have already rotated the refresh token.
-        // Re-read from GitHub to get the tokens that instance persisted.
-        console.warn("[whoop] Token refresh failed, re-reading from GitHub:", error);
-        const freshResult = await getTokensFromGitHub();
+        // Re-read from DB to get the tokens that instance persisted.
+        console.warn("[whoop] Token refresh failed, re-reading from DB:", error);
+        const freshResult = await getTokensFromDb(userId);
         if (freshResult && !isTokenExpired(freshResult.tokens)) {
-          return new WhoopClient(freshResult.tokens);
+          return new WhoopClient(userId, freshResult.tokens);
         }
-        throw new Error("Whoop token refresh failed and no valid tokens found in GitHub");
+        throw new Error("Whoop token refresh failed and no valid tokens found in DB");
       }
     }
 
-    return new WhoopClient(tokens);
+    return new WhoopClient(userId, tokens);
   }
 
   /**
@@ -305,24 +308,24 @@ export class WhoopClient {
   private async tryRefreshToken(): Promise<boolean> {
     try {
       console.log("[whoop] Attempting token refresh after 401...");
-      const newTokens = await refreshAccessToken(this.tokens.refreshToken);
-      await persistTokens(newTokens);
+      const newTokens = await refreshAccessToken(this.userId, this.tokens.refreshToken);
+      await persistTokens(this.userId, newTokens);
       this.tokens = newTokens;
       console.log("[whoop] Token refresh succeeded");
       return true;
     } catch (refreshError) {
       // Our refresh token may have been rotated by another instance.
-      // Try reading the latest tokens from GitHub.
-      console.warn("[whoop] Token refresh failed, re-reading from GitHub:", refreshError);
+      // Try reading the latest tokens from the DB.
+      console.warn("[whoop] Token refresh failed, re-reading from DB:", refreshError);
       try {
-        const freshResult = await getTokensFromGitHub();
+        const freshResult = await getTokensFromDb(this.userId);
         if (freshResult && !isTokenExpired(freshResult.tokens)) {
           this.tokens = freshResult.tokens;
-          console.log("[whoop] Using refreshed tokens from GitHub");
+          console.log("[whoop] Using refreshed tokens from DB");
           return true;
         }
-      } catch (githubError) {
-        console.error("[whoop] Failed to read tokens from GitHub:", githubError);
+      } catch (dbError) {
+        console.error("[whoop] Failed to read tokens from DB:", dbError);
       }
       return false;
     }
@@ -547,12 +550,12 @@ export class WhoopClient {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Create a Whoop client from environment tokens.
+ * Create a Whoop client for the given user from DB-stored tokens.
  * Returns null if not configured.
  */
-export async function createWhoopClient(): Promise<WhoopClient | null> {
+export async function createWhoopClient(userId: string): Promise<WhoopClient | null> {
   try {
-    return await WhoopClient.fromEnvironment();
+    return await WhoopClient.fromUser(userId);
   } catch (error) {
     console.error("[whoop] Failed to create client:", error);
     return null;

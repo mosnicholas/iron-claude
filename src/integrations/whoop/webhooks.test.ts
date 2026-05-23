@@ -386,18 +386,12 @@ describe("Whoop webhook verification", () => {
     });
   });
 
-  describe("user ID verification", () => {
-    beforeEach(() => {
-      process.env.WHOOP_USER_ID = "12345";
-    });
-
-    it("rejects webhook from different user", () => {
+  describe("user ID resolution moved to handler", () => {
+    // Per-user identity resolution is now the webhook handler's job
+    // (findUserByExternalIntegrationId). `verifyWhoopWebhook` no longer
+    // rejects based on user_id; it only validates structure + HMAC.
+    it("accepts any user_id when structure and signature are valid", () => {
       const req = createMockRequest({ type: "sleep.updated", user_id: 99999, id: 456 });
-      expect(verifyWhoopWebhook(req)).toBe(false);
-    });
-
-    it("accepts webhook from expected user", () => {
-      const req = createMockRequest({ type: "sleep.updated", user_id: 12345, id: 456 });
       expect(verifyWhoopWebhook(req)).toBe(true);
     });
   });
@@ -407,10 +401,9 @@ describe("Whoop webhook verification", () => {
 
     beforeEach(() => {
       process.env.WHOOP_WEBHOOK_SECRET = webhookSecret;
-      process.env.WHOOP_USER_ID = "12345";
     });
 
-    it("accepts request with valid signature and matching user", () => {
+    it("accepts request with valid signature regardless of user_id", () => {
       const payload = { type: "recovery.updated", user_id: 12345, id: 789 };
       const payloadString = JSON.stringify(payload);
       const signature = crypto
@@ -422,15 +415,10 @@ describe("Whoop webhook verification", () => {
       expect(verifyWhoopWebhook(req)).toBe(true);
     });
 
-    it("rejects request with valid signature but wrong user", () => {
+    it("rejects request with invalid signature", () => {
       const payload = { type: "recovery.updated", user_id: 99999, id: 789 };
-      const payloadString = JSON.stringify(payload);
-      const signature = crypto
-        .createHmac("sha256", webhookSecret)
-        .update(payloadString)
-        .digest("hex");
 
-      const req = createMockRequest(payload, { "x-whoop-signature": signature });
+      const req = createMockRequest(payload, { "x-whoop-signature": "wrong" });
       expect(verifyWhoopWebhook(req)).toBe(false);
     });
   });

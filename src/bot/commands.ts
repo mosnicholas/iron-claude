@@ -109,24 +109,33 @@ async function handleWhoopStatus(
     return lines.join("\n");
   }
 
+  // TODO(multi-user): /whoopstatus reads the on-DB token row for the active
+  // user. Until per-channel identity resolution is wired into bot commands,
+  // we fall back to DEFAULT_USER_ID.
+  const userId = process.env.DEFAULT_USER_ID;
+  if (!userId) {
+    lines.push("✗ DEFAULT_USER_ID is not set; /whoopstatus needs a userId.");
+    return lines.join("\n");
+  }
+
   let inspection;
   try {
-    inspection = await inspectStoredTokens();
+    inspection = await inspectStoredTokens(userId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    lines.push(`✗ Failed to read tokens file: ${message}`);
+    lines.push(`✗ Failed to read tokens row: ${message}`);
     return lines.join("\n");
   }
 
   if (!inspection.fileExists) {
-    lines.push("✗ state/whoop/tokens.json does not exist");
+    lines.push("✗ No Whoop tokens row in the database");
     lines.push("Run /reauth to authorize Whoop.");
     return lines.join("\n");
   }
-  lines.push("✓ state/whoop/tokens.json exists");
+  lines.push("✓ Whoop tokens row exists in database");
 
   if (!inspection.parseable) {
-    lines.push("✗ tokens.json is not valid JSON");
+    lines.push("✗ Token row is malformed");
     lines.push("Run /reauth to overwrite.");
     return lines.join("\n");
   }

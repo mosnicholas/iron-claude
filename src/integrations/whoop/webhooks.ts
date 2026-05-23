@@ -154,14 +154,10 @@ export function verifyWhoopWebhook(req: Request): boolean {
     }
   }
 
-  // Optional: Verify user ID matches expected user
-  const expectedUserId = process.env.WHOOP_USER_ID;
-  if (expectedUserId) {
-    if (payload.user_id !== parseInt(expectedUserId, 10)) {
-      console.log("[whoop-webhook] User ID mismatch");
-      return false;
-    }
-  }
+  // Note: per-user identity resolution moved out of this function. The
+  // webhook handler now looks up our user_id via
+  // `findUserByExternalIntegrationId("whoop", payload.user_id)` after this
+  // verification succeeds and rejects the request if no linked user exists.
 
   return true;
 }

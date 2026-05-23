@@ -2,13 +2,16 @@
  * Whoop OAuth 2.0 Helpers
  *
  * Handles OAuth authorization flow and token management for Whoop API.
- * Tokens are stored in the fitness-data GitHub repo for multi-instance coordination.
+ * Tokens are stored in Postgres (integration_tokens table) with the
+ * access/refresh tokens encrypted at rest via AES-256-GCM.
+ *
  * Based on: https://developer.whoop.com/docs/developing/oauth
  */
 
 import crypto from "node:crypto";
 import type { TokenSet } from "../types.js";
-import { createGitHubStorage } from "../../storage/github.js";
+import { getStorage } from "../../storage/db.js";
+import { decryptSecret, encryptSecret } from "../../crypto/secrets.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -16,7 +19,7 @@ import { createGitHubStorage } from "../../storage/github.js";
 
 const WHOOP_AUTH_URL = "https://api.prod.whoop.com/oauth/oauth2/auth";
 const WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token";
-const TOKENS_PATH = "state/whoop/tokens.json";
+const PROVIDER = "whoop";
 
 /** Available OAuth scopes for Whoop API */
 export const WHOOP_SCOPES = [
@@ -74,18 +77,11 @@ export function isWhoopOAuthConfigured(): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Token Storage (GitHub-backed with in-memory cache)
+// Token Storage (DB-backed, encrypted at rest)
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface GitHubTokenData {
-  refreshToken: string;
-  accessToken: string;
-  expiresAt: number;
-  updatedAt: string;
-}
-
-/** In-memory cache to avoid hitting GitHub API on every Whoop call */
-let cachedTokens: TokenSet | null = null;
+/** Per-user in-memory cache to avoid hitting Postgres on every Whoop call */
+const cachedTokens = new Map<string, TokenSet>();
 
 /**
  * In-flight refresh dedupe. Whoop rotates refresh tokens — once a refresh
@@ -94,108 +90,80 @@ let cachedTokens: TokenSet | null = null;
  * the other fail with 400 ("invalid_request"). Sharing the in-flight promise
  * means the second caller awaits the first and gets the rotated tokens.
  *
- * Keyed by the refresh token being used so an older token's refresh doesn't
- * block a fresh one (e.g. if cache was bypassed).
+ * Keyed by `userId:refreshToken` so an older token's refresh doesn't block a
+ * fresh one across users.
  */
 const refreshInFlight = new Map<string, Promise<TokenSet>>();
 
 /** Reset the in-memory token cache (for testing only) */
 export function _resetTokenCache(): void {
-  cachedTokens = null;
+  cachedTokens.clear();
   refreshInFlight.clear();
 }
 
 /**
- * Read tokens from GitHub, returning the content and SHA for optimistic locking.
+ * Read tokens from the DB for a given user, decrypting the at-rest ciphertext.
+ * The legacy GitHub-backed implementation returned a `sha` for optimistic
+ * locking; Postgres handles upsert concurrency so callers no longer need it.
  */
-export async function getTokensFromGitHub(): Promise<{
-  tokens: TokenSet;
-  sha: string;
-} | null> {
+export async function getTokensFromDb(
+  userId: string
+): Promise<{ tokens: TokenSet; sha: undefined } | null> {
   try {
-    const storage = createGitHubStorage();
-    const result = await storage.readFileWithSha(TOKENS_PATH);
-    if (!result) return null;
+    const row = await getStorage().getIntegrationToken(userId, PROVIDER);
+    if (!row || !row.accessTokenEnc || !row.refreshTokenEnc) return null;
 
-    const data = JSON.parse(result.content) as GitHubTokenData;
-    if (!data.refreshToken || !data.accessToken) return null;
+    const accessToken = decryptSecret(row.accessTokenEnc);
+    const refreshToken = decryptSecret(row.refreshTokenEnc);
+    const expiresAt = row.expiresAt ? row.expiresAt.getTime() : 0;
 
     return {
-      tokens: {
-        accessToken: data.accessToken,
-        refreshToken: data.refreshToken,
-        expiresAt: data.expiresAt,
-      },
-      sha: result.sha,
+      tokens: { accessToken, refreshToken, expiresAt },
+      sha: undefined,
     };
   } catch (error) {
-    console.error("[whoop-oauth] Failed to read tokens from GitHub:", error);
+    console.error("[whoop-oauth] Failed to read tokens from DB:", error);
     return null;
   }
 }
 
 /**
- * Save tokens to GitHub with optimistic locking.
- * Pass sha from a prior read to prevent overwriting concurrent changes.
- * Throws on SHA mismatch (another instance wrote first).
+ * Save tokens to Postgres for a given user, encrypting the access/refresh
+ * tokens at rest. Drizzle's `onConflictDoUpdate` makes this an atomic upsert,
+ * which replaces the SHA-based optimistic locking the GitHub implementation
+ * needed.
  */
-export async function saveTokensToGitHub(tokens: TokenSet, sha?: string): Promise<void> {
-  const storage = createGitHubStorage();
-  const data: GitHubTokenData = {
-    refreshToken: tokens.refreshToken,
-    accessToken: tokens.accessToken,
-    expiresAt: tokens.expiresAt,
-    updatedAt: new Date().toISOString(),
-  };
+export async function saveTokensToDb(userId: string, tokens: TokenSet): Promise<void> {
+  await getStorage().upsertIntegrationToken(userId, PROVIDER, {
+    accessTokenEnc: encryptSecret(tokens.accessToken),
+    refreshTokenEnc: encryptSecret(tokens.refreshToken),
+    expiresAt: tokens.expiresAt ? new Date(tokens.expiresAt) : null,
+    externalUserId: null,
+    scopes: null,
+  });
 
-  await storage.writeFileWithSha(
-    TOKENS_PATH,
-    JSON.stringify(data, null, 2),
-    "Update Whoop tokens",
-    sha
-  );
-
-  console.log("[whoop-oauth] Tokens persisted to GitHub");
+  console.log("[whoop-oauth] Tokens persisted to DB");
 }
 
 /**
- * SHA conflicts (409/422 from GitHub) are expected when two instances race to
- * persist refreshed tokens — the loser's in-memory cache is still valid and
- * the winner's tokens are now on disk. Any other error is a real failure.
+ * Persist tokens to Postgres and update in-memory cache.
+ * Throws on real failures (DB connection, encryption errors).
  */
-function isShaConflictError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return error.message.includes("409") || error.message.includes("422");
-}
-
-/**
- * Persist tokens to GitHub and update in-memory cache.
- * Throws on real failures (auth, network, 5xx). Swallows SHA conflicts.
- */
-export async function persistTokens(tokens: TokenSet): Promise<void> {
-  // Update in-memory cache immediately so the current request can proceed
-  // even if a concurrent peer wins the GitHub write race.
-  cachedTokens = tokens;
+export async function persistTokens(userId: string, tokens: TokenSet): Promise<void> {
+  // Update in-memory cache immediately so the current request can proceed.
+  cachedTokens.set(userId, tokens);
 
   try {
-    const storage = createGitHubStorage();
-    const existing = await storage.readFileWithSha(TOKENS_PATH);
-    await saveTokensToGitHub(tokens, existing?.sha);
+    await saveTokensToDb(userId, tokens);
   } catch (error) {
-    if (isShaConflictError(error)) {
-      console.warn(
-        "[whoop-oauth] Token persist raced with another instance; in-memory cache is authoritative"
-      );
-      return;
-    }
-    console.error("[whoop-oauth] Failed to persist tokens to GitHub:", error);
+    console.error("[whoop-oauth] Failed to persist tokens to DB:", error);
     throw error;
   }
 }
 
 /**
- * Diagnostic snapshot of the stored tokens file, surfacing missing fields
- * that `getStoredTokens` would otherwise hide by returning null.
+ * Diagnostic snapshot of the stored tokens, surfacing missing fields that
+ * `getStoredTokens` would otherwise hide by returning null.
  */
 export interface StoredTokensInspection {
   fileExists: boolean;
@@ -206,46 +174,37 @@ export interface StoredTokensInspection {
   updatedAt?: string;
 }
 
-export async function inspectStoredTokens(): Promise<StoredTokensInspection> {
-  const storage = createGitHubStorage();
-  const result = await storage.readFileWithSha(TOKENS_PATH);
-  if (!result) {
+export async function inspectStoredTokens(userId: string): Promise<StoredTokensInspection> {
+  const row = await getStorage().getIntegrationToken(userId, PROVIDER);
+  if (!row) {
     return { fileExists: false, parseable: false, hasAccessToken: false, hasRefreshToken: false };
-  }
-
-  let data: Partial<GitHubTokenData>;
-  try {
-    data = JSON.parse(result.content) as Partial<GitHubTokenData>;
-  } catch {
-    return { fileExists: true, parseable: false, hasAccessToken: false, hasRefreshToken: false };
   }
 
   return {
     fileExists: true,
     parseable: true,
-    hasAccessToken: typeof data.accessToken === "string" && data.accessToken.length > 0,
-    hasRefreshToken: typeof data.refreshToken === "string" && data.refreshToken.length > 0,
-    expiresAt: typeof data.expiresAt === "number" ? data.expiresAt : undefined,
-    updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined,
+    hasAccessToken: typeof row.accessTokenEnc === "string" && row.accessTokenEnc.length > 0,
+    hasRefreshToken: typeof row.refreshTokenEnc === "string" && row.refreshTokenEnc.length > 0,
+    expiresAt: row.expiresAt ? row.expiresAt.getTime() : undefined,
+    updatedAt: row.updatedAt ? row.updatedAt.toISOString() : undefined,
   };
 }
 
 /**
- * Get stored Whoop tokens.
- * Uses in-memory cache if the access token is still valid, otherwise reads from GitHub.
+ * Get stored Whoop tokens for a user.
+ * Uses in-memory cache if the access token is still valid, otherwise reads
+ * from the DB.
  */
-export async function getStoredTokens(): Promise<TokenSet | null> {
-  // Use cached tokens if access token is still valid
-  if (cachedTokens && !isTokenExpired(cachedTokens)) {
-    return cachedTokens;
+export async function getStoredTokens(userId: string): Promise<TokenSet | null> {
+  const cached = cachedTokens.get(userId);
+  if (cached && !isTokenExpired(cached)) {
+    return cached;
   }
 
-  // Read fresh tokens from GitHub
-  const result = await getTokensFromGitHub();
+  const result = await getTokensFromDb(userId);
   if (!result) return null;
 
-  // Update cache
-  cachedTokens = result.tokens;
+  cachedTokens.set(userId, result.tokens);
   return result.tokens;
 }
 
@@ -343,10 +302,10 @@ export async function exchangeCodeForTokens(code: string, redirectUri: string): 
 
 /**
  * Parse and validate a Whoop OAuth token response.
- * Fails loudly if any required field is missing — silently writing a
- * tokens.json without a refresh_token (Whoop omits it when the request
- * lacks the `offline` scope) makes the integration unrecoverable on the
- * next access-token expiry, so callers must see this immediately.
+ * Fails loudly if any required field is missing — silently persisting a
+ * tokens row without a refresh_token (Whoop omits it when the request lacks
+ * the `offline` scope) makes the integration unrecoverable on the next
+ * access-token expiry, so callers must see this immediately.
  */
 function parseTokenResponse(
   data: Partial<{
@@ -380,19 +339,21 @@ function parseTokenResponse(
 
 /**
  * Refresh the access token using a refresh token.
- * Concurrent callers with the same refresh token share one in-flight request
- * (Whoop rotates refresh tokens; without dedupe the second call 400s).
+ * Concurrent callers with the same userId+refreshToken share one in-flight
+ * request (Whoop rotates refresh tokens; without dedupe the second call 400s).
  *
+ * @param userId - The user the tokens belong to (used for dedupe key)
  * @param refreshToken - The refresh token to use
  */
-export async function refreshAccessToken(refreshToken: string): Promise<TokenSet> {
-  const existing = refreshInFlight.get(refreshToken);
+export async function refreshAccessToken(userId: string, refreshToken: string): Promise<TokenSet> {
+  const key = `${userId}:${refreshToken}`;
+  const existing = refreshInFlight.get(key);
   if (existing) return existing;
 
   const promise = doRefreshAccessToken(refreshToken).finally(() => {
-    refreshInFlight.delete(refreshToken);
+    refreshInFlight.delete(key);
   });
-  refreshInFlight.set(refreshToken, promise);
+  refreshInFlight.set(key, promise);
   return promise;
 }
 

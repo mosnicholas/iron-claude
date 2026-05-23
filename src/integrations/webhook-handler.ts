@@ -10,6 +10,7 @@ import { getIntegration, getConfiguredIntegrations } from "./registry.js";
 import { storeIntegrationData } from "./storage.js";
 import type { WebhookEvent } from "./types.js";
 import { createTelegramBot } from "../bot/telegram.js";
+import { getStorage } from "../storage/db.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Security Helpers
@@ -76,6 +77,23 @@ async function notifyUser(event: WebhookEvent): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Resolve the IronClaude userId for an inbound webhook payload by mapping the
+ * device's external user id (e.g. Whoop's `user_id`) to a row in
+ * `integration_tokens`. Returns null if we don't have a linked user.
+ */
+async function resolveUserIdForWebhook(device: string, payload: unknown): Promise<string | null> {
+  if (device !== "whoop") {
+    // Other providers haven't been wired into the DB-backed flow yet.
+    return null;
+  }
+  const p = payload as { user_id?: unknown } | null | undefined;
+  const rawId = p?.user_id;
+  if (rawId === undefined || rawId === null) return null;
+  const externalId = String(rawId);
+  return getStorage().findUserByExternalIntegrationId("whoop", externalId);
+}
+
+/**
  * Process a webhook in the background.
  * This is called after we've already returned 200 to the sender.
  */
@@ -87,6 +105,14 @@ async function processWebhookAsync(
   if (!integration) return;
 
   try {
+    // Resolve the user this webhook belongs to. Without a linked user we have
+    // nowhere to persist the data.
+    const userId = await resolveUserIdForWebhook(device, payload);
+    if (!userId) {
+      console.log(`[integration-webhook] No linked user for ${device} webhook; dropping event.`);
+      return;
+    }
+
     // Parse the webhook payload (this may make API calls)
     const event = await integration.parseWebhook(payload);
 
@@ -97,8 +123,8 @@ async function processWebhookAsync(
 
     console.log(`[integration-webhook] Parsed ${event.type} event from ${device}`);
 
-    // Store the data in the fitness-data repo
-    await storeIntegrationData(event);
+    // Persist to Postgres (mirrors recovery/sleep into workouts.recovery_snapshot)
+    await storeIntegrationData(userId, event);
 
     console.log(`[integration-webhook] Stored ${event.type} data for ${event.data.date}`);
 
@@ -329,6 +355,17 @@ export async function integrationSyncHandler(req: Request, res: Response): Promi
 
   console.log(`[integration-sync] Syncing data for: ${syncDate}`);
 
+  // TODO(multi-user): the manual sync endpoint doesn't yet receive a userId;
+  // fall back to DEFAULT_USER_ID until the auth/admin migration lands.
+  const userId = process.env.DEFAULT_USER_ID;
+  if (!userId) {
+    res.status(500).json({
+      error:
+        "DEFAULT_USER_ID is not set; manual sync requires a userId (auth phase will pass it in).",
+    });
+    return;
+  }
+
   const results: Array<{
     integration: string;
     success: boolean;
@@ -346,13 +383,13 @@ export async function integrationSyncHandler(req: Request, res: Response): Promi
 
       // Store each piece of data
       if (sleep) {
-        await storeIntegrationData({ type: "sleep", data: sleep });
+        await storeIntegrationData(userId, { type: "sleep", data: sleep });
       }
       if (recovery) {
-        await storeIntegrationData({ type: "recovery", data: recovery });
+        await storeIntegrationData(userId, { type: "recovery", data: recovery });
       }
       for (const workout of workouts) {
-        await storeIntegrationData({ type: "workout", data: workout });
+        await storeIntegrationData(userId, { type: "workout", data: workout });
       }
 
       results.push({
