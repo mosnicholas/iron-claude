@@ -24,4 +24,9 @@ export default {
   testPathIgnorePatterns: ["/node_modules/", "/dist/"],
   testTimeout: 60_000,
   maxWorkers: 1,
+  // E2E paths (whoop-webhook's fire-and-forget processWebhookAsync, pg-boss
+  // workers, the inbox poll loop) often leave handles open past the last
+  // assertion. Without forceExit jest hangs for ~10s and then prints a
+  // warning that GitHub Actions reports as a non-zero exit on some runners.
+  forceExit: true,
 };

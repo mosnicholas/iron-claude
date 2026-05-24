@@ -95,6 +95,14 @@ export class E2EHarness {
   }
 
   async stop(): Promise<void> {
+    // The Whoop webhook handler kicks off `processWebhookAsync` fire-and-forget
+    // after sending its 200. If we tear down the app while that's still
+    // running, the resulting console.* call lands after jest considers the
+    // test finished and triggers "Cannot log after tests are done" warnings
+    // (and on some CI runners a non-zero exit). Give in-flight async work a
+    // tick to settle before we yank the DB / supabase shim out from under it.
+    await new Promise<void>((r) => setTimeout(r, 500));
+
     try {
       await this.workers.stop();
     } catch (err) {
