@@ -8,7 +8,7 @@
  * gets a "subscribe" prompt via the bot.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "@jest/globals";
+import { afterAll, beforeAll, beforeEach, describe, it } from "@jest/globals";
 import { E2EHarness } from "../harness/index.js";
 import { seedUser, reloadUser } from "../harness/builders.js";
 import { eventually } from "../harness/waiters.js";

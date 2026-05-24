@@ -13,8 +13,10 @@
 
 import express, { type Express } from "express";
 import cookieParser from "cookie-parser";
+import rateLimit from "express-rate-limit";
 import { webhookHandler } from "./handlers/webhook.js";
 import { authRoutes } from "./handlers/auth.js";
+import { csrfGuard } from "./auth/csrf.js";
 import { stripeWebhookHandler } from "./handlers/stripe.js";
 import { createCheckoutSessionHandler } from "./handlers/checkout.js";
 import {
@@ -64,17 +66,46 @@ export function createApp(): Express {
 
   app.post("/api/webhook", webhookHandler);
 
-  app.post("/api/auth/otp/request", authRoutes.otpRequest);
-  app.post("/api/auth/otp/verify", authRoutes.otpVerify);
-  app.post("/api/auth/signout", authRoutes.signout);
-  app.get("/api/me", authRoutes.requireSession, authRoutes.me);
+  // OTP endpoints are the highest-value brute-force target (phone-OTP request
+  // floods, code-guessing on verify). Limit harder than the rest.
+  const otpRequestLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 5,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+  });
+  const otpVerifyLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 10,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+  });
+  // Session-bearing endpoints — cheaper to enumerate than OTP but still
+  // worth a ceiling so a runaway client can't pin a worker.
+  const sessionLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 60,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+  });
 
-  app.post("/api/checkout/create-session", authRoutes.requireSession, createCheckoutSessionHandler);
+  app.post("/api/auth/otp/request", csrfGuard, otpRequestLimiter, authRoutes.otpRequest);
+  app.post("/api/auth/otp/verify", csrfGuard, otpVerifyLimiter, authRoutes.otpVerify);
+  app.post("/api/auth/signout", csrfGuard, sessionLimiter, authRoutes.signout);
+  app.get("/api/me", sessionLimiter, authRoutes.requireSession, authRoutes.me);
+
+  app.post(
+    "/api/checkout/create-session",
+    csrfGuard,
+    sessionLimiter,
+    authRoutes.requireSession,
+    createCheckoutSessionHandler
+  );
 
   app.post("/api/integrations/:device/webhook", integrationWebhookHandler);
-  app.get("/api/integrations/:device/auth", integrationOAuthAuthHandler);
-  app.get("/api/integrations/:device/callback", integrationOAuthCallbackHandler);
-  app.post("/api/integrations/sync", integrationSyncHandler);
+  app.get("/api/integrations/:device/auth", sessionLimiter, integrationOAuthAuthHandler);
+  app.get("/api/integrations/:device/callback", sessionLimiter, integrationOAuthCallbackHandler);
+  app.post("/api/integrations/sync", csrfGuard, sessionLimiter, integrationSyncHandler);
 
   return app;
 }

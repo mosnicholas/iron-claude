@@ -217,7 +217,7 @@ export function startWorker(opts: StartWorkerOptions = {}): WorkerHandle {
 
   const tick = async (): Promise<void> => {
     if (stopped) return;
-    let nextDelay = idleMs;
+    let nextDelay: number;
     try {
       const result = await processOneEvent();
       nextDelay = result === "processed" ? busyMs : idleMs;

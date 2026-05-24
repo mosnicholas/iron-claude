@@ -61,7 +61,7 @@ async function main(): Promise<void> {
     }
 
     try {
-      let accessToken = decryptSecret(row.accessTokenEnc);
+      const accessToken = decryptSecret(row.accessTokenEnc);
       const refreshToken = decryptSecret(row.refreshTokenEnc);
       const expiresAt = row.expiresAt ? row.expiresAt.getTime() : 0;
       let tokens = { accessToken, refreshToken, expiresAt };
@@ -77,7 +77,6 @@ async function main(): Promise<void> {
           // now; we'll write it on the next upsert below.
           await persistTokens(row.userId, tokens, null);
         }
-        accessToken = tokens.accessToken;
       }
 
       const client = new WhoopClient(row.userId, tokens);

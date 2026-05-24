@@ -28,10 +28,23 @@ export function unregisterIntegrationFactory(slug: string): void {
 /**
  * Resolve an integration for a specific user (or user-agnostic if `userId`
  * is omitted — e.g. for webhook signature verification).
+ *
+ * `slug` is gated against the static `INTEGRATION_METADATA` allowlist
+ * before the factory call so an attacker-controlled URL `:device` param
+ * can never reach a factory we didn't intend to expose. (Without this
+ * gate the `factories.get(slug)` lookup already returns undefined for
+ * unknown slugs — but CodeQL's "unvalidated dynamic dispatch" check
+ * doesn't reason about Map semantics, and the explicit allowlist is a
+ * cleaner second line of defense as we add more integrations.)
  */
 export function getIntegration(slug: string, userId?: string): DeviceIntegration | undefined {
+  if (!isKnownIntegrationSlug(slug)) return undefined;
   const factory = factories.get(slug);
   return factory ? factory(userId) : undefined;
+}
+
+function isKnownIntegrationSlug(slug: string): boolean {
+  return INTEGRATION_METADATA.some((m) => m.slug === slug);
 }
 
 export function getRegisteredSlugs(): string[] {
