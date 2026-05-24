@@ -64,7 +64,20 @@ export function createApp(): Express {
     }
   });
 
-  app.post("/api/webhook", webhookHandler);
+  // Webhook routes from external services (Telegram, Whoop). These are
+  // signature-verified inside the handler, but Express middleware runs
+  // before that check — a flood of unsigned requests still pays the
+  // signature-verify cost. Ceiling generously: real senders won't approach
+  // it, but a runaway sender or an attacker burning a single IP gets
+  // dropped at the edge.
+  const webhookLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 600,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+  });
+
+  app.post("/api/webhook", webhookLimiter, webhookHandler);
 
   // OTP endpoints are the highest-value brute-force target (phone-OTP request
   // floods, code-guessing on verify). Limit harder than the rest.
@@ -102,7 +115,7 @@ export function createApp(): Express {
     createCheckoutSessionHandler
   );
 
-  app.post("/api/integrations/:device/webhook", integrationWebhookHandler);
+  app.post("/api/integrations/:device/webhook", webhookLimiter, integrationWebhookHandler);
   app.get("/api/integrations/:device/auth", sessionLimiter, integrationOAuthAuthHandler);
   app.get("/api/integrations/:device/callback", sessionLimiter, integrationOAuthCallbackHandler);
   app.post("/api/integrations/sync", csrfGuard, sessionLimiter, integrationSyncHandler);
