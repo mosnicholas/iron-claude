@@ -56,9 +56,8 @@ export function createApp(): Express {
   // CSRF defense is per-route via `csrfGuard` (src/auth/csrf.ts) on every
   // cookie-authenticated state-changing endpoint below, layered on top of
   // SameSite=Lax on the session cookie itself (src/handlers/auth.ts).
-  // CodeQL's `js/missing-token-validation` query doesn't recognize that
-  // pattern — it wants `csurf` middleware — so we suppress the alert.
-  // lgtm[js/missing-token-validation]
+  // CodeQL's `js/missing-token-validation` query only models `csurf` middleware
+  // so the alert is a known false positive.
   app.use(cookieParser());
 
   app.get("/health", async (_req, res) => {
