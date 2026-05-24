@@ -87,7 +87,7 @@ export class Recorder {
   }
 }
 
-function formatData(kind: TimelineEvent["kind"], data: Record<string, unknown>): string {
+function formatData(_kind: TimelineEvent["kind"], data: Record<string, unknown>): string {
   const text = data.text ?? data.method ?? data.event ?? data.name ?? "";
   const meta: string[] = [];
   for (const [k, v] of Object.entries(data)) {

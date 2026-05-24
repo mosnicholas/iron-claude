@@ -59,7 +59,11 @@ export function buildSignedStripeEvent(
   };
 
   const body = Buffer.from(JSON.stringify(event), "utf8");
-  const timestamp = created;
+  // Stripe's library rejects timestamps outside a 5-minute tolerance window
+  // against the verifier's wall clock. Tests may pin `created` to a stable
+  // value for assertion stability — sign with the wall clock so verification
+  // still succeeds.
+  const timestamp = Math.floor(Date.now() / 1000);
   const signedPayload = `${timestamp}.${body.toString("utf8")}`;
   const sig = createHmac("sha256", webhookSecret).update(signedPayload).digest("hex");
   // Stripe header format: `t=<ts>,v1=<sig>`.

@@ -52,16 +52,14 @@ describe("e2e smoke / pg-boss fanout", () => {
     const boss = await getBoss();
     await boss.send("trial-expiry.tick", {});
 
-    // pg-boss v12 stores jobs in pgboss.job; completed/expired ones move to
-    // pgboss.archive after retention. We poll both for the count of
-    // trial-expiry.user jobs produced by our tick.
+    // pg-boss v12 keeps all jobs (including completed/expired) in pgboss.job
+    // with the lifecycle in the `state` column. There is no separate archive
+    // table in this version — jobs are deleted directly after `keep_until`.
     const countJobs = async (): Promise<number> => {
       const res = await db.execute(sql`
-        SELECT COUNT(*)::text AS count FROM (
-          SELECT 1 FROM pgboss.job WHERE name = 'trial-expiry.user'
-          UNION ALL
-          SELECT 1 FROM pgboss.archive WHERE name = 'trial-expiry.user'
-        ) AS j
+        SELECT COUNT(*)::text AS count
+        FROM pgboss.job
+        WHERE name = 'trial-expiry.user'
       `);
       const rows = (res as unknown as { rows: Array<{ count: string }> }).rows;
       return Number(rows?.[0]?.count ?? "0");

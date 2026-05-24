@@ -14,7 +14,7 @@
  *
  * Env vars (set by jest-global-setup.ts):
  *   - DATABASE_URL: the testcontainers-provisioned or CI-service-container PG.
- *   - E2E_PG_URL: in CI, points at the workflow's `postgres:16-alpine`
+ *   - E2E_PG_URL: in CI, points at the workflow's `postgres:18-alpine`
  *     service container instead of nesting Docker via testcontainers.
  */
 
@@ -121,7 +121,7 @@ async function truncateAll(pool: Pool): Promise<void> {
     // file booted the queue. Best-effort wipe.
     await client
       .query(
-        `TRUNCATE TABLE pgboss.job, pgboss.schedule, pgboss.archive RESTART IDENTITY CASCADE`
+        `TRUNCATE TABLE pgboss.job, pgboss.schedule RESTART IDENTITY CASCADE`
       )
       .catch(() => {
         /* pgboss schema not yet created in this run — fine */

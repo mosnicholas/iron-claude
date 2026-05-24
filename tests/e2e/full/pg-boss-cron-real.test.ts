@@ -76,19 +76,9 @@ describe("e2e full / pg-boss real fan-out", () => {
           );
           const stateCounts: Record<string, number> = {};
           for (const r of rows) stateCounts[r.state as string] = r.n as number;
-          // All 5 must be in a terminal-good state. pg-boss writes to
-          // `pgboss.archive` on completion — so we accept either: 5 still in
-          // `job` table as `completed`, or 0 in `job` and 5 in `archive`.
-          const totalInJob = Object.values(stateCounts).reduce((a, b) => a + b, 0);
-          if (totalInJob === 5 && (stateCounts.completed ?? 0) === 5) return true;
-          if (totalInJob === 0) {
-            const { rows: arch } = await pool.query(
-              `SELECT COUNT(*)::int AS n FROM pgboss.archive WHERE name = $1 AND state = $2`,
-              ["check-reminders.user", "completed"]
-            );
-            if ((arch[0]?.n ?? 0) >= 5) return true;
-          }
-          return false;
+          // pg-boss v12 keeps everything in pgboss.job until `keep_until`;
+          // there's no separate archive table. All 5 must be in `completed`.
+          return (stateCounts.completed ?? 0) >= 5;
         },
         { timeoutMs: 30_000, pollIntervalMs: 250, label: "5 .user jobs completed" }
       );

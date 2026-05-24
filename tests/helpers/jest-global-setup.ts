@@ -4,7 +4,7 @@
  * `tests/helpers/realpg.ts` can connect to it.
  *
  * Honors `E2E_PG_URL` (set by CI's postgres service container) to skip the
- * testcontainers boot. Locally, testcontainers spawns `postgres:16-alpine`
+ * testcontainers boot. Locally, testcontainers spawns `postgres:18-alpine`
  * with a 30s startup budget.
  *
  * Runs migrations once after the container is up so the same schema is
@@ -33,7 +33,7 @@ export default async function globalSetup(): Promise<void> {
     return;
   }
 
-  const container = await new GenericContainer("postgres:16-alpine")
+  const container = await new GenericContainer("postgres:18-alpine")
     .withEnvironment({
       POSTGRES_USER: "ic_test",
       POSTGRES_PASSWORD: "ic_test",

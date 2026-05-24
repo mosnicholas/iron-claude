@@ -2,7 +2,7 @@
  * Test Postgres lifecycle.
  *
  * In CI: respects $E2E_PG_URL (a postgres service container provisioned
- * by the workflow). Local: boots a `postgres:16-alpine` testcontainer.
+ * by the workflow). Local: boots a `postgres:18-alpine` testcontainer.
  *
  * After boot we run drizzle migrations against the same DB. Tests then
  * get a fresh schema per-FILE (not per-test) — fast enough at <100ms and
@@ -54,7 +54,7 @@ export async function startTestPostgres(): Promise<E2EPostgres> {
   if (externalUrl) {
     url = externalUrl;
   } else {
-    container = await new GenericContainer("postgres:16-alpine")
+    container = await new GenericContainer("postgres:18-alpine")
       .withEnvironment({
         POSTGRES_USER: "ic_e2e",
         POSTGRES_PASSWORD: "ic_e2e",
@@ -129,7 +129,8 @@ async function truncateAppTables(url: string): Promise<void> {
     await pool.query(`TRUNCATE TABLE ${tableList} RESTART IDENTITY CASCADE`);
     // pg-boss has its own schema; nuke it too so scheduled jobs from a
     // prior test don't leak forward.
-    await pool.query(`TRUNCATE TABLE pgboss.job, pgboss.schedule, pgboss.archive RESTART IDENTITY CASCADE`).catch(() => {
+    // pg-boss v12 keeps everything in pgboss.job (no separate archive).
+    await pool.query(`TRUNCATE TABLE pgboss.job, pgboss.schedule RESTART IDENTITY CASCADE`).catch(() => {
       // pgboss schema may not exist on first run; ignore.
     });
   } finally {

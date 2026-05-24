@@ -17,7 +17,7 @@ export interface WaitOpts {
  * destructuring the row you were waiting for.
  */
 export async function eventually<T>(
-  predicate: () => Promise<T | undefined | null | false>,
+  predicate: () => Promise<T | undefined | null | false> | T | undefined | null | false,
   opts: WaitOpts = {}
 ): Promise<T> {
   const timeoutMs = opts.timeoutMs ?? 5_000;
