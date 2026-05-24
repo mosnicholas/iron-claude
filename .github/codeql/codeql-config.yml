@@ -1,0 +1,11 @@
+name: "IronClaude CodeQL config"
+
+# Exclude the `js/missing-token-validation` query because CodeQL's CSRF
+# model only recognizes `csurf`-style token middleware. Our actual defense
+# is per-route (src/auth/csrf.ts checks Sec-Fetch-Site / Origin / Referer
+# on cookie-authenticated state-changing endpoints) on top of SameSite=Lax
+# cookies (src/handlers/auth.ts). Bearer-token callers bypass the cookie
+# path entirely. Reviewed and accepted as a false positive.
+query-filters:
+  - exclude:
+      id: js/missing-token-validation
