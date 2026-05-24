@@ -18,7 +18,6 @@ import { verifyTelegramSecret } from "../bot/telegram.js";
 import { findOrCreateUserByChannel } from "../auth/identity.js";
 import { insertInboxEvent } from "../inbox/storage.js";
 import { captureError } from "../observability/sentry.js";
-import { safeLog } from "../utils/log.js";
 import type { TelegramUpdate } from "../storage/types.js";
 
 export async function webhookHandler(req: Request, res: Response): Promise<void> {
@@ -66,7 +65,11 @@ export async function webhookHandler(req: Request, res: Response): Promise<void>
     });
 
     if (!result.inserted) {
-      console.log(`[webhook] Duplicate update_id ${safeLog(update.update_id)}, already queued`);
+      // JSON.stringify on the user-controlled value is CodeQL-recognized
+      // log-injection sanitization (escapes newlines, quotes the string).
+      console.log(
+        `[webhook] Duplicate update_id ${JSON.stringify(update.update_id)}, already queued`
+      );
     } else {
       console.log(`[webhook] Queued event ${result.eventId} for user ${user.id}`);
     }

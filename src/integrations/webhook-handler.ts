@@ -15,7 +15,6 @@ import { sendBotMessageForUser } from "../bot/telegram-for-user.js";
 import { getUserById } from "../auth/identity.js";
 import { getStorage } from "../storage/db.js";
 import { captureError } from "../observability/sentry.js";
-import { safeLog } from "../utils/log.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Security Helpers
@@ -117,7 +116,7 @@ async function processWebhookAsync(payload: unknown, device: string): Promise<vo
     const userId = await resolveUserIdForWebhook(device, payload);
     if (!userId) {
       console.log(
-        `[integration-webhook] No linked user for ${safeLog(device)} webhook; dropping event.`
+        `[integration-webhook] No linked user for ${JSON.stringify(device)} webhook; dropping event.`
       );
       return;
     }
@@ -126,26 +125,26 @@ async function processWebhookAsync(payload: unknown, device: string): Promise<vo
     // Whoop API with the user's stored access token).
     const integration = getIntegration(device, userId);
     if (!integration) {
-      console.log(`[integration-webhook] No factory registered for ${safeLog(device)}`);
+      console.log(`[integration-webhook] No factory registered for ${JSON.stringify(device)}`);
       return;
     }
 
     const event = await integration.parseWebhook(payload);
 
     if (!event) {
-      console.log(`[integration-webhook] No actionable event from: ${safeLog(device)}`);
+      console.log(`[integration-webhook] No actionable event from: ${JSON.stringify(device)}`);
       return;
     }
 
     console.log(
-      `[integration-webhook] Parsed ${safeLog(event.type)} event from ${safeLog(device)}`
+      `[integration-webhook] Parsed ${JSON.stringify(event.type)} event from ${JSON.stringify(device)}`
     );
 
     // Persist to Postgres (mirrors recovery/sleep into workouts.recovery_snapshot)
     await storeIntegrationData(userId, event);
 
     console.log(
-      `[integration-webhook] Stored ${safeLog(event.type)} data for ${safeLog(event.data.date)}`
+      `[integration-webhook] Stored ${JSON.stringify(event.type)} data for ${JSON.stringify(event.data.date)}`
     );
 
     // Notify the user this event belongs to (NOT the env-pinned chat).
@@ -170,19 +169,19 @@ async function processWebhookAsync(payload: unknown, device: string): Promise<vo
 export async function integrationWebhookHandler(req: Request, res: Response): Promise<void> {
   const device = req.params.device as string;
 
-  console.log(`[integration-webhook] Received webhook for: ${safeLog(device)}`);
+  console.log(`[integration-webhook] Received webhook for: ${JSON.stringify(device)}`);
 
   // Look up the integration
   const integration = getIntegration(device);
   if (!integration) {
-    console.log(`[integration-webhook] Unknown integration: ${safeLog(device)}`);
+    console.log(`[integration-webhook] Unknown integration: ${JSON.stringify(device)}`);
     res.status(404).json({ error: "Unknown integration" });
     return;
   }
 
   // Verify the webhook is authentic (must be sync - reject invalid webhooks)
   if (!integration.verifyWebhook(req)) {
-    console.log(`[integration-webhook] Invalid webhook signature for: ${safeLog(device)}`);
+    console.log(`[integration-webhook] Invalid webhook signature for: ${JSON.stringify(device)}`);
     res.status(401).json({ error: "Invalid webhook signature" });
     return;
   }
@@ -270,7 +269,9 @@ export const integrationOAuthAuthHandler: RequestHandler[] = [
       return;
     }
 
-    console.log(`[integration-oauth] Auth initiation for: ${safeLog(device)} (user=${user.id})`);
+    console.log(
+      `[integration-oauth] Auth initiation for: ${JSON.stringify(device)} (user=${user.id})`
+    );
 
     const integration = getIntegration(device);
     if (!integration) {
@@ -311,7 +312,7 @@ export async function integrationOAuthCallbackHandler(req: Request, res: Respons
   const device = req.params.device as string;
   const { code, error, error_description, state } = req.query;
 
-  console.log(`[integration-oauth] Callback for: ${safeLog(device)}`);
+  console.log(`[integration-oauth] Callback for: ${JSON.stringify(device)}`);
 
   if (error) {
     // Escape user-supplied values to prevent XSS
@@ -384,7 +385,7 @@ export async function integrationOAuthCallbackHandler(req: Request, res: Respons
   try {
     await integration.handleOAuthCallback(String(code), redirectUri);
 
-    console.log(`[integration-oauth] Tokens exchanged and saved for: ${safeLog(device)}`);
+    console.log(`[integration-oauth] Tokens exchanged and saved for: ${JSON.stringify(device)}`);
 
     res.send(`
       <html>
@@ -439,7 +440,9 @@ export const integrationSyncHandler: RequestHandler[] = [
     const { date } = req.query;
     const syncDate = typeof date === "string" ? date : new Date().toISOString().split("T")[0];
     const userId = user.id;
-    console.log(`[integration-sync] Syncing data for user=${userId} date=${safeLog(syncDate)}`);
+    console.log(
+      `[integration-sync] Syncing data for user=${userId} date=${JSON.stringify(syncDate)}`
+    );
 
     const results: Array<{
       integration: string;

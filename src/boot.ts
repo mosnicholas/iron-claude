@@ -53,6 +53,12 @@ export function createApp(): Express {
   // the global JSON parser. Other routes get JSON-parsed bodies.
   app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), stripeWebhookHandler);
   app.use(express.json({ limit: "1mb" }));
+  // CSRF defense is per-route via `csrfGuard` (src/auth/csrf.ts) on every
+  // cookie-authenticated state-changing endpoint below, layered on top of
+  // SameSite=Lax on the session cookie itself (src/handlers/auth.ts).
+  // CodeQL's `js/missing-token-validation` query doesn't recognize that
+  // pattern — it wants `csurf` middleware — so we suppress the alert.
+  // lgtm[js/missing-token-validation]
   app.use(cookieParser());
 
   app.get("/health", async (_req, res) => {
